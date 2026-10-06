@@ -517,18 +517,33 @@ fn onboarded_home() -> Home {
 /// Everything under `dir` as path → contents (`-> target` for symlinks), skipping
 /// `.git` except its `info/exclude`.
 fn files_under(dir: &Path) -> BTreeMap<PathBuf, String> {
+    // Inside `.git`, descend only into `info/` and keep only `info/exclude`.
+    let keep = |e: &walkdir::DirEntry| {
+        let parent = e.path().parent().and_then(Path::file_name);
+        let grandparent = e
+            .path()
+            .parent()
+            .and_then(Path::parent)
+            .and_then(Path::file_name);
+        let name = e.file_name();
+        if parent == Some(".git".as_ref()) {
+            name == "info"
+        } else if parent == Some("info".as_ref()) && grandparent == Some(".git".as_ref()) {
+            name == "exclude"
+        } else {
+            true
+        }
+    };
     let mut out = BTreeMap::new();
     let walk = WalkDir::new(dir)
         .follow_links(false)
         .into_iter()
-        .filter_entry(|e| e.file_name() != ".git" || e.path().join("info/exclude").is_file());
+        .filter_entry(keep);
     for entry in walk {
         let entry = entry.unwrap();
-        let in_git = entry.path().components().any(|c| c.as_os_str() == ".git")
-            && !entry.path().ends_with("info/exclude");
         let value = if entry.path_is_symlink() {
             format!("-> {}", fs::read_link(entry.path()).unwrap().display())
-        } else if entry.file_type().is_dir() || in_git {
+        } else if entry.file_type().is_dir() {
             continue;
         } else {
             fs::read_to_string(entry.path()).unwrap_or_default()
@@ -731,14 +746,27 @@ fn an_entry_gone_from_every_store_is_cleaned_up_by_sync_all() {
 #[test]
 fn agents_overrides_the_plan_and_unknown_agents_are_user_errors() {
     let home = onboarded_home();
-    home.bare()
-        .args(["sync", "billing-api", "--agents", "generic"])
-        .assert()
-        .success();
+    let size = |doc: &serde_json::Value| doc["repos"][0]["always_on"].clone();
+    let planned = json_of(
+        &home,
+        home.bare()
+            .args(["sync", "billing-api", "--dry-run", "--json"]),
+    );
+    let doc = json_of(
+        &home,
+        home.bare()
+            .args(["sync", "billing-api", "--agents", "generic", "--json"]),
+    );
     let dir = home.path().join("work/acme/billing-api");
     assert!(dir.join("AGENTS.md").is_file());
     assert!(!dir.join("CLAUDE.md").exists());
     assert!(!dir.join(".claude").exists());
+    assert_eq!(
+        size(&doc),
+        size(&planned),
+        "always-on is the cost to one agent, whichever adapters write it"
+    );
+    assert!(size(&doc)["tokens"].as_u64().unwrap() > 0);
     let (code, err) = failure_of(
         &home,
         home.bare().args(["sync", "--all", "--agents", "claud"]),
@@ -748,6 +776,69 @@ fn agents_overrides_the_plan_and_unknown_agents_are_user_errors() {
         err,
         "error: unknown agent `claud`\n  hint: did you mean `claude`?\n"
     );
+}
+
+/// With a user-written AGENTS.md and both adapters on, Claude Code keeps reading
+/// AGENTS.md, so sync writes the block there once and creates no CLAUDE.md.
+#[test]
+fn a_user_agents_md_carries_the_one_block_and_no_claude_md_is_created() {
+    let home = onboarded_home();
+    let dir = home.path().join("work/acme/billing-api");
+    fs::write(dir.join("AGENTS.md"), "# Ours\n").unwrap();
+    let out = stdout_of(&home, home.bare().args(["sync", "billing-api"]));
+    assert!(
+        out.contains("  note: CLAUDE.md not created: the repo's own AGENTS.md"),
+        "{out}"
+    );
+    assert!(!dir.join("CLAUDE.md").exists());
+    assert!(!dir.join("CLAUDE.local.md").exists());
+    let agents = fs::read_to_string(dir.join("AGENTS.md")).unwrap();
+    assert!(agents.starts_with("# Ours\n\n<!-- kipi:begin"), "{agents}");
+    assert_eq!(agents.matches("<!-- kipi:begin").count(), 1, "{agents}");
+    let again = stdout_of(&home, home.bare().args(["sync", "billing-api"]));
+    assert!(again.contains("  up to date"), "{again}");
+}
+
+/// A tracked CLAUDE.md is never dirtied: the block goes to CLAUDE.local.md (excluded
+/// from git), until `--allow-tracked` moves it into CLAUDE.md.
+#[test]
+fn a_tracked_claude_md_gets_its_block_in_claude_local_md_unless_allow_tracked() {
+    let home = onboarded_home();
+    let dir = home.path().join("work/acme/billing-api");
+    fs::write(dir.join("CLAUDE.md"), "# Team rules\n").unwrap();
+    let added = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&dir)
+        .args(["add", "CLAUDE.md"])
+        .status()
+        .unwrap();
+    assert!(added.success());
+
+    home.bare().args(["sync", "billing-api"]).assert().success();
+    assert_eq!(
+        fs::read_to_string(dir.join("CLAUDE.md")).unwrap(),
+        "# Team rules\n"
+    );
+    let local = fs::read_to_string(dir.join("CLAUDE.local.md")).unwrap();
+    assert!(local.starts_with("<!-- kipi:begin"), "{local}");
+    let exclude = fs::read_to_string(dir.join(".git/info/exclude")).unwrap();
+    assert!(exclude.contains("\nCLAUDE.local.md\n"), "{exclude}");
+
+    home.bare()
+        .args(["sync", "billing-api", "--allow-tracked"])
+        .assert()
+        .success();
+    let claude = fs::read_to_string(dir.join("CLAUDE.md")).unwrap();
+    assert!(
+        claude.starts_with("# Team rules\n\n<!-- kipi:begin"),
+        "{claude}"
+    );
+    assert!(
+        !dir.join("CLAUDE.local.md").exists(),
+        "the kipi-created side file goes"
+    );
+    let exclude = fs::read_to_string(dir.join(".git/info/exclude")).unwrap();
+    assert!(!exclude.contains("CLAUDE.local.md"), "{exclude}");
 }
 
 #[test]

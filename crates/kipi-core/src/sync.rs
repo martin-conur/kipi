@@ -93,7 +93,10 @@ impl RepoState {
     }
 }
 
-/// A repo's always-on text against its budget (roadmap §10).
+/// A repo's always-on text against its budget (roadmap §10): what one agent session
+/// loads at startup, per agent. Every adapter writes the same block and links the same
+/// skills, so it does not depend on which adapters are enabled (`--agents` included);
+/// with no adapter enabled the agent simply finds none of it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AlwaysOnSize {
     /// Estimated tokens of the generated block plus the effective skills' descriptions.
@@ -269,7 +272,9 @@ fn sync_repo(
     Ok(out)
 }
 
-/// The rendered block plus the descriptions of the skills the agent indexes at startup.
+/// The rendered block plus the descriptions of the skills the agent indexes at startup:
+/// the cost to one agent, so it is computed from the plan, before any `--agents` override
+/// (see [`AlwaysOnSize`]).
 fn always_on_size(stores: &StoreSet, repo: &RepoPlan, block: &str) -> AlwaysOnSize {
     let descriptions: String = repo
         .skills

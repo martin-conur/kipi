@@ -544,6 +544,8 @@ The spec wins wherever it is explicit.
 - **Always-on size** is estimated over the rendered block (without an adapter's import line) plus
   the `description` of each effective skill (§10), as characters ÷ 4 (`tokens::estimate`) until the
   tokenizer lands in Stage 3. Over budget is a warning in the sync summary and `over` in status.
+  It is the cost to one agent session, so it is computed from the plan before any `--agents`
+  override and does not change with the enabled adapters (they all write the same block and skills).
 - **Status states.** `synced` (dry run changes nothing), `stale` (a manifest exists and the dry run
   changes something), `missing` (cloned here, no manifest: kipi's files are missing), `not_cloned`,
   `checkout_missing`. "Missing" in §7 is read as "never synced": a repo that is not on this machine

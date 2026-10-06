@@ -140,7 +140,9 @@ tracked file), `report` (Report \| null; `null` when the repo was skipped). `sta
 mounted store has, synced only with `--all`: everything its manifest recorded was removed).
 
 **AlwaysOn**: `tokens` (estimate over the generated block plus the descriptions of the repo's
-skills; characters ÷ 4 until the tokenizer lands), `budget` (`budget_tokens`), `over` (bool).
+skills; characters ÷ 4 until the tokenizer lands), `budget` (`budget_tokens`), `over` (bool). It is
+the startup cost to one agent session, so it does not depend on which adapters write files: every
+adapter writes the same block and links the same skills, and `--agents` leaves it unchanged.
 
 **Report**: `changes` ([Change], in the order they were made), `links` (`{added, removed}`),
 `blocks` (`{written, removed}`: generated blocks, or registry files in a store), `grants`

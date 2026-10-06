@@ -3,6 +3,7 @@
 pub mod color;
 pub mod diff;
 pub mod json;
+pub mod status;
 pub mod table;
 
 use std::io::{self, Write};

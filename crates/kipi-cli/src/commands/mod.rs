@@ -4,7 +4,7 @@
 mod explain;
 mod resolve;
 mod scan;
-pub mod status;
+mod status;
 mod sync;
 
 use std::path::PathBuf;

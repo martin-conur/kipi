@@ -14,7 +14,7 @@ use kipi_core::plan::{
 use kipi_core::sync::{AlwaysOnSize, Outcome, RepoState, Tally};
 use serde::Serialize;
 
-use crate::commands::status::Row;
+use super::status::Row;
 
 /// Bumped on any breaking change to the shape below.
 pub const JSON_VERSION: u32 = 1;
