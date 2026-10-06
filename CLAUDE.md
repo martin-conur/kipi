@@ -31,6 +31,7 @@ examples/
   personal-store/          # personal store: scope personal, 4 repos, 2 skills, share_skills = true
   machine.toml config.toml # example per-machine config (placeholder paths)
 docs/decisions.md          # decisions the spec leaves open
+docs/adapters.md           # verified vendor paths/keys per adapter, with sources
 ```
 
 New dependencies come from the §12 list via `<dep>.workspace = true`. Anything outside that list

@@ -1,13 +1,17 @@
 //! `Plan` and `RepoPlan`: the desired state resolution produces (roadmap §6, §12).
 //!
-//! A [`Plan`] is tool-neutral and holds no filesystem actions yet; the `Action` enum
-//! (Link, WriteBlock, MergeGrant, Remove, Exclude) arrives with the apply engine in
-//! Stage 2. Every decision carries a [`Source`] so `explain` can print where it came from.
+//! A [`Plan`] is tool-neutral. [`repo_actions`] turns one [`RepoPlan`] into the
+//! filesystem [`Action`]s each enabled agent adapter wants (roadmap §8 step 3); the apply
+//! engine diffs them against the manifest and the disk. Every decision carries a
+//! [`Source`] so `explain` can print where it came from.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use crate::adapters::{self, AgentAdapter};
 use crate::error::Location;
 use crate::model::{AgentId, GrantMode, SkillRef};
+use crate::render::block::RenderedBlock;
 
 /// Why a decision was made: the declaration it came from (with its store, file and
 /// line) and the rule that applied, e.g. `scopes.acme.skills`.
@@ -295,6 +299,276 @@ pub fn alias_key(alias: &str) -> String {
         .map(str::to_lowercase)
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// The `.git/info/exclude` pattern for kipi's own manifest directory (roadmap §4).
+pub const MANIFEST_EXCLUDE: &str = ".kipi/";
+
+/// One change the apply engine makes inside a consumer repo. Paths are absolute.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Action {
+    /// A symlink at `link` pointing at `target` (absolute).
+    Link {
+        /// Where the symlink goes.
+        link: PathBuf,
+        /// What it points at.
+        target: PathBuf,
+    },
+    /// Place `text` (begin marker through end marker) into `file` with
+    /// [`crate::render::splice::splice_text`].
+    WriteBlock {
+        /// `CLAUDE.md`, `AGENTS.md`, or the untracked side file.
+        file: PathBuf,
+        /// The block as the adapter rendered it.
+        text: String,
+    },
+    /// Merge `entries` into the JSON array at `key` in `file`, owning only those entries.
+    MergeGrant {
+        /// The settings file.
+        file: PathBuf,
+        /// The path of object keys down to the array.
+        key: &'static [&'static str],
+        /// The granted directories, in grant order.
+        entries: Vec<PathBuf>,
+    },
+    /// Remove something an earlier sync wrote (produced by the apply diff, never by an adapter).
+    Remove {
+        /// The path to remove; symlinks are never followed.
+        path: PathBuf,
+    },
+    /// Keep `patterns` in the repo's `.git/info/exclude`.
+    Exclude {
+        /// The repo checkout.
+        repo: PathBuf,
+        /// gitignore patterns, relative to the repo root.
+        patterns: Vec<String>,
+    },
+}
+
+/// Something an adapter decided not to do, with what the user can do about it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Notice {
+    /// What happened.
+    pub message: String,
+    /// What to do.
+    pub hint: String,
+}
+
+/// Facts about the checkout that are not in the plan: which always-on files hold user
+/// content and which files git tracks. Sync fills it from the disk and the manifest.
+#[derive(Debug, Clone, Default)]
+pub struct Checkout {
+    /// Files present in the checkout that hold user content: not created by kipi (per the
+    /// manifest), or created by kipi and since given text outside the block. Absolute.
+    pub user_files: BTreeSet<PathBuf>,
+    /// Tracked files, as absolute paths.
+    pub tracked: BTreeSet<PathBuf>,
+    /// `--allow-tracked`: write the block into a tracked file anyway.
+    pub allow_tracked: bool,
+}
+
+/// What one adapter wants in a repo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentActions {
+    /// The adapter.
+    pub agent: AgentId,
+    /// Block, then skill links, then the grant.
+    pub actions: Vec<Action>,
+    /// What was skipped and why.
+    pub notices: Vec<Notice>,
+}
+
+/// Everything sync wants in one cloned repo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepoActions {
+    /// The entry name.
+    pub repo: String,
+    /// The checkout.
+    pub dir: PathBuf,
+    /// One per enabled adapter, in the repo's `agents` order.
+    pub agents: Vec<AgentActions>,
+    /// The `.git/info/exclude` patterns of every adapter, then [`MANIFEST_EXCLUDE`].
+    pub exclude: Action,
+}
+
+impl RepoActions {
+    /// Every action, in apply order.
+    pub fn actions(&self) -> impl Iterator<Item = &Action> {
+        self.agents
+            .iter()
+            .flat_map(|a| &a.actions)
+            .chain(std::iter::once(&self.exclude))
+    }
+}
+
+/// The actions for `repo`, whose generated block is `block`; `None` when the repo is
+/// not cloned on this machine.
+pub fn repo_actions(
+    repo: &RepoPlan,
+    block: &RenderedBlock,
+    checkout: &Checkout,
+) -> Option<RepoActions> {
+    let dir = repo.path.as_ref()?;
+    let adapters: Vec<&dyn AgentAdapter> = repo
+        .agents
+        .value
+        .iter()
+        .map(|&id| adapters::adapter(id))
+        .collect();
+    let files: Vec<_> = adapters
+        .iter()
+        .map(|a| block_file(*a, dir, checkout))
+        .collect();
+    let mut patterns: Vec<String> = Vec::new();
+    let mut agents = Vec::new();
+    for (adapter, file) in adapters.iter().zip(&files) {
+        let file = keep_fallback_read(*adapter, dir, file.clone(), &files, checkout);
+        let out = agent_actions(*adapter, repo, dir, block, file);
+        let mut own: Vec<String> = adapter
+            .exclude_patterns()
+            .iter()
+            .map(|p| p.to_string())
+            .collect();
+        if let Some(Action::WriteBlock { file, .. }) = out.actions.first()
+            && *file != adapter.always_on_file(dir)
+            && let Ok(rel) = file.strip_prefix(dir)
+        {
+            own.push(rel.display().to_string());
+        }
+        for p in own {
+            if !patterns.contains(&p) {
+                patterns.push(p);
+            }
+        }
+        agents.push(out);
+    }
+    patterns.push(MANIFEST_EXCLUDE.to_owned());
+    Some(RepoActions {
+        repo: repo.name.clone(),
+        dir: dir.clone(),
+        agents,
+        exclude: Action::Exclude {
+            repo: dir.clone(),
+            patterns,
+        },
+    })
+}
+
+/// Where an adapter's block goes, with any import line to put inside it.
+#[derive(Debug, Clone)]
+struct BlockFile {
+    file: PathBuf,
+    import: Option<String>,
+}
+
+fn agent_actions(
+    adapter: &dyn AgentAdapter,
+    repo: &RepoPlan,
+    dir: &Path,
+    block: &RenderedBlock,
+    file: Result<BlockFile, Notice>,
+) -> AgentActions {
+    let mut actions = Vec::new();
+    let mut notices = Vec::new();
+    match file {
+        Ok(BlockFile { file, import }) => actions.push(Action::WriteBlock {
+            file,
+            text: match import {
+                Some(line) => adapter.render_block(&block.with_preamble(&line)),
+                None => adapter.render_block(block),
+            },
+        }),
+        Err(notice) => notices.push(notice),
+    }
+    actions.extend(
+        repo.skills
+            .iter()
+            .map(|s| adapter.render_skill_entry(s, dir)),
+    );
+    actions.extend(adapter.render_grant(dir, &repo.grant));
+    AgentActions {
+        agent: adapter.id(),
+        actions,
+        notices,
+    }
+}
+
+/// An agent that reads another agent's file while none of its own exist (Claude Code
+/// reads `AGENTS.md` when there is no `CLAUDE.md` / `CLAUDE.local.md`) must not lose the
+/// user's copy of that file because kipi created one of its own. If another enabled
+/// adapter writes the block into that file, this adapter writes nothing (the agent
+/// keeps reading it, block included); otherwise its new file imports the user's.
+fn keep_fallback_read(
+    adapter: &dyn AgentAdapter,
+    dir: &Path,
+    file: Result<BlockFile, Notice>,
+    files: &[Result<BlockFile, Notice>],
+    checkout: &Checkout,
+) -> Result<BlockFile, Notice> {
+    let Some(name) = adapter.reads_when_absent() else {
+        return file;
+    };
+    let fallback = dir.join(name);
+    let own = [
+        Some(adapter.always_on_file(dir)),
+        adapter.local_always_on_file(dir),
+    ];
+    let creating = !own
+        .iter()
+        .flatten()
+        .any(|p| checkout.user_files.contains(p));
+    if !creating || !checkout.user_files.contains(&fallback) {
+        return file;
+    }
+    if files.iter().flatten().any(|f| f.file == fallback) {
+        return Err(Notice {
+            message: format!(
+                "{} not created: the repo's own {name}, which carries the block, is what {} reads while it is absent",
+                display_name(&adapter.always_on_file(dir)),
+                adapter.id(),
+            ),
+            hint: format!(
+                "nothing to do; create {} yourself to have kipi write the block there instead",
+                display_name(&adapter.always_on_file(dir))
+            ),
+        });
+    }
+    file.map(|f| BlockFile {
+        import: adapter.import_line(name),
+        ..f
+    })
+}
+
+fn display_name(p: &Path) -> String {
+    p.file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned())
+}
+
+/// Where the block goes (roadmap §15 decision 3): the always-on file unless git tracks
+/// it, then the adapter's untracked side file, else nowhere.
+fn block_file(
+    adapter: &dyn AgentAdapter,
+    dir: &Path,
+    checkout: &Checkout,
+) -> Result<BlockFile, Notice> {
+    let main = adapter.always_on_file(dir);
+    let tracked = |p: &Path| !checkout.allow_tracked && checkout.tracked.contains(p);
+    let found = |file: PathBuf| Ok(BlockFile { file, import: None });
+    if !tracked(&main) {
+        return found(main);
+    }
+    let name = display_name;
+    match adapter.local_always_on_file(dir) {
+        Some(local) if !tracked(&local) => found(local),
+        Some(local) => Err(Notice {
+            message: format!("{} and {} are tracked; generated block not written", name(&main), name(&local)),
+            hint: "untrack one of them, or pass `--allow-tracked` to write the block into the tracked file".into(),
+        }),
+        None => Err(Notice {
+            message: format!("{} is tracked; generated block not written", name(&main)),
+            hint: "pass `--allow-tracked` to write the block anyway (it will show in `git diff`)".into(),
+        }),
+    }
 }
 
 #[cfg(test)]

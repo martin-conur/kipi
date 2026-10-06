@@ -1,0 +1,27 @@
+---
+source: crates/kipi-core/tests/adapters.rs
+expression: text
+---
+repo: dotfiles at /srv/code/dotfiles
+write block → AGENTS.md
+link .agents/skills/rust-style → ~/personal-store/skills/rust-style
+link .agents/skills/commit-style → ~/personal-store/skills/commit-style
+grant: none (no grant mechanism)
+exclude: .claude/skills/ .claude/settings.local.json .agents/ .kipi/
+
+<!-- kipi:begin (do not edit; regenerate with `kipi sync`) -->
+## Conventions (personal)
+- Prefer small, boring dependencies; justify each new one in the commit body.
+- Every repo has a `README.md` with a one-paragraph summary and a "Run it" section.
+
+## Known repos (personal)
+- api (personal-api) — Personal JSON API behind the blog and side-tool uploads · /srv/code/api
+- blog (site) — Static site; posts in content/, theme in themes/plain · /srv/code/blog
+- dotfiles · /srv/code/dotfiles
+- side-tool (photos, renamer) — Small CLI that renames photos by EXIF date; Rust, entry point src/main.rs · /srv/code/side-tool · notes: ~/personal-store/repos/side-tool/notes.md
+
+## This repo
+Scope: personal.
+For any repo above, read its code at the listed path; check its notes first if listed.
+Lookup: `kipi where <alias>`, `kipi grep <term> --repos`.
+<!-- kipi:end -->

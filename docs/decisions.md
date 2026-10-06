@@ -365,3 +365,53 @@ The spec wins wherever it is explicit.
 - **Output**: the report goes to stdout (warnings included, as `warning:` / `hint:` pairs, since
   they are the command's result); `--json` prints the report documented in `docs/json.md`
   ("Scan"). Warnings do not change the exit code (0); doctor owns exit 2.
+
+## Stage 2: adapters (#6)
+
+- **Trait.** `AgentAdapter` follows §12 with three adjustments. `id()` returns `AgentId` (its
+  `as_str()` is the `"claude"` / `"generic"` of §12), so callers match on an enum.
+  `render_skill_entry` takes the `PlannedSkill` the `RepoPlan` already holds plus the repo
+  directory (the §12 `target`), and returns an absolute `Link`. Methods are added:
+  `local_always_on_file` (decision 3 below), `exclude_patterns`, so the `.git/info/exclude`
+  entries for what an adapter writes live in its constant block with its paths, and
+  `reads_when_absent` / `import_line` (the AGENTS.md rule below).
+- **Actions live in `plan.rs`.** `Action` is `Link`, `WriteBlock { file, text }` (the
+  adapter-rendered block, placed by `render::splice::splice_text`), `MergeGrant { file, key,
+  entries }`, `Remove` and `Exclude`. Adapters never emit `Remove`; the apply diff (#7) does.
+  `plan::repo_actions(repo, block, checkout)` returns, per enabled adapter in the repo's `agents`
+  order, the block write, then one link per effective skill, then the grant; plus one `Exclude`
+  with every adapter's patterns (deduplicated, in order) and `.kipi/`. A repo not cloned here
+  yields `None`.
+- **The Claude grant is always emitted**, even with no directories, so a repo whose grant shrinks
+  to nothing still tells the apply engine which entries to drop; apply should not create the file
+  for an empty list. The generic adapter has no grant mechanism (`None`).
+- **§15 decision 2, AGENTS.md by default: written whenever the generic adapter is enabled**, which
+  it is by default (`defaults.agents = ["claude", "generic"]`). The spec's "or the file already
+  exists" is not adopted: `agents` without `generic` is an explicit opt-out, and writing AGENTS.md
+  anyway would override it. Pure planning also stays free of filesystem checks.
+- **§15 decision 3, tracked always-on files: never dirty a tracked file without
+  `--allow-tracked`.** Claude Code loads `CLAUDE.local.md` beside `CLAUDE.md`, so a tracked
+  `CLAUDE.md` sends the block to `CLAUDE.local.md` (added to `.git/info/exclude`). AGENTS.md agents
+  have no additive untracked file (`AGENTS.override.md` replaces `AGENTS.md`), so a tracked
+  `AGENTS.md` gets no block and a notice with a hint; so does a tracked `CLAUDE.local.md`.
+  `--allow-tracked` writes into the tracked file. Which files are tracked is passed in
+  (`plan::Checkout`), so `repo_actions` stays pure; sync (#8) fills it from `git ls-files`.
+- **Never make Claude Code drop the user's AGENTS.md.** By default Claude Code reads `AGENTS.md`
+  only while neither `CLAUDE.md` nor `CLAUDE.local.md` exists. So when the Claude adapter would
+  *create* its file (no user content in either CLAUDE file) and the repo has a user `AGENTS.md`:
+  (a) if another enabled adapter writes the block into that `AGENTS.md` (generic on, file not
+  skipped as tracked), Claude writes no always-on file and reports a notice, since Claude keeps
+  reading `AGENTS.md`, now with the block; (b) otherwise (generic off, or `AGENTS.md` tracked) the
+  new `CLAUDE.md` carries `@AGENTS.md` as the first line inside the block, so Claude still loads the
+  user's file, and the block exists only once because nothing writes it into `AGENTS.md`. The import
+  sits inside the markers, so kipi owns it and removes it with the block. (a) is preferred because it
+  adds no file. A user file is one present on disk that kipi did not create, or that it created and
+  the user has since edited outside the block (`plan::Checkout::user_files`, filled by sync from the
+  disk and the manifest), so a kipi-created `AGENTS.md` / `CLAUDE.md` pair stays stable across
+  syncs. The rule is generic: adapters declare `reads_when_absent` and `import_line`. Parent
+  directories are not inspected.
+- **Golden tests** (`tests/adapters.rs`): one snapshot per adapter per example repo with the
+  block target, links (store paths as `~/…`), grant entries, exclude patterns, notices and the
+  block text. A disabled adapter or a repo not cloned here is a one-line snapshot.
+- **Size rule**: a test counts lines of every `adapters/*.rs` except `mod.rs` (shared trait and
+  helpers) and fails at 100.

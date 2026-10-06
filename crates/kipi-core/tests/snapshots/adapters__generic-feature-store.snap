@@ -1,0 +1,5 @@
+---
+source: crates/kipi-core/tests/adapters.rs
+expression: text
+---
+feature-store is not cloned on this machine: no actions
