@@ -132,7 +132,9 @@ fn every_action_path_stays_inside_the_repo_and_links_point_into_a_store() {
                     assert!(file.starts_with(&actions.dir), "{file:?}")
                 }
                 Action::Exclude { repo, .. } => assert_eq!(repo, &actions.dir),
-                Action::Remove { .. } => panic!("adapters never emit Remove"),
+                Action::Remove { .. } | Action::WriteFile { .. } => {
+                    panic!("adapters never emit {action:?}")
+                }
             }
         }
     }

@@ -322,6 +322,13 @@ pub enum Action {
         /// The block as the adapter rendered it.
         text: String,
     },
+    /// A whole file kipi owns, such as a store's `generated/registry.<scope>.md`.
+    WriteFile {
+        /// The file.
+        path: PathBuf,
+        /// Its contents.
+        text: String,
+    },
     /// Merge `entries` into the JSON array at `key` in `file`, owning only those entries.
     MergeGrant {
         /// The settings file.

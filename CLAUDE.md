@@ -46,6 +46,7 @@ cargo test --workspace                                     # all tests, incl. le
 cargo test -p kipi-test-support --test leak_guard          # leak guard only
 cargo test -p kipi-core --test resolve --test resolve_props  # resolution unit + property tests
 cargo test -p kipi-core --test render --test splice_props    # rendering snapshots + splice properties
+cargo test -p kipi-core --test apply                       # apply engine: tempdir integration tests
 cargo llvm-cov -p kipi-core --test resolve --test resolve_props  # resolve.rs coverage (cargo install cargo-llvm-cov)
 cargo deny check                                           # licenses + banned crates (cargo install cargo-deny)
 cargo run -p kipi-cli -- --help                            # run the CLI
