@@ -35,8 +35,15 @@ impl RemoteUrl {
             let (authority, path) = rest.split_once('/').unwrap_or((rest, ""));
             (strip_port(strip_user(authority)), path)
         } else {
-            // scp-like `[user@]host:path`: a `:` before any `/`.
+            // scp-like `[user@]host:path`: a `:` before any `/`. git has no scp-like
+            // form for a bracketed IPv6 host; that needs `ssh://[addr]/path`.
             match s.split_once(':') {
+                Some((left, _)) if left.contains('[') => {
+                    return Err(format!(
+                        "`{raw}` puts an IPv6 host in scp-like form; write \
+                         `ssh://[addr]/owner/name` instead"
+                    ));
+                }
                 Some((left, path)) if !left.contains('/') => (strip_user(left), path),
                 _ => return Err(format!("`{raw}` is a local path, not a network remote")),
             }
@@ -44,6 +51,10 @@ impl RemoteUrl {
         let host = host.to_ascii_lowercase();
         if host.is_empty() || host.contains(char::is_whitespace) {
             return Err(format!("`{raw}` has no host"));
+        }
+        // A bracketed IPv6 host must be closed, with nothing but the port after it.
+        if host.starts_with('[') != host.ends_with(']') {
+            return Err(format!("`{raw}` has a malformed IPv6 host"));
         }
         let mut segments: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
         if let Some(last) = segments.last_mut() {
@@ -227,6 +238,8 @@ mod tests {
             ("git+ssh://git@github.com/o/n.git", "github.com/o/n"),
             ("git://github.com/o/n.git", "github.com/o/n"),
             ("ssh://git@[::1]:22/o/n.git", "[::1]/o/n"),
+            ("ssh://[::1]/repo.git", "[::1]/repo"),
+            ("ssh://git@[2001:db8::1]/o/n", "[2001:db8::1]/o/n"),
             // scp-like.
             (
                 "git@github.com:acme-org/billing-api.git",
@@ -281,6 +294,11 @@ mod tests {
             "https://github.com/",
             "git@github.com:",
             "https:///o/n",
+            // IPv6 hosts only in `ssh://[addr]/...` form, and well-formed.
+            "[::1]:repo.git",
+            "git@[::1]:o/n.git",
+            "ssh://[::1/o/n",
+            "ssh://::1]/o/n",
             "https://github.com/o/..",
         ] {
             assert!(RemoteUrl::parse(raw).is_err(), "{raw:?} should be rejected");
