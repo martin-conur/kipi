@@ -450,29 +450,32 @@ impl<'a> Diff<'a> {
             if d == self.root || !d.starts_with(self.root) {
                 break;
             }
-            if !self.planned_dirs.contains(d) {
-                match kind(d)? {
-                    None => missing.push(d.to_path_buf()),
-                    Some(Kind::Dir) => {}
-                    Some(Kind::Symlink) => {
-                        self.skip(
-                            path,
-                            format!(
-                                "{} is a symlink; kipi does not write through it",
-                                d.display()
-                            ),
-                            "replace the symlink with a real directory, then re-run",
-                        );
-                        return Ok(false);
-                    }
-                    Some(Kind::File) => {
-                        self.skip(
-                            path,
-                            format!("{} is a file, not a directory", d.display()),
-                            "move the file away, then re-run",
-                        );
-                        return Ok(false);
-                    }
+            // A planned dir was planned by a walk that checked every ancestor up to the
+            // root, so there is nothing left to check above it.
+            if self.planned_dirs.contains(d) {
+                break;
+            }
+            match kind(d)? {
+                None => missing.push(d.to_path_buf()),
+                Some(Kind::Dir) => {}
+                Some(Kind::Symlink) => {
+                    self.skip(
+                        path,
+                        format!(
+                            "{} is a symlink; kipi does not write through it",
+                            d.display()
+                        ),
+                        "replace the symlink with a real directory, then re-run",
+                    );
+                    return Ok(false);
+                }
+                Some(Kind::File) => {
+                    self.skip(
+                        path,
+                        format!("{} is a file, not a directory", d.display()),
+                        "move the file away, then re-run",
+                    );
+                    return Ok(false);
                 }
             }
             dir = d.parent();
