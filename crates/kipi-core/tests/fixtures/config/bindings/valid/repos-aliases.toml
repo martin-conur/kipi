@@ -1,0 +1,11 @@
+[store]
+name = "fx"
+version = 1
+
+[repos.one]
+aliases = ["uno", "first"]
+
+[repos.two]
+aliases = [
+  "dos",
+]  # kipi:draft

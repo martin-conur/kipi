@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/bindings.toml:6: invalid type: string "yes", expected a boolean in [scopes.main]
+  hint: change the value to the expected type

@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/config.toml:1: invalid type: string "~/.agents/store", expected a sequence in the top level
+  hint: change the value to the expected type

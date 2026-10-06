@@ -1,0 +1,7 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "redact(&out, dir.path())"
+---
+stores: []
+editor: None
+tokenizer: None

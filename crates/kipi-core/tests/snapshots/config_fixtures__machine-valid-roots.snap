@@ -1,0 +1,31 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "redact(&out, dir.path())"
+---
+hostname: None
+roots: [
+    MachineRoots {
+        scope: "main",
+        roots: [
+            "/Volumes/work/fx",
+            "/HOME/fx",
+        ],
+        at: Location {
+            file: "<dir>/machine.toml",
+            line: Some(
+                2,
+            ),
+        },
+    },
+    MachineRoots {
+        scope: "main-ml",
+        roots: [],
+        at: Location {
+            file: "<dir>/machine.toml",
+            line: Some(
+                3,
+            ),
+        },
+    },
+]
+repos: []

@@ -1,0 +1,5 @@
+[store]
+name = "fx"
+version = 1
+
+[repos."-one"]

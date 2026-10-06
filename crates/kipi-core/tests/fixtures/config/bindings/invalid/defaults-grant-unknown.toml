@@ -1,0 +1,6 @@
+[store]
+name = "fx"
+version = 1
+
+[defaults]
+grant = "relatd"

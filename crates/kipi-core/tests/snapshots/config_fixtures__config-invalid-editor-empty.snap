@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/config.toml:1: empty editor
+  hint: name an editor command such as `editor = "hx"`, or remove the key

@@ -1,0 +1,8 @@
+[store]
+name = "fx"
+version = 1
+
+[scopes.main]
+
+[repos.one]
+scope = "main"

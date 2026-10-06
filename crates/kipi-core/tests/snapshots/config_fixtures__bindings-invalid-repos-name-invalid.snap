@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/bindings.toml:5: invalid repo name `-one`: must start with a letter or digit
+  hint: names use letters, digits, `-`, `_` and `.`, starting with a letter or digit

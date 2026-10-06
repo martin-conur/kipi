@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/bindings.toml:3: invalid type: string "1", expected an integer in [store]
+  hint: change the value to the expected type

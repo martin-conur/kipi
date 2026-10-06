@@ -1,0 +1,5 @@
+repos.one.summary = "Declared with dotted keys"  # kipi:draft
+
+[store]
+name = "fx"
+version = 1

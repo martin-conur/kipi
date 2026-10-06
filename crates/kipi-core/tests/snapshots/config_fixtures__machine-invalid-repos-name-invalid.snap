@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/machine.toml:2: invalid repo name `one two`: may only contain letters, digits, `-`, `_` and `.`
+  hint: names use letters, digits, `-`, `_` and `.`, starting with a letter or digit

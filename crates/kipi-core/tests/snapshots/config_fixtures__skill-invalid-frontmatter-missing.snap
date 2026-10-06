@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/skills/case/SKILL.md:1: missing YAML frontmatter
+  hint: start the file with a `---` line, the YAML fields (`name`, `description`), and a closing `---` line

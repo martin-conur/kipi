@@ -1,6 +1,6 @@
 ---
 name: pr-conventions
-description: Use when opening or updating a pull request in an acme repository: title format, description template and labels.
+description: "Use when opening or updating a pull request in an acme repository: title format, description template and labels."
 x-kipi:
   scope: acme
   tags: [git, review]

@@ -1,0 +1,6 @@
+[store]
+name = "fx"
+version = 1
+
+[scopes.main]
+always = ["conventions/main.md", "./conventions//extra.md"]

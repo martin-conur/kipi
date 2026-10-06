@@ -1,0 +1,9 @@
+[store]
+name = "fx"
+version = 1
+
+[repos.one]
+related = ["two"]
+
+[repos.two]
+related = ["one"]

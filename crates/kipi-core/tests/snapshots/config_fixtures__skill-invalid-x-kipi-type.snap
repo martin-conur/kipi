@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/skills/case/SKILL.md:3: `x-kipi` must be a mapping
+  hint: nest its fields: `x-kipi:` then `  scope: <scope>` on the next line

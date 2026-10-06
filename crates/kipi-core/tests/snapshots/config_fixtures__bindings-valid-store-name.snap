@@ -1,0 +1,15 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "redact(&out, dir.path())"
+---
+name: fx-store_1.0
+version: 1
+share_skills: false
+defaults: Defaults {
+    budget_tokens: None,
+    agents: None,
+    grant: None,
+    at: None,
+}
+scopes: []
+repos: []

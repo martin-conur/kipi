@@ -1,6 +1,6 @@
 ---
 name: stream-recipes
-description: Use when adding or changing a Kafka consumer or producer in the events pipeline: idempotent sinks, retries, schema evolution.
+description: "Use when adding or changing a Kafka consumer or producer in the events pipeline: idempotent sinks, retries, schema evolution."
 x-kipi:
   scope: acme-ml
   tags: [streaming, kafka]

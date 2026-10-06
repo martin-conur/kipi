@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/bindings.toml:6: invalid skill reference: store name in `/alpha` is empty
+  hint: name a skill in this store (`code-review`) or a shared skill of another store (`personal/commit-style`)

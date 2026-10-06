@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/bindings.toml:6: unknown value `claud` in [defaults]
+  hint: did you mean `claude`? Valid values: `claude`, `generic`

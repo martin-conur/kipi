@@ -1,6 +1,6 @@
 ---
 name: commit-style
-description: Use when writing a git commit message: subject line format, body wrapping and what to explain.
+description: "Use when writing a git commit message: subject line format, body wrapping and what to explain."
 x-kipi:
   scope: personal
   tags: [git]

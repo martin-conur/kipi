@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/config.toml:1: unknown tokenizer `cl100k`
+  hint: valid values: `cl100k_base`, `o200k_base`, `p50k_base`, `p50k_edit`, `r50k_base`

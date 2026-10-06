@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/bindings.toml:3: unsupported store version 2
+  hint: this kipi reads version 1; upgrade kipi if the store was written by a newer one, otherwise set `version = 1`

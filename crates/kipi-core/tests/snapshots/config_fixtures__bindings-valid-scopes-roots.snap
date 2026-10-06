@@ -1,0 +1,38 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "redact(&out, dir.path())"
+---
+name: fx
+version: 1
+share_skills: false
+defaults: Defaults {
+    budget_tokens: None,
+    agents: None,
+    grant: None,
+    at: None,
+}
+scopes: [
+    Scope {
+        name: "main",
+        extends: None,
+        roots: [
+            "/HOME/work/fx",
+            "/srv/fx",
+            "/HOME",
+        ],
+        skills: [],
+        always: [],
+        registry: false,
+        remote_patterns: [],
+        agents: None,
+        grant: None,
+        budget_tokens: None,
+        at: Location {
+            file: "<dir>/bindings.toml",
+            line: Some(
+                5,
+            ),
+        },
+    },
+]
+repos: []
