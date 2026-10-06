@@ -1,0 +1,19 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: "stdout_of(&home, home.kipi().arg(\"resolve\"))"
+---
+REPO             STORE     SCOPE     SKILLS                                                            RELATED                  GRANT              CHECKOUT
+acme-api         acme      acme      code-review,pr-conventions,personal/commit-style                  -                        related (3 dirs)   /Volumes/work/acme/api
+api              personal  personal  rust-style,commit-style                                           -                        related (2 dirs)   /srv/code/api
+billing-api      acme      acme      code-review,pr-conventions,personal/commit-style                  -                        related (3 dirs)   /Volumes/work/acme/billing-api
+blog             personal  personal  rust-style,commit-style                                           -                        related (2 dirs)   /srv/code/blog
+dotfiles         personal  personal  rust-style,commit-style                                           -                        related (2 dirs)   /srv/code/dotfiles
+events-pipeline  acme      acme-ml   code-review,personal/commit-style,dbt-conventions,stream-recipes  billing-api,ml-platform  registry (7 dirs)  /Volumes/work/acme/ml/events-pipeline
+feature-store    acme      acme      code-review,pr-conventions,personal/commit-style                  -                        related (3 dirs)   (not cloned here)
+ml-platform      acme      acme-ml   code-review,pr-conventions,personal/commit-style,dbt-conventions  -                        related (3 dirs)   /Volumes/work/acme/ml/ml-platform
+side-tool        personal  personal  rust-style,commit-style                                           api                      related (3 dirs)   /srv/code/side-tool
+web-dashboard    acme      acme      code-review,pr-conventions,personal/commit-style                  -                        related (3 dirs)   /Volumes/work/acme/web-dashboard
+
+REGISTRY  STORE     SCOPES        REPOS  ALIAS COLLISIONS
+acme      acme      acme,acme-ml  6      -
+personal  personal  personal      4      -

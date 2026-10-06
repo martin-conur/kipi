@@ -1,0 +1,38 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: out
+---
+side-tool
+  entry     personal:bindings.toml:20
+  store     personal
+  checkout  /srv/code/side-tool
+
+Scope
+  personal  ← fallback: scope `personal` (personal:bindings.toml:13)
+  chain: personal
+
+Skills  ○ inherited  ● explicit  ✗ excluded
+  ○ rust-style    ← scopes.personal.skills (personal:bindings.toml:13)
+  ○ commit-style  ← scopes.personal.skills (personal:bindings.toml:13)
+
+Always-on
+  conventions/personal.md  ← scopes.personal.always (personal:bindings.toml:13)
+  registry of personal     ← scopes.personal.registry (personal:bindings.toml:13)
+  this-repo section        ← built in
+
+Registry
+  personal  ← scopes.personal.registry (personal:bindings.toml:13)
+  4 repos in scope personal
+
+Related
+  api  personal  /srv/code/api  ← repos.side-tool.related (personal:bindings.toml:20)
+
+Grant: related  ← defaults.grant (personal:bindings.toml:8)
+  ~/stores/personal-store/repos   store personal repos/   ← grant: store `personal` dirs
+  ~/stores/personal-store/skills  store personal skills/  ← grant: store `personal` dirs
+  /srv/code/api                   repo api                ← repos.side-tool.related (personal:bindings.toml:20)
+
+Settings  (repo > scope chain > defaults > built-in)
+  agents         claude, generic  ← defaults.agents (personal:bindings.toml:8)
+  budget_tokens  4000             ← defaults.budget_tokens (personal:bindings.toml:8)
+  grant          related          ← defaults.grant (personal:bindings.toml:8)

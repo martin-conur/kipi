@@ -131,8 +131,19 @@ pub struct PlannedSkill {
     pub reference: SkillRef,
     /// The skill directory.
     pub dir: PathBuf,
+    /// Who bound it: a scope of the chain (inherited) or the repo itself (explicit).
+    pub origin: SkillOrigin,
     /// The `skills` / `exclude` list that named it.
     pub source: Source,
+}
+
+/// Where a [`PlannedSkill`] was bound, for `explain`'s ○ inherited / ● explicit markers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SkillOrigin {
+    /// Named by `scopes.<scope>.skills`, inherited by every repo in that scope's chain.
+    Scope(String),
+    /// Named by the repo's own `skills` or `exclude`.
+    Repo,
 }
 
 impl PlannedSkill {

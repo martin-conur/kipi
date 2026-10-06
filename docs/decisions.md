@@ -207,3 +207,42 @@ The spec wins wherever it is explicit.
 - **Coverage job** (`coverage (report-only)` in CI) runs `cargo +nightly llvm-cov --branch` over
   the resolve tests and writes the `resolve.rs` row to the job summary. Branch coverage is
   nightly-only, so the job uses an unpinned nightly and `continue-on-error`; it never gates.
+
+## Stage 1: CLI foundation, `resolve` and `explain` (#4)
+
+- **`--store <path>` is a top-level flag, given before the subcommand** (`kipi --store a resolve`).
+  §7 also uses `--store` on `init` (a path), `add skill` and `tree` (a store *name*); a global
+  `--store` would clash with those, so they keep their own flag. `--json`, `--no-color`, `-v` and
+  `-q` are global and work anywhere on the line.
+- **Usage errors exit 1, not clap's default 2**, which §7 reserves for doctor findings. `--help`
+  and `--version` exit 0. `-v` and `-q` conflict.
+- **Exit codes come from `kipi_core::error::ErrorKind`**: `Error::Io` is `Io` (exit 3), every
+  other core error is `User` (exit 1). CLI-level failures (unknown repo, unimplemented command)
+  exit 1; a failed write to stdout exits 3. Exit 2 is defined for `doctor` (Stage 3).
+- **Unimplemented subcommands are declared with their §7 arguments** and fail with
+  `` error: `kipi <cmd>` is not implemented yet `` plus the stage it lands in. Every writer
+  (`init`, `stores`, `scan`, `add`, `bind`, `unbind`, `sync`, `doctor`) takes `--dry-run` through
+  one shared `DryRun` arg group. `edit` has none: it only opens an editor. `completions` takes the
+  shell as a string until Stage 4 adds `clap_complete`.
+- **`-v` / `-q`**: `-v` reports the mounted stores on stderr; `-q` silences everything on stderr
+  but errors. More detail per level comes with the commands that have something to say.
+- **Colors**: on only when the stream is a terminal, `--no-color` is absent and `NO_COLOR` is unset
+  or empty (no-color.org). stdout and stderr are decided separately. Explain's markers (`○ ● ✗`)
+  and arrows (`←`, `→`) are plain Unicode text, not box drawing, so they are printed in pipes too;
+  §7's ASCII fallback applies to `tree`'s box drawing (Stage 3).
+- **Human output shows paths under the home directory as `~/…`**; JSON keeps them absolute.
+- **JSON is built from view structs in `kipi-cli/src/output/json.rs`**, not by deriving
+  `Serialize` on kipi-core's types, so the model can change without changing the documented shape
+  (`docs/json.md`, `version: 1`). Sources print as `StoreSet::provenance` strings. `resolve <repo>
+  --json` keeps the top-level shape with one repo and its registry; `explain <repo> --json` prints
+  exactly that. Errors are never JSON.
+- **Inherited vs explicit skills** are recorded by resolution as `PlannedSkill::origin`
+  (`SkillOrigin::Scope(name)` / `Repo`) rather than inferred from the rule string, and exposed as
+  `inherited_from` in JSON.
+- **An unknown repo name** is a user error whose hint is the closest entry name, or, when the name
+  is an alias, the entry it belongs to. Commands take entry names, not aliases (that is `where`).
+- **Registry "size" in `explain` is its entry count** and the scopes it covers; token counts arrive
+  with `tokens.rs` in Stage 3.
+- **Provenance lines are table headers** (as decided in #3), e.g. `acme:bindings.toml:34` for every
+  `repos.events-pipeline.*` key; built-in decisions print the rule only (`← built in`,
+  `← grant: store \`acme\` dirs`).

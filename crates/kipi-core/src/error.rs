@@ -123,7 +123,27 @@ pub enum Error {
     NoHome,
 }
 
+/// What kind of failure an [`Error`] is, for the CLI's exit codes (roadmap §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ErrorKind {
+    /// The user can fix it: a malformed or inconsistent file, a missing setting.
+    User,
+    /// Reading or writing the filesystem (or running `git`) failed.
+    Io,
+}
+
 impl Error {
+    /// The kind of failure; [`ErrorKind::Io`] only for [`Error::Io`].
+    pub fn kind(&self) -> ErrorKind {
+        match self {
+            Error::Io { .. } => ErrorKind::Io,
+            Error::Invalid { .. }
+            | Error::UnknownKey { .. }
+            | Error::Conflict { .. }
+            | Error::NoHome => ErrorKind::User,
+        }
+    }
+
     /// An [`Error::Invalid`].
     pub fn invalid(at: Location, message: impl Into<String>, hint: impl Into<String>) -> Self {
         Error::Invalid {
@@ -262,6 +282,15 @@ mod tests {
         assert_eq!(closest("regsitry", keys), Some("registry"));
         assert_eq!(closest("colour", keys), None);
         assert_eq!(closest("x", keys), None);
+    }
+
+    #[test]
+    fn only_io_errors_are_io() {
+        let io = Error::io(Path::new("x"), io::Error::other("boom"), "retry");
+        assert_eq!(io.kind(), ErrorKind::Io);
+        let invalid = Error::invalid(Location::file("x"), "bad", "fix it");
+        assert_eq!(invalid.kind(), ErrorKind::User);
+        assert_eq!(Error::NoHome.kind(), ErrorKind::User);
     }
 
     #[test]
