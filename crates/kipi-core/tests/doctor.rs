@@ -10,6 +10,7 @@ use kipi_core::doctor::{
 };
 use kipi_core::model::{Machine, Store};
 use kipi_core::plan::{GrantDir, GrantKind, Source};
+use kipi_core::tokens::{Counter, Tokenizer};
 use kipi_test_support::builders::{
     MachineBuilder, StoreBuilder, draft, remote, reviewed, skill_refs,
 };
@@ -17,6 +18,11 @@ use kipi_test_support::repos::{FakeRepo, ManifestKind, create_fake_repo};
 use kipi_test_support::stores::ExampleStore;
 use kipi_test_support::workspace_root;
 use tempfile::TempDir;
+
+/// A token counter with no cache file.
+fn counter() -> Counter {
+    Counter::in_memory(Tokenizer::default())
+}
 
 const HOME: &str = "/HOME";
 const WORK: &str = "git.example.com/work/";
@@ -78,9 +84,16 @@ fn machine() -> MachineBuilder {
 }
 
 fn run(stores: Vec<Store>, machine: &Machine, checkouts: &Checkouts) -> Vec<Finding> {
-    diagnose(stores, machine, checkouts, Path::new(HOME), None)
-        .unwrap_or_else(|e| panic!("{}", e.report()))
-        .findings
+    diagnose(
+        stores,
+        machine,
+        checkouts,
+        Path::new(HOME),
+        None,
+        &counter(),
+    )
+    .unwrap_or_else(|e| panic!("{}", e.report()))
+    .findings
 }
 
 /// The only finding, which must be of `code`, at its level, with a hint.
@@ -246,6 +259,7 @@ fn k003_related_repo_in_an_unrelated_scope() {
         &Checkouts::default(),
         Path::new(HOME),
         None,
+        &counter(),
     )
     .unwrap_or_else(|e| panic!("{}", e.report()));
     let f = exactly_one(diagnosis.findings, Code::ScopeCrossing);
@@ -261,7 +275,15 @@ fn k003_grant_crossing_scopes_in_a_plan() {
     let fx = Fx::new();
     let (store, machine) = siblings(&fx, |_| {});
     let checkouts = Checkouts::default();
-    let diagnosis = diagnose(vec![store], &machine, &checkouts, Path::new(HOME), None).unwrap();
+    let diagnosis = diagnose(
+        vec![store],
+        &machine,
+        &checkouts,
+        Path::new(HOME),
+        None,
+        &counter(),
+    )
+    .unwrap();
     assert_eq!(diagnosis.findings, vec![]);
     // Resolution never grants across scopes; doctor double-checks the plan anyway.
     let mut plan = diagnosis.plan.clone();
@@ -278,6 +300,7 @@ fn k003_grant_crossing_scopes_in_a_plan() {
         checkouts: &checkouts,
         home: Path::new(HOME),
         only: None,
+        tokens: &counter(),
     };
     let f = exactly_one(doctor::check(&inputs).unwrap(), Code::ScopeCrossing);
     assert!(f.message.contains("repo `y` (scope `b`)"), "{}", f.message);
@@ -500,7 +523,7 @@ fn k010_notes_over_budget() {
     fs::create_dir_all(root.join("repos/api")).unwrap();
     let notes = root.join("repos/api/notes.md");
     let store = fx.work().notes("api").build();
-    fs::write(&notes, "word ".repeat(1200)).unwrap(); // 6,000 chars: 1,500 tokens
+    fs::write(&notes, " word".repeat(1500)).unwrap(); // 1,500 tokens: at the limit
     assert_eq!(
         run(
             vec![store.clone()],
@@ -509,7 +532,7 @@ fn k010_notes_over_budget() {
         ),
         vec![]
     );
-    fs::write(&notes, "word ".repeat(1201)).unwrap();
+    fs::write(&notes, " word".repeat(1501)).unwrap();
     let f = exactly_one(
         run(vec![store], &machine().build(), &Checkouts::default()),
         Code::NotesSize,
@@ -557,6 +580,7 @@ fn k012_reference_into_another_store() {
         &Checkouts::default(),
         Path::new(HOME),
         None,
+        &counter(),
     )
     .unwrap_or_else(|e| panic!("{}", e.report()));
     let f = exactly_one(diagnosis.findings, Code::CrossStore);
@@ -709,6 +733,7 @@ fn only_keeps_one_repos_findings() {
             &Checkouts::default(),
             Path::new(HOME),
             Some(name),
+            &counter(),
         )
         .unwrap()
         .findings
@@ -767,6 +792,7 @@ fn unrelated_resolution_errors_still_fail() {
         &Checkouts::default(),
         Path::new(HOME),
         None,
+        &counter(),
     )
     .expect_err("an unknown scope has no check of its own");
     assert!(err.to_string().contains("no such scope"), "{err}");
@@ -825,6 +851,7 @@ fn example_stores_have_no_errors() {
         &Checkouts::default(),
         Path::new(HOME),
         None,
+        &counter(),
     )
     .unwrap_or_else(|e| panic!("{}", e.report()));
     assert!(!diagnosis.has_errors(), "{:#?}", diagnosis.findings);

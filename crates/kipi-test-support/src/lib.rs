@@ -4,10 +4,12 @@
 //! - [`builders`]: build stores, store sets and machines in memory (for resolve tests).
 //! - [`stores`]: copy `examples/acme-store` and/or `examples/personal-store` into a tempdir.
 //! - [`repos`]: lay out fake git checkouts matching the example entries under any root.
+//! - [`many`]: a generated home with one store and many repos, for timing `tree`.
 //! - [`leak_guard`]: the denylist / home-path scanner behind the repo-wide leak test.
 
 pub mod builders;
 pub mod leak_guard;
+pub mod many;
 pub mod repos;
 pub mod stores;
 

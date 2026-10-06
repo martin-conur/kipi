@@ -7,6 +7,7 @@
 pub mod adapters;
 pub mod apply;
 pub mod authoring;
+pub mod cache;
 pub mod config;
 pub mod doctor;
 pub mod edit;

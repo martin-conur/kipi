@@ -33,6 +33,7 @@ use crate::error::{Location, Result};
 use crate::git;
 use crate::model::{Machine, RemoteUrl, Store, StoreSet};
 use crate::plan::{Plan, RepoPlan};
+use crate::tokens::Counter;
 
 pub use prepare::prepare;
 
@@ -283,6 +284,8 @@ pub struct Inputs<'a> {
     pub home: &'a Path,
     /// Only findings about this repo entry.
     pub only: Option<&'a str>,
+    /// Counts tokens for the size checks.
+    pub tokens: &'a Counter,
 }
 
 impl Inputs<'_> {
@@ -340,6 +343,7 @@ pub fn diagnose(
     checkouts: &Checkouts,
     home: &Path,
     only: Option<&str>,
+    tokens: &Counter,
 ) -> Result<Diagnosis> {
     let prepared = prepare(stores, machine)?;
     let inputs = Inputs {
@@ -349,6 +353,7 @@ pub fn diagnose(
         checkouts,
         home,
         only,
+        tokens,
     };
     let mut findings: Vec<Finding> = prepared
         .findings

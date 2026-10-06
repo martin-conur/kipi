@@ -7,6 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use assert_cmd::Command;
+use kipi_test_support::many::many_repos;
 use kipi_test_support::repos::{FakeRepo, ManifestKind, example_repos, lay_out};
 use kipi_test_support::stores::{ExampleStore, copy_example_store_to};
 use kipi_test_support::workspace_root;
@@ -290,16 +291,13 @@ fn exit_1_on_usage_errors() {
 #[test]
 fn exit_1_on_unimplemented_commands() {
     let home = Home::new();
-    let (code, err) = failure_of(&home, home.kipi().args(["tree"]));
+    let (code, err) = failure_of(&home, home.kipi().args(["completions", "zsh"]));
     assert_eq!(code, 1);
     assert_eq!(
         err,
-        "error: `kipi tree` is not implemented yet\n  hint: it lands in Stage 3 (roadmap §14); \
-         `kipi resolve` and `kipi explain <repo>` work today\n"
+        "error: `kipi completions` is not implemented yet\n  hint: it lands in Stage 4 \
+         (roadmap §14); `kipi resolve` and `kipi explain <repo>` work today\n"
     );
-    let (code, err) = failure_of(&home, home.kipi().args(["completions", "zsh"]));
-    assert_eq!(code, 1);
-    assert!(err.starts_with("error: `kipi completions` is not implemented yet"));
 }
 
 #[test]
@@ -533,7 +531,7 @@ fn onboarded_home() -> Home {
 }
 
 /// Everything under `dir` as path → contents (`-> target` for symlinks), skipping
-/// `.git` except its `info/exclude`.
+/// `.git` except its `info/exclude`, and the token cache in `.cache/`.
 fn files_under(dir: &Path) -> BTreeMap<PathBuf, String> {
     // Inside `.git`, descend only into `info/` and keep only `info/exclude`.
     let keep = |e: &walkdir::DirEntry| {
@@ -544,7 +542,9 @@ fn files_under(dir: &Path) -> BTreeMap<PathBuf, String> {
             .and_then(Path::parent)
             .and_then(Path::file_name);
         let name = e.file_name();
-        if parent == Some(".git".as_ref()) {
+        if name == ".cache" {
+            false
+        } else if parent == Some(".git".as_ref()) {
             name == "info"
         } else if parent == Some("info".as_ref()) && grandparent == Some(".git".as_ref()) {
             name == "exclude"
@@ -1762,4 +1762,230 @@ fn edit_creates_notes_from_the_template_and_reports_invalid_edits() {
         "{err}"
     );
     assert!(err.contains("hint: did you mean `summary`?"), "{err}");
+}
+
+/// An onboarded home after `kipi sync --all`.
+fn synced_home() -> Home {
+    let home = onboarded_home();
+    home.bare().args(["sync", "--all"]).assert().success();
+    home
+}
+
+#[test]
+fn tree_of_both_example_stores_matches_the_sketch_layout() {
+    let home = synced_home();
+    let out = stdout_of(&home, home.bare().arg("tree"));
+    insta::assert_snapshot!("tree", out);
+    for expected in [
+        "[store personal  ~/stores/personal-store  no git, shares skills]",
+        "[store acme  ~/stores/acme-store  no git]",
+        "|- code-review ● pr-conventions ● personal/commit-style ●",
+        "|- registry (6 repos, ",
+        "|- acme-ml  (~/work/acme/ml)  extends acme",
+        "skills: code-review ○ pr-conventions ✗ personal/commit-style ○ dbt-conventions ○ \
+         stream-recipes ●",
+        "related: billing-api ✓ granted   ml-platform ✓ granted",
+    ] {
+        assert!(out.contains(expected), "missing {expected:?} in\n{out}");
+    }
+    assert!(
+        !out.contains('├'),
+        "box drawing falls back to ASCII in a pipe"
+    );
+    let lines: Vec<&str> = out.lines().filter(|l| l.contains("✓ synced")).collect();
+    assert_eq!(lines.len(), 10, "every repo synced:\n{out}");
+    let column = |l: &str| l.find(" tok").map(|i| l[..i].chars().count());
+    assert!(
+        lines.windows(2).all(|w| column(w[0]) == column(w[1])),
+        "token counts share one column:\n{out}"
+    );
+}
+
+#[test]
+fn tree_filters_and_display_flags() {
+    let home = synced_home();
+    let cases: [(&str, &[&str]); 7] = [
+        ("tree-repo", &["--repo", "events-pipeline"]),
+        ("tree-skill", &["--skill", "commit-style"]),
+        ("tree-skill-qualified", &["--skill", "acme/dbt-conventions"]),
+        ("tree-store", &["--store", "personal"]),
+        ("tree-budget", &["--budget"]),
+        ("tree-machine", &["--machine"]),
+        (
+            "tree-repo-budget-machine",
+            &["--repo", "side-tool", "--budget", "--machine"],
+        ),
+    ];
+    for (name, args) in cases {
+        let out = stdout_of(&home, home.bare().arg("tree").args(args));
+        insta::assert_snapshot!(name, out);
+    }
+    let out = stdout_of(&home, home.bare().args(["tree", "--store", "personal"]));
+    assert!(!out.contains("acme"), "{out}");
+    let out = stdout_of(
+        &home,
+        home.bare().args(["tree", "--repo", "events-pipeline"]),
+    );
+    assert!(
+        !out.contains("billing-api  "),
+        "only the repo's own line: {out}"
+    );
+    assert!(!out.contains("personal  ("), "only the repo's store: {out}");
+    let out = stdout_of(
+        &home,
+        home.bare().args(["tree", "--skill", "stream-recipes"]),
+    );
+    assert_eq!(
+        out.matches("always-on:").count(),
+        2,
+        "acme and acme-ml: {out}"
+    );
+    assert_eq!(out.matches("✓ synced").count(), 1, "events-pipeline: {out}");
+}
+
+#[test]
+fn tree_of_the_personal_store_alone() {
+    let home = Home::new();
+    let out = stdout_of(&home, home.mounting(&[ExampleStore::Personal]).arg("tree"));
+    insta::assert_snapshot!("tree-personal-alone", out);
+    assert!(!out.contains("acme"), "no work content: {out}");
+    // The example machine.toml overrides the roots: `--machine` shows this machine's.
+    let out = stdout_of(
+        &home,
+        home.mounting(&[ExampleStore::Personal])
+            .args(["tree", "--machine"]),
+    );
+    insta::assert_snapshot!("tree-personal-alone-machine", out);
+    assert!(out.contains("personal  (/srv/code)"), "{out}");
+    assert!(out.contains("side-tool  /srv/code/side-tool"), "{out}");
+}
+
+#[test]
+fn tree_json_has_the_same_structure() {
+    let home = synced_home();
+    let doc = json_of(&home, home.bare().args(["tree", "--json"]));
+    insta::assert_snapshot!("tree-json", serde_json::to_string_pretty(&doc).unwrap());
+    assert_eq!(doc["version"], 1);
+    assert_eq!(doc["tokenizer"], "cl100k_base");
+    let acme = &doc["stores"][1];
+    assert_eq!(acme["name"], "acme");
+    let ml = &acme["scopes"][0]["scopes"][0];
+    assert_eq!(ml["name"], "acme-ml");
+    let events = ml["repos"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["name"] == "events-pipeline")
+        .unwrap();
+    assert_eq!(events["state"], "synced");
+    let marks: Vec<String> = events["skills"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| {
+            format!(
+                "{} {}",
+                s["reference"].as_str().unwrap(),
+                s["mark"].as_str().unwrap()
+            )
+        })
+        .collect();
+    assert_eq!(
+        marks,
+        [
+            "code-review inherited",
+            "pr-conventions excluded",
+            "personal/commit-style inherited",
+            "dbt-conventions inherited",
+            "stream-recipes explicit"
+        ]
+    );
+    assert_eq!(events["related"][0]["access"], "granted");
+    let tokens = events["always_on"]["tokens"].as_u64().unwrap();
+    let status = json_of(
+        &home,
+        home.bare().args(["status", "events-pipeline", "--json"]),
+    );
+    assert_eq!(
+        status["repos"][0]["always_on"]["tokens"], tokens,
+        "tree and status agree"
+    );
+}
+
+#[test]
+fn tree_filter_errors_are_user_errors_with_hints() {
+    let home = Home::new();
+    let (code, err) = failure_of(&home, home.kipi().args(["tree", "--store", "acmee"]));
+    assert_eq!(code, 1);
+    assert!(
+        err.contains("no mounted store `acmee`") && err.contains("`acme`"),
+        "{err}"
+    );
+    let (code, err) = failure_of(&home, home.kipi().args(["tree", "--skill", "code-reveiw"]));
+    assert_eq!(code, 1);
+    assert!(err.contains("did you mean `code-review`?"), "{err}");
+    let (code, err) = failure_of(
+        &home,
+        home.kipi().args(["tree", "--skill", "acme/rust-style"]),
+    );
+    assert_eq!(code, 1);
+    assert!(err.contains("`rust-style` is in store `personal`"), "{err}");
+    let (code, err) = failure_of(&home, home.kipi().args(["tree", "--repo", "billing"]));
+    assert_eq!(code, 1);
+    assert!(err.contains("alias of `billing-api`"), "{err}");
+    edit_bindings(
+        &home,
+        ExampleStore::Acme,
+        "skills = [\"stream-recipes\"]\n",
+        "",
+    );
+    let out = stdout_of(
+        &home,
+        home.kipi().args(["tree", "--skill", "stream-recipes"]),
+    );
+    assert_eq!(out, "no repo uses skill `stream-recipes`\n");
+}
+
+/// Roadmap §10 / §14: `tree` under 100 ms for 50 repos with a warm token cache. The bound
+/// is generous for a release build; the best of three runs is printed for the record.
+#[test]
+fn tree_of_fifty_repos_is_fast_with_a_warm_cache() {
+    let dir = tempfile::tempdir().unwrap();
+    let many = many_repos(dir.path(), 50).unwrap();
+    let kipi = || {
+        let mut cmd = Command::cargo_bin("kipi").unwrap();
+        cmd.env("HOME", &many.home)
+            .env_remove("KIPI_CONFIG_DIR")
+            .env_remove("KIPI_CACHE_DIR")
+            .env_remove("KIPI_STORE");
+        cmd
+    };
+    kipi().args(["sync", "--all"]).assert().success();
+    let first = kipi()
+        .arg("tree")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let first = String::from_utf8(first).unwrap();
+    assert_eq!(first.matches("✓ synced").count(), 50, "{first}");
+    assert!(
+        dir.path()
+            .join(".cache/kipi/tokens.cl100k_base.json")
+            .is_file()
+    );
+    let best = (0..3)
+        .map(|_| {
+            let start = std::time::Instant::now();
+            kipi().arg("tree").assert().success();
+            start.elapsed()
+        })
+        .min()
+        .unwrap();
+    eprintln!("kipi tree, 50 repos, warm cache: best of 3 = {best:?}");
+    assert!(
+        best < std::time::Duration::from_millis(100),
+        "kipi tree took {best:?} for 50 repos"
+    );
 }

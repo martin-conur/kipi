@@ -29,7 +29,7 @@ expression: "serde_json::to_string_pretty(&doc).unwrap()"
         }
       ],
       "always_on": {
-        "tokens": 265,
+        "tokens": 264,
         "budget": 4000,
         "over": false
       },

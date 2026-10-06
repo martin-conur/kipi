@@ -1,10 +1,7 @@
-//! K010: notes over 1,500 tokens (estimated). Notes are read on demand, but long ones
+//! K010: notes over 1,500 tokens (estimated with the configured encoding, cached). Notes are read on demand, but long ones
 //! cost the agent every time it does (roadmap §5.3: target 500).
 
-use std::fs;
-
 use crate::error::{Error, Location, Result};
-use crate::tokens;
 
 use super::{Code, Finding, Inputs};
 
@@ -19,9 +16,10 @@ pub(super) fn check(inputs: &Inputs<'_>, out: &mut Vec<Finding>) -> Result<()> {
         let Some(path) = &entry.notes else {
             continue;
         };
-        let text = fs::read_to_string(path)
+        let estimate = inputs
+            .tokens
+            .count_file(path)
             .map_err(|e| Error::io(path, e, "check the notes file's permissions"))?;
-        let estimate = tokens::estimate(&text);
         if estimate <= MAX_NOTES_TOKENS {
             continue;
         }

@@ -17,6 +17,7 @@ serde_json.workspace = true
 sha2.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
+tiktoken-rs.workspace = true
 toml_edit.workspace = true
 walkdir.workspace = true
 yaml-rust2.workspace = true
@@ -25,7 +26,6 @@ yaml-rust2.workspace = true
 insta.workspace = true
 kipi-test-support.workspace = true
 proptest.workspace = true
-tiktoken-rs.workspace = true
 
 [lints]
 workspace = true

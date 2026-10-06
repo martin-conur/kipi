@@ -35,7 +35,9 @@ pub fn run(env: &Env, loaded: &Loaded, repo: Option<&str>, out: &Output) -> Resu
         &loaded.plan,
         &Selection::Only(names),
         &opts,
+        &loaded.caches,
     )?;
+    loaded.save_caches(out);
     let rows: Vec<Row> = plans
         .into_iter()
         .zip(outcome.repos)

@@ -41,7 +41,15 @@ pub fn run(
     }
     let machine = config::load_machine(env)?;
     let checkouts = Checkouts::read(&machine);
-    let diagnosis = doctor::diagnose(stores, &machine, &checkouts, &env.home, repo)?;
+    let caches = super::caches(env, &cfg);
+    let diagnosis = doctor::diagnose(
+        stores,
+        &machine,
+        &checkouts,
+        &env.home,
+        repo,
+        &caches.tokens,
+    )?;
     let errors = diagnosis
         .findings
         .iter()
@@ -52,7 +60,9 @@ pub fn run(
         stores: diagnosis.stores,
         machine,
         plan: diagnosis.plan,
+        caches,
     };
+    loaded.save_caches(out);
     if let Some(name) = repo {
         loaded.repo(name)?;
     }

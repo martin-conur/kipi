@@ -5,7 +5,7 @@
 renders; `kipi scan --json`, `kipi sync --json` and `kipi status --json` print their own reports
 ([Scan](#scan), [Sync](#sync), [Status](#status)), as do `kipi stores --json` ([Stores](#stores)),
 the authoring commands ([Authoring](#authoring)), `kipi where --json` ([Where](#where)) and
-`kipi grep --json` ([Grep](#grep)); `kipi doctor --json` prints its findings
+`kipi grep --json` ([Grep](#grep)) and `kipi tree --json` ([Tree](#tree)); `kipi doctor --json` prints its findings
 (shape in [docs/doctor.md](doctor.md#json)). The shape is stable: fields
 are only ever added, and anything that renames, removes or changes the meaning of a field bumps
 `version`. Output is pretty-printed, deterministic (two runs
@@ -239,6 +239,41 @@ error on stderr, exit 1).
 **Hit**: `path` (absolute), `line` (1-based), `text` (the line, cut to 300 characters with `…`),
 `source`: `{"kind": "conventions", "scope"}`, `{"kind": "notes", "repo"}`,
 `{"kind": "skill", "store", "name"}` or `{"kind": "checkout", "repo"}`.
+
+## Tree
+
+`kipi tree --json`, with the same filters as the text (`--repo`, `--skill`, `--store`). The
+display flags (`--budget`, `--machine`) change only the text: the JSON always carries every
+field. Nothing is written but the caches in `~/.cache/kipi`; sync states come from a dry-run sync.
+
+```bash
+kipi tree --json | jq -r '.. | objects | select(.state?) | "\(.name)\t\(.always_on.tokens)"'
+kipi tree --skill code-review --json | jq -r '.. | objects | select(.state?) | .name' | fzf
+```
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `version` | number | Schema version, currently `1` |
+| `tokenizer` | string | The encoding the counts come from (`config.toml` `tokenizer`) |
+| `stores` | [TreeStore] | Mounted stores in mount order; with `--repo` / `--skill`, only those with a match |
+
+**TreeStore**: `name`, `path`, `git` (`{clean, remote}` \| null, as in [Stores](#stores)), `shares_skills` (bool), `scopes` ([TreeScope]: scopes without `extends`, in file order),
+`unscoped` ([TreeRepo]: repos that resolve to no scope).
+
+**TreeScope**: `name`, `roots` ([string] as declared), `machine_roots` ([string] from
+`machine.toml [roots]`, or `null` when not overridden here), `extends` (string \| null),
+`always_on_tokens` (number: the chain's `always` files, the registry the scope renders and the
+descriptions of the chain's skills, i.e. what every repo in the scope pays before its own section
+and skills), `skills` ([string]: the scope's own `skills` as written), `registry` (`{ "repos":
+number, "tokens": number }` when the scope has `registry = true`, else `null`), `scopes`
+([TreeScope] extending it), `repos` ([TreeRepo] resolved to it, sorted by name). With `--repo` or
+`--skill`, scopes with nothing matching under them are left out.
+
+**TreeRepo**: `name`, `path` (string \| null), `state` (as in [Status](#status)), `always_on`
+(AlwaysOn), `notes` (path of `repos/<name>/notes.md`, or `null`), `draft_summary` (bool), `skills`
+([{`reference`, `mark`}]: effective and excluded skills in the order the scope chain and the repo
+bind them; `mark` is `inherited`, `explicit` or `excluded`), `related` ([{`name`, `access`}];
+`access` is `granted`, `not_granted` or `not_cloned`).
 
 ## Exit codes
 
