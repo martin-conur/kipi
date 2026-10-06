@@ -1,0 +1,20 @@
+---
+source: crates/kipi-core/tests/render.rs
+expression: "block_file(&plan, &repo.name, Some(&home()))"
+---
+<!-- kipi:begin (do not edit; regenerate with `kipi sync`) -->
+## Conventions (personal)
+- Prefer small, boring dependencies; justify each new one in the commit body.
+- Every repo has a `README.md` with a one-paragraph summary and a "Run it" section.
+
+## Known repos (personal)
+- api (personal-api) — Personal JSON API behind the blog and side-tool uploads · /srv/code/api
+- blog (site) — Static site; posts in content/, theme in themes/plain · /srv/code/blog
+- dotfiles · /srv/code/dotfiles
+- side-tool (photos, renamer) — Small CLI that renames photos by EXIF date; Rust, entry point src/main.rs · /srv/code/side-tool · notes: ~/personal-store/repos/side-tool/notes.md
+
+## This repo
+Scope: personal. Related: api (read access granted).
+For any repo above, read its code at the listed path; check its notes first if listed.
+Lookup: `kipi where <alias>`, `kipi grep <term> --repos`.
+<!-- kipi:end -->

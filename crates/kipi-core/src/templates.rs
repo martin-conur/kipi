@@ -10,6 +10,15 @@ pub const NOTES_MD: &str = include_str!("../../../templates/notes.md");
 /// `bindings.toml` skeleton used by `kipi init`.
 pub const BINDINGS_TOML: &str = include_str!("../../../templates/bindings.toml");
 
+/// minijinja macros shared by the rendering templates (the registry line).
+pub const MACROS_MD: &str = include_str!("../../../templates/macros.md.j2");
+
+/// `generated/registry.<scope>.md`, rendered by `render::registry`.
+pub const REGISTRY_MD: &str = include_str!("../../../templates/registry.md.j2");
+
+/// The body of the generated block in `CLAUDE.md` / `AGENTS.md`, rendered by `render::block`.
+pub const BLOCK_MD: &str = include_str!("../../../templates/block.md.j2");
+
 #[cfg(test)]
 mod tests {
     use super::*;
