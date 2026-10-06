@@ -1,6 +1,7 @@
 //! Output formatting: color, JSON, tables, and how paths are shown.
 
 pub mod color;
+pub mod diff;
 pub mod json;
 pub mod table;
 

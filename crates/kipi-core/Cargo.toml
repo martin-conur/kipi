@@ -10,9 +10,12 @@ repository.workspace = true
 [dependencies]
 dirs.workspace = true
 minijinja.workspace = true
+regex.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 toml_edit.workspace = true
+walkdir.workspace = true
 yaml-rust2.workspace = true
 
 [dev-dependencies]
@@ -21,7 +24,6 @@ kipi-test-support.workspace = true
 proptest.workspace = true
 tempfile.workspace = true
 tiktoken-rs.workspace = true
-walkdir.workspace = true
 
 [lints]
 workspace = true

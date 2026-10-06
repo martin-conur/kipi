@@ -77,6 +77,12 @@ pub enum Command {
         /// Rewrite values still marked `# kipi:draft`.
         #[arg(long)]
         refresh_drafts: bool,
+        /// Store (by name) for checkouts outside every root; must own --scope.
+        #[arg(long, value_name = "NAME", requires = "scope")]
+        store: Option<String>,
+        /// Scope for checkouts outside every root (written as `scope =`).
+        #[arg(long)]
+        scope: Option<String>,
         #[command(flatten)]
         dry_run: DryRun,
     },

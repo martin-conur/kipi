@@ -1,0 +1,9 @@
+[workspace]
+members = ["crates/*"]
+
+[workspace.package]
+description = "Not a package description"
+
+[package]
+name = "cargo-workspace-readme"
+description.workspace = true

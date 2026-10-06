@@ -1,0 +1,38 @@
+---
+source: crates/kipi-core/tests/scan.rs
+expression: "m.bindings(ExampleStore::Personal)"
+---
+# Example personal store. Mounted on every machine; shares its skills.
+
+[store]
+name = "personal"
+version = 1
+share_skills = true                # other mounted stores may use "personal/commit-style"
+
+[defaults]
+budget_tokens = 4000
+agents = ["claude", "generic"]
+grant = "related"
+
+[scopes.personal]
+roots = ["~/code"]
+skills = ["rust-style", "commit-style"]
+always = ["conventions/personal.md"]
+registry = true
+remote_patterns = ["github.com/example-user/"]
+
+[repos.api]
+remote = "github.com/example-user/api"
+summary = "Personal JSON API behind the blog and side-tool uploads"  # kipi:draft
+
+[repos.blog]
+remote = "github.com/example-user/blog"
+summary = "Static site; posts in content/, theme in themes/plain"  # kipi:draft
+
+[repos.dotfiles]
+remote = "github.com/example-user/dotfiles"
+
+[repos.side-tool]
+remote = "github.com/example-user/side-tool"
+summary = "Small CLI that renames photos by EXIF date; Rust, entry point src/main.rs"  # kipi:draft
+aliases = ["side"]  # kipi:draft

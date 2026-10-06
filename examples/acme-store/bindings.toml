@@ -50,7 +50,7 @@ aliases = ["ml"]
 [repos.feature-store]
 remote = "github.com/acme-org/feature-store"
 summary = "Online and offline feature serving; dbt models in models/"  # kipi:draft
-aliases = ["features"]  # kipi:draft
+aliases = ["feature", "store"]  # kipi:draft
 
 [repos.web-dashboard]              # no summary yet: listed by name only, doctor reports it
 remote = "github.com/acme-org/web-dashboard"

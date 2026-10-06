@@ -1,0 +1,49 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: out
+---
+Scanned 3 directories: 10 checkouts.
+
+Added 1 entry:
+  + dotfiles  store personal, scope personal  ~/code/dotfiles
+      remote:  github.com/example-user/dotfiles
+
+Recorded in machine.toml:
+  acme-api  ~/work/acme/api
+  api  ~/code/api
+  billing-api  ~/work/acme/billing-api
+  blog  ~/code/blog
+  events-pipeline  ~/work/acme/ml/events-pipeline
+  feature-store  ~/work/acme/ml/feature-store
+  ml-platform  ~/work/acme/ml/ml-platform
+  side-tool  ~/code/side-tool
+  web-dashboard  ~/work/acme/web-dashboard
+  dotfiles  ~/code/dotfiles
+
+Filled remote:
+  blog  github.com/example-user/blog  personal
+
+Dry run: would write 2 files:
+--- ~/stores/personal-store/bindings.toml
++++ ~/stores/personal-store/bindings.toml
+@@ -32,2 +32,6 @@
+ summary = "Static site; posts in content/, theme in themes/plain"
+ aliases = ["site"]
++remote = "github.com/example-user/blog"
++
++[repos.dotfiles]
++remote = "github.com/example-user/dotfiles"
+--- ~/.config/kipi/machine.toml
++++ ~/.config/kipi/machine.toml
+@@ -1,0 +1,11 @@
++[repos]
++acme-api = "[HOME]/work/acme/api"
++api = "[HOME]/code/api"
++billing-api = "[HOME]/work/acme/billing-api"
++blog = "[HOME]/code/blog"
++events-pipeline = "[HOME]/work/acme/ml/events-pipeline"
++feature-store = "[HOME]/work/acme/ml/feature-store"
++ml-platform = "[HOME]/work/acme/ml/ml-platform"
++side-tool = "[HOME]/code/side-tool"
++web-dashboard = "[HOME]/work/acme/web-dashboard"
++dotfiles = "[HOME]/code/dotfiles"

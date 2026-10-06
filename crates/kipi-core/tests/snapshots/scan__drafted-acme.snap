@@ -1,0 +1,55 @@
+---
+source: crates/kipi-core/tests/scan.rs
+expression: "m.bindings(ExampleStore::Acme)"
+---
+# Example work store (roadmap §5.1). Mounted on the work machine only.
+
+[store]
+name = "acme"                      # unique among mounted stores; used in qualified refs and output
+version = 1                        # schema version; bump on breaking change
+share_skills = false               # true lets other mounted stores reference this store's skills as "<store>/<skill>"
+
+[defaults]
+budget_tokens = 4000               # always-on cap per repo
+agents = ["claude", "generic"]     # adapters to render by default
+grant = "related"                  # related | registry | none
+
+[scopes.acme]
+roots = ["~/work/acme"]            # path membership; nested roots allowed
+skills = ["code-review", "pr-conventions", "personal/commit-style"]   # last one: shared skill from the personal store
+always = ["conventions/acme.md"]   # rendered into the generated block
+registry = true
+remote_patterns = ["github.com/acme-org/"]   # for doctor's leak check
+
+[scopes.acme-ml]
+extends = "acme"
+roots = ["~/work/acme/ml"]
+skills = ["dbt-conventions"]
+
+[repos.acme-org-api]
+remote = "github.com/acme-org/api"
+summary = "Public REST gateway"  # kipi:draft
+
+[repos.billing-api]
+remote = "github.com/acme-org/billing-api"
+summary = "Invoicing and payment orchestration; OpenAPI in api/openapi.yaml"  # kipi:draft
+aliases = ["billing"]  # kipi:draft
+
+[repos.events-pipeline]
+remote = "github.com/acme-org/events-pipeline"
+summary = "Kafka consumers that turn raw events into billing and ML features"  # kipi:draft
+aliases = ["events", "pipeline"]  # kipi:draft
+
+[repos.feature-store]
+remote = "github.com/acme-org/feature-store"
+summary = "Online and offline feature serving; dbt models in models/"  # kipi:draft
+aliases = ["feature", "store"]  # kipi:draft
+
+[repos.ml-platform]
+remote = "github.com/acme-org/ml-platform"
+summary = "Shared training and feature tooling"  # kipi:draft
+aliases = ["ml", "platform"]  # kipi:draft
+
+[repos.web-dashboard]
+remote = "github.com/acme-org/web-dashboard"
+aliases = ["dashboard"]  # kipi:draft

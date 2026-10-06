@@ -45,6 +45,11 @@ impl Painter {
         self.paint(text, Style::new().red().bold())
     }
 
+    /// `warning:`.
+    pub fn warn(&self, text: impl Display) -> String {
+        self.paint(text, Style::new().yellow().bold())
+    }
+
     /// `hint:`.
     pub fn hint(&self, text: impl Display) -> String {
         self.paint(text, Style::new().cyan().bold())

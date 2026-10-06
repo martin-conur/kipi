@@ -2,8 +2,9 @@
 
 `kipi resolve --json` prints the resolved plan; `kipi resolve <repo> --json` and
 `kipi explain <repo> --json` print the same document restricted to one repo and the registry it
-renders. The shape is stable: fields are only ever added, and anything that renames, removes or
-changes the meaning of a field bumps `version`. Output is pretty-printed, deterministic (two runs
+renders; `kipi scan --json` prints its own report ([Scan](#scan)). The shape is stable: fields
+are only ever added, and anything that renames, removes or changes the meaning of a field bumps
+`version`. Output is pretty-printed, deterministic (two runs
 over the same stores and `machine.toml` are byte-identical) and ends with a newline.
 
 ```bash
@@ -85,6 +86,38 @@ Lines point at the `[scopes.<name>]` / `[repos.<name>]` table header that holds 
 **Entry**: `name`, `aliases` (as written), `aliases_draft`, `summary` (string \| null),
 `summary_draft`, `scope`, `local` (checkout or `null` = not cloned here), `notes`, `keys` (lookup
 keys: name and aliases, case-folded and whitespace-normalized), `source`.
+
+## Scan
+
+`kipi scan --json` (with or without `--dry-run`) prints a report instead of the plan. Same
+rules: `version` is shared with the plan document, paths are absolute, lists are deterministic.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `version` | number | Schema version, currently `1` |
+| `dry_run` | bool | `true` when nothing was written |
+| `roots` | [string] | Directories walked (scope roots after `machine.toml [roots]`, or the given paths) |
+| `missing_roots` | [string] | Roots or paths that do not exist here |
+| `checkouts` | [string] | Every git checkout found, sorted |
+| `added` | [Added] | New `[repos.<name>]` entries |
+| `recorded` | [{`entry`, `path`, `previous`}] | `machine.toml [repos]` lines written; `previous` is the vanished path a moved checkout replaced, else `null` |
+| `remotes_filled` | [{`entry`, `store`, `remote`}] | `remote` filled on entries that lacked one |
+| `refreshed` | [{`entry`, `store`, `field`, `value`}] | Drafts rewritten by `--refresh-drafts`; `field` is `summary` or `aliases`, `value` as written in TOML |
+| `warnings` | [Warning] | Things scan did not act on |
+| `not_found` | [string] | Entries of the mounted stores with no checkout on this machine, sorted |
+| `files` | [string] | Files written (or, with `dry_run`, that would be) |
+
+**Added**: `name`, `store`, `scope`, `explicit_scope` (`scope =` was written because the checkout
+lies outside every root), `path`, `remote` (string \| null), `summary` (string \| null; a draft),
+`aliases` ([string]; drafts).
+
+**Warning**: `code`, `entry` (string \| null), `path`, `message`, `hint`. Codes:
+`scope-conflict` (the remote matches another scope's `remote_patterns`), `remote-differs` (a
+recorded checkout's origin differs from its entry's `remote`), `duplicate-checkouts` (several
+checkouts match one entry, or clone one new repo; `entry` is `null` then), `ambiguous-match`
+(several entries match a checkout), `unplaced` (a new checkout outside every root, under two
+scopes' roots at the same depth, or without a free name), `vanished` (a `machine.toml` path that no
+longer exists).
 
 ## Exit codes
 
