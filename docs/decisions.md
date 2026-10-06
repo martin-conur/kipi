@@ -68,7 +68,7 @@ The spec wins wherever it is explicit.
   64 characters, equal to the directory name.
 - **Path forms.** `roots`, `config.toml` `stores` and every `machine.toml` path must be absolute or
   start with `~/`; `~` is expanded at load with the home directory from `Env`. `always` entries must
-  be relative paths inside the store (no `..`, not absolute).
+  be relative paths inside the store (no `..`, not absolute), stored canonically (`./a//b` → `a/b`).
 - **`remote` must already be normalized** (`host/owner/name`: no scheme, user, port, `:` or
   `.git`). Normalizing a raw origin URL is #24's `RemoteUrl`; until then a raw URL in
   `bindings.toml` is an error that shows the expected form.

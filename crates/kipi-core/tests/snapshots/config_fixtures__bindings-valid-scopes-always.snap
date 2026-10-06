@@ -19,7 +19,7 @@ scopes: [
         skills: [],
         always: [
             "conventions/main.md",
-            "./conventions/extra.md",
+            "conventions/extra.md",
         ],
         registry: false,
         remote_patterns: [],

@@ -218,7 +218,15 @@ fn check_version(src: &Source) -> Result<()> {
             "add `[store]` with `name = \"<store name>\"` and `version = 1`",
         ));
     };
-    match store.get("version").and_then(|v| v.as_integer()) {
+    let Some(version) = store.get("version") else {
+        return Err(Error::invalid(
+            src.at(&["store"]),
+            "missing key `version` in [store]",
+            format!("add `version = {STORE_VERSION}` to [store]"),
+        ));
+    };
+    // A non-integer falls through to serde, whose type error is already precise.
+    match version.as_integer() {
         Some(v) if v != STORE_VERSION => Err(Error::invalid(
             src.at(&["store", "version"]),
             format!("unsupported store version {v}"),
@@ -288,14 +296,18 @@ impl Validator<'_> {
             .collect()
     }
 
-    /// A path inside the store: relative, no `..`.
+    /// A path inside the store: relative, no `..`, stored canonically (`./a//b` → `a/b`).
     fn store_relative(&self, keys: &[&str], raw: &str) -> Result<PathBuf> {
-        let path = PathBuf::from(raw);
-        let inside = !raw.is_empty()
-            && path
-                .components()
-                .all(|c| matches!(c, Component::Normal(_) | Component::CurDir));
-        if !inside {
+        let mut path = PathBuf::new();
+        let mut inside = true;
+        for c in Path::new(raw).components() {
+            match c {
+                Component::Normal(part) => path.push(part),
+                Component::CurDir => {}
+                _ => inside = false,
+            }
+        }
+        if !inside || path.as_os_str().is_empty() {
             return Err(Error::invalid(
                 self.src.at(keys),
                 format!("`{raw}` is not a path inside the store"),

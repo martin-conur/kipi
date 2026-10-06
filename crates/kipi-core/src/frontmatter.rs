@@ -165,6 +165,10 @@ impl Frontmatter {
 
     /// The 1-based file line declaring `path` (`["x-kipi", "scope"]`), found by
     /// indentation; falls back to the nearest declared ancestor.
+    ///
+    /// Best effort, for error locations only: it scans block-style `key:` lines rather
+    /// than walking the parsed tree (yaml-rust2's `Yaml` carries no positions), so flow
+    /// mappings, multi-line keys or anchors resolve to the nearest ancestor's line.
     pub fn line_of(&self, path: &[&str]) -> Option<usize> {
         let mut found = None;
         let mut depth = 0;
