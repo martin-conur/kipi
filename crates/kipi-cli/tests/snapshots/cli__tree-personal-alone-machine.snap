@@ -1,0 +1,13 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: out
+---
+[store personal  ~/stores/personal-store  no git, shares skills]
+personal  (/srv/code)              always-on: 215 tok
+|- rust-style ● commit-style ●     [scope]
+|- registry (4 repos, 138 tok)
+|- api  /srv/code/api              268 tok  ✗ checkout gone  draft summary
+|- blog  /srv/code/blog            268 tok  ✗ checkout gone
+|- dotfiles  /srv/code/dotfiles    268 tok  ✗ checkout gone
+`- side-tool  /srv/code/side-tool  276 tok  ✗ checkout gone  notes
+   `- related: api ✓ granted

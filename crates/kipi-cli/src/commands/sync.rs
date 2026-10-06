@@ -63,7 +63,9 @@ pub fn run(env: &Env, loaded: &Loaded, args: &Args, out: &Output) -> Result<(), 
         &loaded.plan,
         &selection,
         &opts,
+        &loaded.caches,
     )?;
+    loaded.save_caches(out);
     if out.json {
         let text = json::sync(&outcome, args.dry_run).map_err(|e| Failure::json("the sync", e))?;
         return Ok(out.print(&text)?);

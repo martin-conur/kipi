@@ -19,11 +19,11 @@ deny.toml                  # license allowlist; bans tokio, reqwest, hyper, git2
 .leak-denylist             # leak-guard regexes (generic only; private ones via env, see below)
 crates/
   kipi-core/src/           # lib: model, config/, frontmatter, resolve, plan, adapters/, render/,
-                           #      apply, sync, manifest, json_merge, scan, doctor/, tokens, search, git,
+                           #      apply, sync, manifest, json_merge, scan, doctor/, tokens, cache, search, git,
                            #      error, templates (include_str! of templates/)
   kipi-cli/src/            # bin `kipi`: main.rs, commands/ (one file per subcommand), output/
   kipi-test-support/src/   # stores.rs (copy example stores), repos.rs (fake git repos),
-                           # builders.rs (in-memory stores/machines for resolve tests),
+                           # builders.rs (in-memory stores/machines for resolve tests), many.rs (50-repo timing fixture),
                            # leak_guard.rs (scanner); tests/ holds the repo-wide leak test
 templates/                 # SKILL.md, notes.md, bindings.toml skeletons; block/registry minijinja templates
 examples/
@@ -49,6 +49,7 @@ cargo test -p kipi-core --test resolve --test resolve_props  # resolution unit +
 cargo test -p kipi-core --test render --test splice_props    # rendering snapshots + splice properties
 cargo test -p kipi-core --test apply                       # apply engine: tempdir integration tests
 cargo test -p kipi-core --test doctor                      # doctor: one fixture per check code
+cargo test -p kipi-cli --test cli tree                     # tree snapshots + the 50-repo < 100 ms check
 cargo llvm-cov -p kipi-core --test resolve --test resolve_props  # resolve.rs coverage (cargo install cargo-llvm-cov)
 cargo deny check                                           # licenses + banned crates (cargo install cargo-deny)
 cargo run -p kipi-cli -- --help                            # run the CLI

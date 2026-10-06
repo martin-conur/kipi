@@ -9,6 +9,7 @@ use std::process::Command;
 
 use kipi_core::apply::{self, Change, EXCLUDE_BEGIN, MANIFEST, Op, Options, Report, Target, What};
 use kipi_core::config::{self, Env};
+use kipi_core::git::TrackedCache;
 use kipi_core::manifest::Manifest;
 use kipi_core::plan::{Action, Plan, repo_actions};
 use kipi_core::render::block;
@@ -75,7 +76,7 @@ impl World {
         let rp = plan.repo(repo).unwrap();
         let conventions = block::load_conventions(rp).unwrap();
         let block = block::render(plan, rp, &conventions, Some(&self.home));
-        let checkout = apply::checkout(self.dir(repo), false).unwrap();
+        let checkout = apply::checkout(self.dir(repo), false, &TrackedCache::default()).unwrap();
         repo_actions(rp, &block, &checkout)
             .unwrap()
             .actions()
@@ -89,8 +90,13 @@ impl World {
     }
 
     fn apply(&self, repo: &str, actions: &[Action], opts: Options) -> Report {
-        apply::run(&Target::repo(self.dir(repo)), actions, opts)
-            .unwrap_or_else(|e| panic!("{}", e.report()))
+        apply::run(
+            &Target::repo(self.dir(repo)),
+            actions,
+            opts,
+            &TrackedCache::default(),
+        )
+        .unwrap_or_else(|e| panic!("{}", e.report()))
     }
 
     fn sync_all(&self) -> Vec<Report> {
@@ -114,7 +120,13 @@ impl World {
             .filter(|r| r.store == store.name())
             .map(|r| apply::registry_action(&dir, r, Some(&self.home)))
             .collect();
-        apply::run(&Target::generated(&dir), &actions, opts).unwrap()
+        apply::run(
+            &Target::generated(&dir),
+            &actions,
+            opts,
+            &TrackedCache::default(),
+        )
+        .unwrap()
     }
 }
 
@@ -430,10 +442,11 @@ fn deleting_a_symlink_to_a_directory_never_deletes_the_targets_contents() {
             target: target.clone(),
         }],
         Options::default(),
+        &TrackedCache::default(),
     )
     .unwrap();
     assert!(link.join("nested/file.txt").is_file());
-    let report = apply::run(&t, &[], Options::default()).unwrap();
+    let report = apply::run(&t, &[], Options::default(), &TrackedCache::default()).unwrap();
     assert_eq!(
         report.changes,
         vec![Change {
@@ -472,12 +485,16 @@ fn a_tracked_claude_md_sends_the_block_to_claude_local_md() {
     fs::write(dir.join("CLAUDE.md"), "# Team rules\n").unwrap();
     git(&dir, &["add", "CLAUDE.md"]);
 
-    let checkout = apply::checkout(&dir, false).unwrap();
+    let checkout = apply::checkout(&dir, false, &TrackedCache::default()).unwrap();
     assert!(checkout.tracked.contains(&dir.join("CLAUDE.md")));
     assert!(!checkout.tracked.contains(&dir.join("AGENTS.md")));
     assert!(checkout.user_files.contains(&dir.join("CLAUDE.md")));
     assert!(!checkout.allow_tracked);
-    assert!(apply::checkout(&dir, true).unwrap().allow_tracked);
+    assert!(
+        apply::checkout(&dir, true, &TrackedCache::default())
+            .unwrap()
+            .allow_tracked
+    );
 
     let report = world.sync("billing-api", Options::default());
     assert!(report.skipped.is_empty(), "{:#?}", report.skipped);
@@ -508,7 +525,7 @@ fn enabling_generic_removes_the_kipi_created_claude_md() {
         fs::read_to_string(dir.join("AGENTS.md")).unwrap(),
         "# Ours\n"
     );
-    let checkout = apply::checkout(&dir, false).unwrap();
+    let checkout = apply::checkout(&dir, false, &TrackedCache::default()).unwrap();
     assert!(!checkout.user_files.contains(&dir.join("CLAUDE.md")));
     assert!(checkout.user_files.contains(&dir.join("AGENTS.md")));
 
@@ -545,7 +562,7 @@ fn a_kipi_created_file_the_user_edited_is_never_deleted() {
     let text = fs::read_to_string(&claude).unwrap();
     fs::write(&claude, format!("# My notes\n\n{text}")).unwrap();
     assert!(
-        apply::checkout(&dir, false)
+        apply::checkout(&dir, false, &TrackedCache::default())
             .unwrap()
             .user_files
             .contains(&claude)
@@ -675,6 +692,7 @@ fn actions_outside_the_target_are_errors() {
             text: String::new(),
         }],
         Options::default(),
+        &TrackedCache::default(),
     )
     .unwrap_err();
     assert!(err.to_string().contains("outside the target"), "{err}");

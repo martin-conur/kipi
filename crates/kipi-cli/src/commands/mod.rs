@@ -4,22 +4,25 @@
 mod authoring;
 mod doctor;
 mod edit;
-mod explain;
+pub mod explain;
 mod grep;
 mod resolve;
 mod scan;
 mod status;
 pub mod stores;
 mod sync;
+mod tree;
 mod where_;
 
 use std::path::PathBuf;
 
+use kipi_core::cache::Caches;
 use kipi_core::config::{self, Env};
 use kipi_core::error::closest;
 use kipi_core::model::{Config, Machine, StoreSet};
 use kipi_core::plan::{Plan, RepoPlan};
 use kipi_core::resolve::resolve as resolve_plan;
+use kipi_core::tokens::Tokenizer;
 
 use crate::cli::{Add, Command, Global};
 use crate::error::Failure;
@@ -35,6 +38,8 @@ pub struct Loaded {
     pub machine: Machine,
     /// The resolved plan.
     pub plan: Plan,
+    /// Token counts and git's tracked files, remembered in `~/.cache/kipi`.
+    pub caches: Caches,
 }
 
 impl Loaded {
@@ -53,11 +58,20 @@ impl Loaded {
         let machine = config::load_machine(env)?;
         let plan = resolve_plan(&stores, &machine)?;
         Ok(Loaded {
+            caches: caches(env, &cfg),
             config: cfg,
             stores,
             machine,
             plan,
         })
+    }
+
+    /// Write the caches back. A failure only costs speed next time, so it is a note on
+    /// stderr (with `-v`), not an error.
+    pub fn save_caches(&self, out: &Output) {
+        for e in self.caches.save() {
+            out.info(&format!("cache not saved: {e}"));
+        }
     }
 
     /// The plan of repo entry `name`, or a user error naming the closest entry.
@@ -87,6 +101,17 @@ impl Loaded {
             hint,
         ))
     }
+}
+
+/// The caches under `~/.cache/kipi` (or `$KIPI_CACHE_DIR`), counting tokens with
+/// `config.toml`'s `tokenizer` (default `cl100k_base`).
+pub fn caches(env: &Env, cfg: &Config) -> Caches {
+    let tokenizer = cfg
+        .tokenizer
+        .as_deref()
+        .and_then(Tokenizer::from_name)
+        .unwrap_or_default();
+    Caches::open(&env.cache_dir, tokenizer)
 }
 
 /// Run `command`.
@@ -162,6 +187,23 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
         Command::Edit { target } => {
             let env = env()?;
             edit::run(&env, &global.stores, &load(&env)?, target, out)
+        }
+        Command::Tree {
+            repo,
+            skill,
+            store,
+            budget,
+            machine,
+        } => {
+            let env = env()?;
+            let args = tree::Args {
+                repo: repo.as_deref(),
+                skill: skill.as_deref(),
+                store: store.as_deref(),
+                budget: *budget,
+                machine: *machine,
+            };
+            tree::run(&env, &load(&env)?, &args, out)
         }
         Command::Doctor { repo, fix, .. } => {
             doctor::run(&env()?, &global.stores, repo.as_deref(), *fix, out)
@@ -250,10 +292,7 @@ pub fn cwd_repo(loaded: &Loaded) -> Option<&RepoPlan> {
 /// The error for a declared but unimplemented subcommand.
 fn not_implemented(command: &Command) -> Failure {
     let name = command.name();
-    let stage = match command {
-        Command::Tree { .. } => "Stage 3",
-        _ => "Stage 4",
-    };
+    let stage = "Stage 4";
     Failure::user(
         format!("`kipi {name}` is not implemented yet"),
         format!(

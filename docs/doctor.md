@@ -79,7 +79,8 @@ characters. Agents read only the description to decide when to load a skill.
 
 ## K010 notes-size
 
-**info.** A repo's `notes.md` estimated over 1,500 tokens (target: 500).
+**info.** A repo's `notes.md` estimated over 1,500 tokens (target: 500), counted with the
+`config.toml` `tokenizer` (default `cl100k_base`).
 
 ## K011 registry-size
 

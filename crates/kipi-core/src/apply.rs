@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 
 use crate::adapters;
 use crate::error::{Error, Location, Result};
-use crate::git;
+use crate::git::{self, TrackedCache};
 use crate::json_merge::{self, Outcome};
 use crate::manifest::{self, BlockEntry, ExcludeEntry, FileEntry, GrantEntry, LinkEntry, Manifest};
 use crate::model::AgentId;
@@ -282,7 +282,7 @@ pub fn registry_action(store_dir: &Path, registry: &Registry, home: Option<&Path
 /// which always-on files git tracks, and which hold user content (present, and not
 /// created by kipi per the manifest, or created by kipi and since given text outside
 /// the block).
-pub fn checkout(dir: &Path, allow_tracked: bool) -> Result<Checkout> {
+pub fn checkout(dir: &Path, allow_tracked: bool, tracked: &TrackedCache) -> Result<Checkout> {
     let manifest = Manifest::load(&Target::repo(dir).manifest)?;
     let mut candidates: Vec<PathBuf> = Vec::new();
     for id in AgentId::ALL {
@@ -320,7 +320,7 @@ pub fn checkout(dir: &Path, allow_tracked: bool) -> Result<Checkout> {
     }
     Ok(Checkout {
         user_files,
-        tracked: git::tracked(dir, &candidates)?,
+        tracked: tracked.tracked(dir, &candidates)?,
         allow_tracked,
     })
 }
@@ -377,9 +377,14 @@ fn read(path: &Path) -> Result<String> {
 /// manifest. Errors are for I/O failures and actions outside the target root; anything
 /// kipi declines to do is reported in [`Report::skipped`] and the rest still happens.
 ///
-pub fn run(target: &Target, actions: &[Action], opts: Options) -> Result<Report> {
+pub fn run(
+    target: &Target,
+    actions: &[Action],
+    opts: Options,
+    tracked: &TrackedCache,
+) -> Result<Report> {
     let old = Manifest::load(&target.manifest)?;
-    let mut diff = Diff::new(target, &old, opts);
+    let mut diff = Diff::new(target, &old, opts, tracked);
     for action in actions {
         diff.desired(action)?;
     }
@@ -417,6 +422,8 @@ struct Diff<'a> {
     root: &'a Path,
     old: &'a Manifest,
     opts: Options,
+    /// Answers which files git tracks.
+    tracked: &'a TrackedCache,
     new: Manifest,
     steps: Vec<(Step, Option<Change>)>,
     report: Report,
@@ -432,11 +439,17 @@ struct Diff<'a> {
 }
 
 impl<'a> Diff<'a> {
-    fn new(target: &'a Target, old: &'a Manifest, opts: Options) -> Self {
+    fn new(
+        target: &'a Target,
+        old: &'a Manifest,
+        opts: Options,
+        tracked: &'a TrackedCache,
+    ) -> Self {
         Diff {
             root: &target.root,
             old,
             opts,
+            tracked,
             new: Manifest::new(),
             steps: Vec::new(),
             report: Report {
@@ -775,7 +788,12 @@ impl<'a> Diff<'a> {
         };
         // A tracked settings.local.json makes Claude Code ask for workspace trust before
         // applying it (docs/adapters.md), so the grant would silently not take effect.
-        if existing.is_some() && git::tracked(self.root, &[file.to_path_buf()])?.contains(file) {
+        if existing.is_some()
+            && self
+                .tracked
+                .tracked(self.root, &[file.to_path_buf()])?
+                .contains(file)
+        {
             self.skip(
                 file,
                 "tracked by git; Claude Code applies it only once the folder is trusted, so kipi does not write the read grant there",

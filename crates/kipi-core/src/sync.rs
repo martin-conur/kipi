@@ -10,11 +10,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::apply::{self, Op, Report, Target, What};
+use crate::cache::Caches;
 use crate::error::Result;
 use crate::model::{AgentId, Machine, StoreSet};
 use crate::plan::{self, Decided, Notice, Plan, RepoPlan, Source};
 use crate::render::block;
-use crate::tokens;
+use crate::tokens::Counter;
 
 /// Which repos a run covers.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -99,7 +100,8 @@ impl RepoState {
 /// with no adapter enabled the agent simply finds none of it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AlwaysOnSize {
-    /// Estimated tokens of the generated block plus the effective skills' descriptions.
+    /// Tokens of the generated block plus the effective skills' descriptions
+    /// ([`crate::tokens`]: an estimate with the configured encoding).
     pub tokens: u32,
     /// `budget_tokens`.
     pub budget: u32,
@@ -165,13 +167,18 @@ pub struct StoreOutcome {
 }
 
 /// Sync `selection` (roadmap §8 steps 2–5). Skipped actions are reported, not errors;
-/// errors are I/O failures and unreadable conventions or manifests.
+/// errors are I/O failures and unreadable conventions or manifests. `caches` count each
+/// repo's always-on size and remember which files git tracks.
+///
+/// A dry run diffs the repos in parallel (it spends most of its time waiting for `git`);
+/// a run that writes goes one repo at a time and stops at the first error.
 pub fn run(
     stores: &StoreSet,
     machine: &Machine,
     plan: &Plan,
     selection: &Selection,
     opts: &Options,
+    caches: &Caches,
 ) -> Result<Outcome> {
     let mut outcome = Outcome::default();
     for store in stores.stores() {
@@ -181,7 +188,12 @@ pub fn run(
             .filter(|r| r.store == store.name)
             .map(|r| apply::registry_action(&store.root, r, opts.home.as_deref()))
             .collect();
-        let report = apply::run(&Target::generated(&store.root), &actions, opts.apply)?;
+        let report = apply::run(
+            &Target::generated(&store.root),
+            &actions,
+            opts.apply,
+            &caches.tracked,
+        )?;
         outcome.registries.push(StoreOutcome {
             store: store.name.clone(),
             report,
@@ -191,8 +203,15 @@ pub fn run(
         Selection::All => plan.repos.iter().collect(),
         Selection::Only(names) => names.iter().filter_map(|n| plan.repo(n)).collect(),
     };
-    for repo in repos {
-        outcome.repos.push(sync_repo(stores, plan, repo, opts)?);
+    let sync = |repo: &&RepoPlan| sync_repo(stores, plan, repo, opts, caches);
+    if opts.apply.dry_run {
+        outcome.repos = parallel_map(&repos, sync)
+            .into_iter()
+            .collect::<Result<_>>()?;
+    } else {
+        for repo in &repos {
+            outcome.repos.push(sync(repo)?);
+        }
     }
     if *selection == Selection::All {
         let mut orphans: Vec<_> = machine
@@ -212,7 +231,7 @@ pub fn run(
                 name: m.entry.clone(),
                 store: None,
                 path: Some(m.path.clone()),
-                state: RepoState::Orphan(apply::run(&target, &[], opts.apply)?),
+                state: RepoState::Orphan(apply::run(&target, &[], opts.apply, &caches.tracked)?),
                 had_manifest: true,
                 notices: Vec::new(),
                 always_on: None,
@@ -227,6 +246,7 @@ fn sync_repo(
     plan: &Plan,
     repo: &RepoPlan,
     opts: &Options,
+    caches: &Caches,
 ) -> Result<RepoOutcome> {
     let conventions = block::load_conventions(repo)?;
     let rendered = block::render(plan, repo, &conventions, opts.home.as_deref());
@@ -237,7 +257,12 @@ fn sync_repo(
         state: RepoState::NotCloned,
         had_manifest: false,
         notices: Vec::new(),
-        always_on: Some(always_on_size(stores, repo, &rendered.text())),
+        always_on: Some(always_on_size(
+            stores,
+            repo,
+            &rendered.text(),
+            &caches.tokens,
+        )),
     };
     let Some(dir) = &repo.path else {
         return Ok(out);
@@ -248,7 +273,7 @@ fn sync_repo(
     }
     let target = Target::repo(dir);
     out.had_manifest = exists(&target.manifest);
-    let checkout = apply::checkout(dir, opts.allow_tracked)?;
+    let checkout = apply::checkout(dir, opts.allow_tracked, &caches.tracked)?;
     let overridden;
     let repo = match &opts.agents {
         Some(agents) => {
@@ -268,23 +293,55 @@ fn sync_repo(
         .flat_map(|a| a.notices.iter().cloned())
         .collect();
     let actions: Vec<_> = wanted.actions().cloned().collect();
-    out.state = RepoState::Applied(apply::run(&target, &actions, opts.apply)?);
+    out.state = RepoState::Applied(apply::run(&target, &actions, opts.apply, &caches.tracked)?);
     Ok(out)
 }
 
 /// The rendered block plus the descriptions of the skills the agent indexes at startup:
 /// the cost to one agent, so it is computed from the plan, before any `--agents` override
-/// (see [`AlwaysOnSize`]).
-fn always_on_size(stores: &StoreSet, repo: &RepoPlan, block: &str) -> AlwaysOnSize {
-    let descriptions: String = repo
+/// (see [`AlwaysOnSize`]). Each description is counted on its own.
+pub fn always_on_size(
+    stores: &StoreSet,
+    repo: &RepoPlan,
+    block: &str,
+    tokens: &Counter,
+) -> AlwaysOnSize {
+    let descriptions: u32 = repo
         .skills
         .iter()
-        .filter_map(|s| stores.store(&s.store)?.skill(&s.name)?.description.clone())
-        .collect();
+        .filter_map(|s| {
+            stores
+                .store(&s.store)?
+                .skill(&s.name)?
+                .description
+                .as_deref()
+        })
+        .map(|d| tokens.count(d))
+        .fold(0, u32::saturating_add);
     AlwaysOnSize {
-        tokens: tokens::estimate(block).saturating_add(tokens::estimate(&descriptions)),
+        tokens: tokens.count(block).saturating_add(descriptions),
         budget: repo.budget_tokens.value,
     }
+}
+
+/// `f` over `items` on up to one thread per core, results in `items`' order.
+fn parallel_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> {
+    let threads = std::thread::available_parallelism().map_or(1, |n| n.get());
+    if threads < 2 || items.len() < 2 {
+        return items.iter().map(f).collect();
+    }
+    let chunk = items.len().div_ceil(threads);
+    let f = &f;
+    std::thread::scope(|s| {
+        let handles: Vec<_> = items
+            .chunks(chunk)
+            .map(|c| s.spawn(move || c.iter().map(f).collect::<Vec<R>>()))
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|h| h.join().unwrap_or_else(|e| std::panic::resume_unwind(e)))
+            .collect()
+    })
 }
 
 fn exists(path: &Path) -> bool {

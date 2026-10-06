@@ -1,0 +1,27 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: out
+---
+[store personal  ~/stores/personal-store  no git, shares skills]
+personal  (~/code)                                     always-on: 211 tok
+|- rust-style ● commit-style ●                         [scope]
+|- registry (4 repos, 134 tok)
+|- api  ~/code/api                                     264 tok  ✓ synced  draft summary
+|- blog  ~/code/blog                                   264 tok  ✓ synced
+|- dotfiles  ~/code/dotfiles                           264 tok  ✓ synced
+`- side-tool  ~/code/side-tool                         272 tok  ✓ synced  notes
+   `- related: api ✓ granted
+[store acme  ~/stores/acme-store  no git]
+acme  (~/work/acme)                                    always-on: 343 tok
+|- code-review ● pr-conventions ● personal/commit-style ●  [scope]
+|- registry (6 repos, 205 tok)
+|- acme-ml  (~/work/acme/ml)  extends acme             always-on: 359 tok
+|  |- dbt-conventions ●                                [scope]
+|  |- events-pipeline  ~/work/acme/ml/events-pipeline  430 tok  ✓ synced  notes
+|  |  |- skills: code-review ○ pr-conventions ✗ personal/commit-style ○ dbt-conventions ○ stream-recipes ●
+|  |  `- related: billing-api ✓ granted   ml-platform ✓ granted
+|  |- feature-store  ~/work/acme/ml/feature-store      415 tok  ✓ synced  draft summary
+|  `- ml-platform  ~/work/acme/ml/ml-platform          415 tok  ✓ synced
+|- acme-api  ~/work/acme/api                           397 tok  ✓ synced
+|- billing-api  ~/work/acme/billing-api                397 tok  ✓ synced  notes  draft summary
+`- web-dashboard  ~/work/acme/web-dashboard            397 tok  ✓ synced

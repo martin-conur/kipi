@@ -46,3 +46,9 @@ unsafe_code = "forbid"
 [workspace.lints.clippy]
 dbg_macro = "warn"
 todo = "warn"
+
+# Dependencies are built optimized even in dev and test builds (kipi's own crates stay
+# unoptimized for fast rebuilds): the `tree` < 100 ms test runs the debug binary, whose
+# time is otherwise dominated by unoptimized hashing, templating and parsing.
+[profile.dev.package."*"]
+opt-level = 2

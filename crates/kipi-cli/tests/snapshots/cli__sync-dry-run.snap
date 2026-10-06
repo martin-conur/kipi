@@ -3,7 +3,7 @@ source: crates/kipi-cli/tests/cli.rs
 expression: out
 ---
 side-tool  ~/code/side-tool
-  +4 links, 2 blocks written, +3 grants, exclude updated · always-on ~274/4000 tok
+  +4 links, 2 blocks written, +3 grants, exclude updated · always-on ~272/4000 tok
     would create block ~/code/side-tool/CLAUDE.md
     would create dir ~/code/side-tool/.claude
     would create dir ~/code/side-tool/.claude/skills

@@ -726,3 +726,79 @@ The spec wins wherever it is explicit.
   that no longer loads is done in the editor directly; the error already names `file:line`.
 - **`ignore` and `regex`** come from the §12 list (`ignore` added to kipi-core, `regex` to
   kipi-cli to compile the pattern).
+## Stage 3: token counting with cache and `kipi tree` (#10)
+
+- **Counts come from `tiktoken-rs`** (now a regular `kipi-core` dependency) with the `config.toml`
+  `tokenizer` (default `cl100k_base`), counted as ordinary text (`<|endoftext|>` in a file is
+  just characters). They are estimates: Claude's tokenizer is not public. The character ÷ 4
+  estimate is gone; `sync`, `status` and doctor's K010 (notes size) all use the counter. Each
+  skill description is counted on its own, so the always-on total is block + Σ descriptions.
+- **The token cache** is `~/.cache/kipi/tokens.<encoding>.json` (`$KIPI_CACHE_DIR` overrides; one
+  file per encoding, so switching encodings never mixes counts). A file is keyed by (path, mtime
+  in ns, size) and is not read while its stamp holds (conventions in `tree`, notes in doctor).
+  Generated text has no file of its own: a rendered block, a registry or a skill description is
+  keyed by its SHA-256. The tokenizer is built only on a miss, which is what makes a warm run
+  fast (building `cl100k_base` alone takes ~250 ms in a debug build).
+- **The Stage 2 / #12 notes on the character estimate** (`sync` / `status` always-on size, K010's
+  "6,000 characters") are superseded by the above.
+- **Git's tracked files are cached too** (`~/.cache/kipi/tracked.json`), keyed by the stamp of
+  each checkout's `.git/index`, the file `git ls-files` reads. Measured on the 50-repo fixture,
+  one `git ls-files` per repo was ~110 ms of a 120 ms warm `tree` (release); everything else was
+  ~10 ms. A checkout whose `.git` is a file (worktree, submodule) is always asked; one with no
+  index tracks nothing. `$GIT_INDEX_FILE` is not honored. `apply::checkout` and `apply::run` take
+  the cache explicitly, and `sync::run` takes both caches as `cache::Caches`; tests pass
+  `TrackedCache::default()`, which remembers for the process only.
+- **Caches never fail a command.** An unreadable, malformed or other-version cache file reads as
+  empty. Saving is skipped when nothing was added. `Caches::save` saves each cache on its own, so a
+  token-cache failure never keeps the tracked cache from being written, and returns one error per
+  failed cache; each is a `-v` note on stderr. A map
+  over 4,096 entries keeps only what the run used. Writes are atomic, so two concurrent runs at
+  worst lose one run's additions.
+- **Dry-run syncs diff repos in parallel** (one thread per core, `std::thread::scope`), since a
+  cold run waits on `git` per repo; results keep plan order. A sync that writes stays sequential
+  and stops at the first error, as before.
+- **`tree` layout** follows §7: one `[store <name>  <path>  <git state>[, shares skills]]` header
+  per mounted store (git state from `git::status`, the helper `kipi stores` uses: `no git`
+  outside a git work tree, else `git: clean` / `git: uncommitted changes`, plus `, no remote`),
+  then its scopes
+  without `extends` at column 0, each followed by its own skills (`●`, `[scope]`), its registry
+  (`registry (N repos, T tok)`, only on the `registry = true` scope), the scopes extending it,
+  then its repos by name. Repos that resolve to no scope go under `(unscoped)`. Token counts line
+  up in one right-hand column. Box drawing (`├─ └─ │`) becomes `|- `- |` when stdout is not a
+  terminal; the markers `○ ● ✗ ✓ ·` print either way, as decided for `explain`.
+- **A repo line** shows its always-on tokens (as `1.3k` from 1,000 up), its sync state with the
+  `status` vocabulary (`✓ synced`, `✗ stale`, `✗ missing`, `· not cloned`, `✗ checkout gone`;
+  the same dry-run diff, so `tree` and `status` never disagree), then `notes` and `draft summary`
+  tags. Its `skills:` line (inherited `○`, explicit `●`, excluded `✗`, in the order the chain and
+  the repo bind them so an exclusion shows where the skill would have been) appears when the repo
+  binds or excludes skills itself, as events-pipeline does in the sketch, or under a `--repo` /
+  `--skill` filter; its `related:` line (`✓ granted`, `✗ not granted`, `· not cloned`) whenever it
+  has related repos.
+- **A scope's always-on** is what every repo in it pays before its own section and skills: the
+  chain's `always` files (counted as files, so the cache applies), the registry it renders, and
+  the descriptions of the chain's skills. That is why `acme-ml` (one more skill) is above `acme`
+  in the sketch, and why each repo's own figure is higher still (its this-repo section and skills).
+- **Filters.** `--store <name>` keeps one mounted store (an unknown name is a user error with a
+  did-you-mean). `--repo <entry>` keeps the path to that repo (its store, its scope chain with
+  their skills and registry lines) and expands it. `--skill <s>` keeps repos whose effective skills
+  include it, matched by name, or by store and name when qualified (`acme/dbt-conventions`), and
+  expands their skills; an unknown skill is a user error (naming the store that has it when the
+  qualifier is wrong), and a known one no repo uses prints `no repo uses skill <s>`. Filters
+  combine; scopes and stores left empty by `--repo` / `--skill` are dropped.
+- **Display flags** change the text only: `--budget` shows `tokens/budget` and an `over budget`
+  tag; `--machine` shows each scope's `machine.toml [roots]` override in place of its declared
+  roots and each repo's checkout (or `(not cloned here)`). `--json` always carries every field
+  (docs/json.md, "Tree").
+- **Performance fixture.** `kipi_test_support::many::many_repos(home, n)` lays out a home with a
+  store (`bench`: a registry scope with conventions and four team scopes), `n` committed git
+  checkouts and `config.toml` + `machine.toml`. The CLI test syncs 50 repos, warms the caches with
+  one `tree`, then asserts the best of three runs is under 100 ms. Measured on an 8-core macOS
+  laptop: ~14 ms release, ~22 ms debug (the test runs the debug binary); with both caches empty
+  ~170 ms release. The first CI run measured 120 ms on ubuntu-latest (about 2.7× the laptop, with
+  other tests running beside it), so two changes keep the margin:
+  - **Dependencies build with `opt-level = 2` in the dev profile** (`[profile.dev.package."*"]`
+    in the workspace `Cargo.toml`; kipi's own crates stay unoptimized). Debug-built SHA-256,
+    minijinja and TOML parsing were half of a debug run (45 → 27 ms). The cost is a slower
+    first build of the dependencies.
+  - **`git::status` (shared with `kipi stores`) answers a directory with no `.git` in it or any
+    ancestor without starting `git`** (−5 ms per store that is not under git).

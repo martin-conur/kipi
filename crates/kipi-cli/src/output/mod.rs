@@ -5,6 +5,7 @@ pub mod diff;
 pub mod json;
 pub mod status;
 pub mod table;
+pub mod tree;
 
 use std::io::{self, Write};
 use std::path::Path;

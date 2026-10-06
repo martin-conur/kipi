@@ -1,0 +1,36 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: out
+---
+[store personal  ~/stores/personal-store  no git, shares skills]
+personal  (~/code)                          always-on: 211 tok
+|- rust-style ● commit-style ●              [scope]
+|- registry (4 repos, 134 tok)
+|- api                                      264 tok  ✓ synced  draft summary
+|  `- skills: rust-style ○ commit-style ○
+|- blog                                     264 tok  ✓ synced
+|  `- skills: rust-style ○ commit-style ○
+|- dotfiles                                 264 tok  ✓ synced
+|  `- skills: rust-style ○ commit-style ○
+`- side-tool                                272 tok  ✓ synced  notes
+   |- skills: rust-style ○ commit-style ○
+   `- related: api ✓ granted
+[store acme  ~/stores/acme-store  no git]
+acme  (~/work/acme)                         always-on: 343 tok
+|- code-review ● pr-conventions ● personal/commit-style ●  [scope]
+|- registry (6 repos, 205 tok)
+|- acme-ml  (~/work/acme/ml)  extends acme  always-on: 359 tok
+|  |- dbt-conventions ●                     [scope]
+|  |- events-pipeline                       430 tok  ✓ synced  notes
+|  |  |- skills: code-review ○ pr-conventions ✗ personal/commit-style ○ dbt-conventions ○ stream-recipes ●
+|  |  `- related: billing-api ✓ granted   ml-platform ✓ granted
+|  |- feature-store                         415 tok  ✓ synced  draft summary
+|  |  `- skills: code-review ○ pr-conventions ○ personal/commit-style ○ dbt-conventions ○
+|  `- ml-platform                           415 tok  ✓ synced
+|     `- skills: code-review ○ pr-conventions ○ personal/commit-style ○ dbt-conventions ○
+|- acme-api                                 397 tok  ✓ synced
+|  `- skills: code-review ○ pr-conventions ○ personal/commit-style ○
+|- billing-api                              397 tok  ✓ synced  notes  draft summary
+|  `- skills: code-review ○ pr-conventions ○ personal/commit-style ○
+`- web-dashboard                            397 tok  ✓ synced
+   `- skills: code-review ○ pr-conventions ○ personal/commit-style ○

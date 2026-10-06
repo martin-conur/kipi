@@ -1,0 +1,370 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: "serde_json::to_string_pretty(&doc).unwrap()"
+---
+{
+  "version": 1,
+  "tokenizer": "cl100k_base",
+  "stores": [
+    {
+      "name": "personal",
+      "path": "[HOME]/stores/personal-store",
+      "git": null,
+      "shares_skills": true,
+      "scopes": [
+        {
+          "name": "personal",
+          "roots": [
+            "[HOME]/code"
+          ],
+          "machine_roots": null,
+          "extends": null,
+          "always_on_tokens": 211,
+          "skills": [
+            "rust-style",
+            "commit-style"
+          ],
+          "registry": {
+            "repos": 4,
+            "tokens": 134
+          },
+          "scopes": [],
+          "repos": [
+            {
+              "name": "api",
+              "path": "[HOME]/code/api",
+              "state": "synced",
+              "always_on": {
+                "tokens": 264,
+                "budget": 4000,
+                "over": false
+              },
+              "notes": null,
+              "draft_summary": true,
+              "skills": [
+                {
+                  "reference": "rust-style",
+                  "mark": "inherited"
+                },
+                {
+                  "reference": "commit-style",
+                  "mark": "inherited"
+                }
+              ],
+              "related": []
+            },
+            {
+              "name": "blog",
+              "path": "[HOME]/code/blog",
+              "state": "synced",
+              "always_on": {
+                "tokens": 264,
+                "budget": 4000,
+                "over": false
+              },
+              "notes": null,
+              "draft_summary": false,
+              "skills": [
+                {
+                  "reference": "rust-style",
+                  "mark": "inherited"
+                },
+                {
+                  "reference": "commit-style",
+                  "mark": "inherited"
+                }
+              ],
+              "related": []
+            },
+            {
+              "name": "dotfiles",
+              "path": "[HOME]/code/dotfiles",
+              "state": "synced",
+              "always_on": {
+                "tokens": 264,
+                "budget": 4000,
+                "over": false
+              },
+              "notes": null,
+              "draft_summary": false,
+              "skills": [
+                {
+                  "reference": "rust-style",
+                  "mark": "inherited"
+                },
+                {
+                  "reference": "commit-style",
+                  "mark": "inherited"
+                }
+              ],
+              "related": []
+            },
+            {
+              "name": "side-tool",
+              "path": "[HOME]/code/side-tool",
+              "state": "synced",
+              "always_on": {
+                "tokens": 272,
+                "budget": 4000,
+                "over": false
+              },
+              "notes": "[HOME]/stores/personal-store/repos/side-tool/notes.md",
+              "draft_summary": false,
+              "skills": [
+                {
+                  "reference": "rust-style",
+                  "mark": "inherited"
+                },
+                {
+                  "reference": "commit-style",
+                  "mark": "inherited"
+                }
+              ],
+              "related": [
+                {
+                  "name": "api",
+                  "access": "granted"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "unscoped": []
+    },
+    {
+      "name": "acme",
+      "path": "[HOME]/stores/acme-store",
+      "git": null,
+      "shares_skills": false,
+      "scopes": [
+        {
+          "name": "acme",
+          "roots": [
+            "[HOME]/work/acme"
+          ],
+          "machine_roots": null,
+          "extends": null,
+          "always_on_tokens": 343,
+          "skills": [
+            "code-review",
+            "pr-conventions",
+            "personal/commit-style"
+          ],
+          "registry": {
+            "repos": 6,
+            "tokens": 205
+          },
+          "scopes": [
+            {
+              "name": "acme-ml",
+              "roots": [
+                "[HOME]/work/acme/ml"
+              ],
+              "machine_roots": null,
+              "extends": "acme",
+              "always_on_tokens": 359,
+              "skills": [
+                "dbt-conventions"
+              ],
+              "registry": null,
+              "scopes": [],
+              "repos": [
+                {
+                  "name": "events-pipeline",
+                  "path": "[HOME]/work/acme/ml/events-pipeline",
+                  "state": "synced",
+                  "always_on": {
+                    "tokens": 430,
+                    "budget": 4000,
+                    "over": false
+                  },
+                  "notes": "[HOME]/stores/acme-store/repos/events-pipeline/notes.md",
+                  "draft_summary": false,
+                  "skills": [
+                    {
+                      "reference": "code-review",
+                      "mark": "inherited"
+                    },
+                    {
+                      "reference": "pr-conventions",
+                      "mark": "excluded"
+                    },
+                    {
+                      "reference": "personal/commit-style",
+                      "mark": "inherited"
+                    },
+                    {
+                      "reference": "dbt-conventions",
+                      "mark": "inherited"
+                    },
+                    {
+                      "reference": "stream-recipes",
+                      "mark": "explicit"
+                    }
+                  ],
+                  "related": [
+                    {
+                      "name": "billing-api",
+                      "access": "granted"
+                    },
+                    {
+                      "name": "ml-platform",
+                      "access": "granted"
+                    }
+                  ]
+                },
+                {
+                  "name": "feature-store",
+                  "path": "[HOME]/work/acme/ml/feature-store",
+                  "state": "synced",
+                  "always_on": {
+                    "tokens": 415,
+                    "budget": 4000,
+                    "over": false
+                  },
+                  "notes": null,
+                  "draft_summary": true,
+                  "skills": [
+                    {
+                      "reference": "code-review",
+                      "mark": "inherited"
+                    },
+                    {
+                      "reference": "pr-conventions",
+                      "mark": "inherited"
+                    },
+                    {
+                      "reference": "personal/commit-style",
+                      "mark": "inherited"
+                    },
+                    {
+                      "reference": "dbt-conventions",
+                      "mark": "inherited"
+                    }
+                  ],
+                  "related": []
+                },
+                {
+                  "name": "ml-platform",
+                  "path": "[HOME]/work/acme/ml/ml-platform",
+                  "state": "synced",
+                  "always_on": {
+                    "tokens": 415,
+                    "budget": 4000,
+                    "over": false
+                  },
+                  "notes": null,
+                  "draft_summary": false,
+                  "skills": [
+                    {
+                      "reference": "code-review",
+                      "mark": "inherited"
+                    },
+                    {
+                      "reference": "pr-conventions",
+                      "mark": "inherited"
+                    },
+                    {
+                      "reference": "personal/commit-style",
+                      "mark": "inherited"
+                    },
+                    {
+                      "reference": "dbt-conventions",
+                      "mark": "inherited"
+                    }
+                  ],
+                  "related": []
+                }
+              ]
+            }
+          ],
+          "repos": [
+            {
+              "name": "acme-api",
+              "path": "[HOME]/work/acme/api",
+              "state": "synced",
+              "always_on": {
+                "tokens": 397,
+                "budget": 4000,
+                "over": false
+              },
+              "notes": null,
+              "draft_summary": false,
+              "skills": [
+                {
+                  "reference": "code-review",
+                  "mark": "inherited"
+                },
+                {
+                  "reference": "pr-conventions",
+                  "mark": "inherited"
+                },
+                {
+                  "reference": "personal/commit-style",
+                  "mark": "inherited"
+                }
+              ],
+              "related": []
+            },
+            {
+              "name": "billing-api",
+              "path": "[HOME]/work/acme/billing-api",
+              "state": "synced",
+              "always_on": {
+                "tokens": 397,
+                "budget": 4000,
+                "over": false
+              },
+              "notes": "[HOME]/stores/acme-store/repos/billing-api/notes.md",
+              "draft_summary": true,
+              "skills": [
+                {
+                  "reference": "code-review",
+                  "mark": "inherited"
+                },
+                {
+                  "reference": "pr-conventions",
+                  "mark": "inherited"
+                },
+                {
+                  "reference": "personal/commit-style",
+                  "mark": "inherited"
+                }
+              ],
+              "related": []
+            },
+            {
+              "name": "web-dashboard",
+              "path": "[HOME]/work/acme/web-dashboard",
+              "state": "synced",
+              "always_on": {
+                "tokens": 397,
+                "budget": 4000,
+                "over": false
+              },
+              "notes": null,
+              "draft_summary": false,
+              "skills": [
+                {
+                  "reference": "code-review",
+                  "mark": "inherited"
+                },
+                {
+                  "reference": "pr-conventions",
+                  "mark": "inherited"
+                },
+                {
+                  "reference": "personal/commit-style",
+                  "mark": "inherited"
+                }
+              ],
+              "related": []
+            }
+          ]
+        }
+      ],
+      "unscoped": []
+    }
+  ]
+}

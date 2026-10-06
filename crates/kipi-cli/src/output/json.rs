@@ -17,6 +17,7 @@ use kipi_core::sync::{AlwaysOnSize, Outcome, RepoState, Tally};
 use serde::Serialize;
 
 use super::status::Row;
+use super::tree::{RepoNode, ScopeNode, Tree};
 
 /// Bumped on any breaking change to the shape below.
 pub const JSON_VERSION: u32 = 1;
@@ -909,4 +910,135 @@ enum HitSourceJson<'a> {
     Notes { repo: &'a str },
     Skill { store: &'a str, name: &'a str },
     Checkout { repo: &'a str },
+}
+
+/// A `kipi tree` as pretty-printed JSON with a trailing newline (`docs/json.md`, "Tree"):
+/// the same nodes the text shows, with every field whatever the display flags.
+pub fn tree(tree: &Tree) -> serde_json::Result<String> {
+    let doc = TreeJson {
+        version: JSON_VERSION,
+        tokenizer: tree.tokenizer,
+        stores: tree
+            .stores
+            .iter()
+            .map(|s| TreeStoreJson {
+                name: &s.name,
+                path: &s.root,
+                git: s.git.map(|g| GitJson {
+                    clean: g.clean,
+                    remote: g.has_remote,
+                }),
+                shares_skills: s.shares_skills,
+                scopes: s.scopes.iter().map(tree_scope).collect(),
+                unscoped: s.unscoped.iter().map(tree_repo).collect(),
+            })
+            .collect(),
+    };
+    let mut out = serde_json::to_string_pretty(&doc)?;
+    out.push('\n');
+    Ok(out)
+}
+
+fn tree_scope(s: &ScopeNode) -> TreeScopeJson<'_> {
+    TreeScopeJson {
+        name: &s.name,
+        roots: &s.roots,
+        machine_roots: s.machine_roots.as_deref(),
+        extends: s.extends.as_deref(),
+        always_on_tokens: s.always_on,
+        skills: &s.skills,
+        registry: s.registry.map(|r| TreeRegistryJson {
+            repos: r.repos,
+            tokens: r.tokens,
+        }),
+        scopes: s.scopes.iter().map(tree_scope).collect(),
+        repos: s.repos.iter().map(tree_repo).collect(),
+    }
+}
+
+fn tree_repo(r: &RepoNode) -> TreeRepoJson<'_> {
+    TreeRepoJson {
+        name: &r.name,
+        path: r.path.as_deref(),
+        state: r.state.as_str(),
+        always_on: always_on(r.always_on),
+        notes: r.notes.as_deref(),
+        draft_summary: r.draft_summary,
+        skills: r
+            .skills
+            .iter()
+            .map(|s| TreeSkillJson {
+                reference: &s.reference,
+                mark: s.mark.as_str(),
+            })
+            .collect(),
+        related: r
+            .related
+            .iter()
+            .map(|x| TreeRelatedJson {
+                name: &x.name,
+                access: x.access.as_str(),
+            })
+            .collect(),
+    }
+}
+
+#[derive(Serialize)]
+struct TreeJson<'a> {
+    version: u32,
+    tokenizer: &'a str,
+    stores: Vec<TreeStoreJson<'a>>,
+}
+
+#[derive(Serialize)]
+struct TreeStoreJson<'a> {
+    name: &'a str,
+    path: &'a Path,
+    git: Option<GitJson>,
+    shares_skills: bool,
+    scopes: Vec<TreeScopeJson<'a>>,
+    unscoped: Vec<TreeRepoJson<'a>>,
+}
+
+#[derive(Serialize)]
+struct TreeScopeJson<'a> {
+    name: &'a str,
+    roots: &'a [PathBuf],
+    machine_roots: Option<&'a [PathBuf]>,
+    extends: Option<&'a str>,
+    always_on_tokens: u32,
+    skills: &'a [String],
+    registry: Option<TreeRegistryJson>,
+    scopes: Vec<TreeScopeJson<'a>>,
+    repos: Vec<TreeRepoJson<'a>>,
+}
+
+#[derive(Serialize)]
+struct TreeRegistryJson {
+    repos: usize,
+    tokens: u32,
+}
+
+#[derive(Serialize)]
+struct TreeRepoJson<'a> {
+    name: &'a str,
+    path: Option<&'a Path>,
+    state: &'static str,
+    always_on: AlwaysOnJson,
+    notes: Option<&'a Path>,
+    draft_summary: bool,
+    skills: Vec<TreeSkillJson<'a>>,
+    related: Vec<TreeRelatedJson<'a>>,
+}
+
+#[derive(Serialize)]
+struct TreeSkillJson<'a> {
+    reference: &'a str,
+    mark: &'static str,
+}
+
+#[derive(Serialize)]
+struct TreeRelatedJson<'a> {
+    name: &'a str,
+    access: &'static str,
 }
