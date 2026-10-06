@@ -12,6 +12,10 @@ use crate::render::block::RenderedBlock;
 const ALWAYS_ON: &str = "CLAUDE.md";
 /// Personal project memory, loaded alongside `CLAUDE.md` and meant to stay untracked.
 const LOCAL_ALWAYS_ON: &str = "CLAUDE.local.md";
+/// Read in place of `CLAUDE.md` when neither Claude file exists (`claude-md-or-agents-md`).
+const READS_WHEN_ABSENT: &str = "AGENTS.md";
+/// Memory import syntax: `@path`.
+const IMPORT_PREFIX: &str = "@";
 /// Project skills: `.claude/skills/<name>/SKILL.md`.
 const SKILLS_DIR: &str = ".claude/skills";
 /// Per-user project settings, not committed.
@@ -40,6 +44,14 @@ impl AgentAdapter for Claude {
 
     fn local_always_on_file(&self, repo: &Path) -> Option<PathBuf> {
         Some(repo.join(LOCAL_ALWAYS_ON))
+    }
+
+    fn reads_when_absent(&self) -> Option<&'static str> {
+        Some(READS_WHEN_ABSENT)
+    }
+
+    fn import_line(&self, file: &str) -> Option<String> {
+        Some(format!("{IMPORT_PREFIX}{file}"))
     }
 
     fn render_block(&self, block: &RenderedBlock) -> String {

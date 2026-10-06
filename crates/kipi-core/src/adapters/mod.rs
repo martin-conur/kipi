@@ -22,6 +22,11 @@ pub trait AgentAdapter {
     /// An untracked file the agent also loads at startup, used in place of a tracked
     /// [`AgentAdapter::always_on_file`]; `None` when the agent has none.
     fn local_always_on_file(&self, repo: &Path) -> Option<PathBuf>;
+    /// Another agent's always-on file this agent reads instead while none of its own
+    /// exist; `None` when it reads only its own.
+    fn reads_when_absent(&self) -> Option<&'static str>;
+    /// The line that makes this agent load `file` (repo-relative) from its always-on file.
+    fn import_line(&self, file: &str) -> Option<String>;
     /// The block text written between (and including) the markers.
     fn render_block(&self, block: &RenderedBlock) -> String;
     /// The link that exposes `skill` in `repo`.

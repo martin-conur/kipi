@@ -37,6 +37,15 @@ impl AgentAdapter for Generic {
         None
     }
 
+    fn reads_when_absent(&self) -> Option<&'static str> {
+        None
+    }
+
+    /// None: AGENTS.md has no import syntax.
+    fn import_line(&self, _file: &str) -> Option<String> {
+        None
+    }
+
     fn render_block(&self, block: &RenderedBlock) -> String {
         block.text()
     }

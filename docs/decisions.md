@@ -371,9 +371,10 @@ The spec wins wherever it is explicit.
 - **Trait.** `AgentAdapter` follows §12 with three adjustments. `id()` returns `AgentId` (its
   `as_str()` is the `"claude"` / `"generic"` of §12), so callers match on an enum.
   `render_skill_entry` takes the `PlannedSkill` the `RepoPlan` already holds plus the repo
-  directory (the §12 `target`), and returns an absolute `Link`. Two methods are added:
-  `local_always_on_file` (decision 3 below) and `exclude_patterns`, so the `.git/info/exclude`
-  entries for what an adapter writes live in its constant block with its paths.
+  directory (the §12 `target`), and returns an absolute `Link`. Methods are added:
+  `local_always_on_file` (decision 3 below), `exclude_patterns`, so the `.git/info/exclude`
+  entries for what an adapter writes live in its constant block with its paths, and
+  `reads_when_absent` / `import_line` (the AGENTS.md rule below).
 - **Actions live in `plan.rs`.** `Action` is `Link`, `WriteBlock { file, text }` (the
   adapter-rendered block, placed by `render::splice::splice_text`), `MergeGrant { file, key,
   entries }`, `Remove` and `Exclude`. Adapters never emit `Remove`; the apply diff (#7) does.
@@ -395,6 +396,20 @@ The spec wins wherever it is explicit.
   `AGENTS.md` gets no block and a notice with a hint; so does a tracked `CLAUDE.local.md`.
   `--allow-tracked` writes into the tracked file. Which files are tracked is passed in
   (`plan::Checkout`), so `repo_actions` stays pure; sync (#8) fills it from `git ls-files`.
+- **Never make Claude Code drop the user's AGENTS.md.** By default Claude Code reads `AGENTS.md`
+  only while neither `CLAUDE.md` nor `CLAUDE.local.md` exists. So when the Claude adapter would
+  *create* its file (no user content in either CLAUDE file) and the repo has a user `AGENTS.md`:
+  (a) if another enabled adapter writes the block into that `AGENTS.md` (generic on, file not
+  skipped as tracked), Claude writes no always-on file and reports a notice, since Claude keeps
+  reading `AGENTS.md`, now with the block; (b) otherwise (generic off, or `AGENTS.md` tracked) the
+  new `CLAUDE.md` carries `@AGENTS.md` as the first line inside the block, so Claude still loads the
+  user's file, and the block exists only once because nothing writes it into `AGENTS.md`. The import
+  sits inside the markers, so kipi owns it and removes it with the block. (a) is preferred because it
+  adds no file. A user file is one present on disk that kipi did not create, or that it created and
+  the user has since edited outside the block (`plan::Checkout::user_files`, filled by sync from the
+  disk and the manifest), so a kipi-created `AGENTS.md` / `CLAUDE.md` pair stays stable across
+  syncs. The rule is generic: adapters declare `reads_when_absent` and `import_line`. Parent
+  directories are not inspected.
 - **Golden tests** (`tests/adapters.rs`): one snapshot per adapter per example repo with the
   block target, links (store paths as `~/…`), grant entries, exclude patterns, notices and the
   block text. A disabled adapter or a repo not cloned here is a one-line snapshot.

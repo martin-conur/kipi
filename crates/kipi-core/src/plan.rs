@@ -354,9 +354,13 @@ pub struct Notice {
     pub hint: String,
 }
 
-/// Facts about the checkout that are not in the plan: which files git tracks.
+/// Facts about the checkout that are not in the plan: which always-on files hold user
+/// content and which files git tracks. Sync fills it from the disk and the manifest.
 #[derive(Debug, Clone, Default)]
 pub struct Checkout {
+    /// Files present in the checkout that hold user content: not created by kipi (per the
+    /// manifest), or created by kipi and since given text outside the block. Absolute.
+    pub user_files: BTreeSet<PathBuf>,
     /// Tracked files, as absolute paths.
     pub tracked: BTreeSet<PathBuf>,
     /// `--allow-tracked`: write the block into a tracked file anyway.
@@ -405,33 +409,39 @@ pub fn repo_actions(
     checkout: &Checkout,
 ) -> Option<RepoActions> {
     let dir = repo.path.as_ref()?;
-    let mut patterns: Vec<String> = Vec::new();
-    let agents = repo
+    let adapters: Vec<&dyn AgentAdapter> = repo
         .agents
         .value
         .iter()
-        .map(|&id| {
-            let adapter = adapters::adapter(id);
-            let out = agent_actions(adapter, repo, dir, block, checkout);
-            let mut own: Vec<String> = adapter
-                .exclude_patterns()
-                .iter()
-                .map(|p| p.to_string())
-                .collect();
-            if let Some(Action::WriteBlock { file, .. }) = out.actions.first()
-                && *file != adapter.always_on_file(dir)
-                && let Ok(rel) = file.strip_prefix(dir)
-            {
-                own.push(rel.display().to_string());
-            }
-            for p in own {
-                if !patterns.contains(&p) {
-                    patterns.push(p);
-                }
-            }
-            out
-        })
+        .map(|&id| adapters::adapter(id))
         .collect();
+    let files: Vec<_> = adapters
+        .iter()
+        .map(|a| block_file(*a, dir, checkout))
+        .collect();
+    let mut patterns: Vec<String> = Vec::new();
+    let mut agents = Vec::new();
+    for (adapter, file) in adapters.iter().zip(&files) {
+        let file = keep_fallback_read(*adapter, dir, file.clone(), &files, checkout);
+        let out = agent_actions(*adapter, repo, dir, block, file);
+        let mut own: Vec<String> = adapter
+            .exclude_patterns()
+            .iter()
+            .map(|p| p.to_string())
+            .collect();
+        if let Some(Action::WriteBlock { file, .. }) = out.actions.first()
+            && *file != adapter.always_on_file(dir)
+            && let Ok(rel) = file.strip_prefix(dir)
+        {
+            own.push(rel.display().to_string());
+        }
+        for p in own {
+            if !patterns.contains(&p) {
+                patterns.push(p);
+            }
+        }
+        agents.push(out);
+    }
     patterns.push(MANIFEST_EXCLUDE.to_owned());
     Some(RepoActions {
         repo: repo.name.clone(),
@@ -444,19 +454,29 @@ pub fn repo_actions(
     })
 }
 
+/// Where an adapter's block goes, with any import line to put inside it.
+#[derive(Debug, Clone)]
+struct BlockFile {
+    file: PathBuf,
+    import: Option<String>,
+}
+
 fn agent_actions(
     adapter: &dyn AgentAdapter,
     repo: &RepoPlan,
     dir: &Path,
     block: &RenderedBlock,
-    checkout: &Checkout,
+    file: Result<BlockFile, Notice>,
 ) -> AgentActions {
     let mut actions = Vec::new();
     let mut notices = Vec::new();
-    match block_file(adapter, dir, checkout) {
-        Ok(file) => actions.push(Action::WriteBlock {
+    match file {
+        Ok(BlockFile { file, import }) => actions.push(Action::WriteBlock {
             file,
-            text: adapter.render_block(block),
+            text: match import {
+                Some(line) => adapter.render_block(&block.with_preamble(&line)),
+                None => adapter.render_block(block),
+            },
         }),
         Err(notice) => notices.push(notice),
     }
@@ -473,31 +493,80 @@ fn agent_actions(
     }
 }
 
+/// An agent that reads another agent's file while none of its own exist (Claude Code
+/// reads `AGENTS.md` when there is no `CLAUDE.md` / `CLAUDE.local.md`) must not lose the
+/// user's copy of that file because kipi created one of its own. If another enabled
+/// adapter writes the block into that file, this adapter writes nothing (the agent
+/// keeps reading it, block included); otherwise its new file imports the user's.
+fn keep_fallback_read(
+    adapter: &dyn AgentAdapter,
+    dir: &Path,
+    file: Result<BlockFile, Notice>,
+    files: &[Result<BlockFile, Notice>],
+    checkout: &Checkout,
+) -> Result<BlockFile, Notice> {
+    let Some(name) = adapter.reads_when_absent() else {
+        return file;
+    };
+    let fallback = dir.join(name);
+    let own = [
+        Some(adapter.always_on_file(dir)),
+        adapter.local_always_on_file(dir),
+    ];
+    let creating = !own
+        .iter()
+        .flatten()
+        .any(|p| checkout.user_files.contains(p));
+    if !creating || !checkout.user_files.contains(&fallback) {
+        return file;
+    }
+    if files.iter().flatten().any(|f| f.file == fallback) {
+        return Err(Notice {
+            message: format!(
+                "{} not created: the repo's own {name}, which carries the block, is what {} reads while it is absent",
+                display_name(&adapter.always_on_file(dir)),
+                adapter.id(),
+            ),
+            hint: format!(
+                "nothing to do; create {} yourself to have kipi write the block there instead",
+                display_name(&adapter.always_on_file(dir))
+            ),
+        });
+    }
+    file.map(|f| BlockFile {
+        import: adapter.import_line(name),
+        ..f
+    })
+}
+
+fn display_name(p: &Path) -> String {
+    p.file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned())
+}
+
 /// Where the block goes (roadmap §15 decision 3): the always-on file unless git tracks
 /// it, then the adapter's untracked side file, else nowhere.
 fn block_file(
     adapter: &dyn AgentAdapter,
     dir: &Path,
     checkout: &Checkout,
-) -> Result<PathBuf, Notice> {
+) -> Result<BlockFile, Notice> {
     let main = adapter.always_on_file(dir);
     let tracked = |p: &Path| !checkout.allow_tracked && checkout.tracked.contains(p);
+    let found = |file: PathBuf| Ok(BlockFile { file, import: None });
     if !tracked(&main) {
-        return Ok(main);
+        return found(main);
     }
-    let name = |p: &Path| {
-        p.file_name()
-            .map_or_else(String::new, |n| n.to_string_lossy().into_owned())
-    };
+    let name = display_name;
     match adapter.local_always_on_file(dir) {
-        Some(local) if !tracked(&local) => Ok(local),
+        Some(local) if !tracked(&local) => found(local),
         Some(local) => Err(Notice {
             message: format!("{} and {} are tracked; generated block not written", name(&main), name(&local)),
             hint: "untrack one of them, or pass `--allow-tracked` to write the block into the tracked file".into(),
         }),
         None => Err(Notice {
             message: format!("{} is tracked; generated block not written", name(&main)),
-            hint: "pass `--allow-tracked` to append the block anyway (it will show in `git diff`)".into(),
+            hint: "pass `--allow-tracked` to write the block anyway (it will show in `git diff`)".into(),
         }),
     }
 }

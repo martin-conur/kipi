@@ -84,6 +84,13 @@ impl RenderedBlock {
         &self.body
     }
 
+    /// This block with `line` and a blank line before its content (an adapter's import).
+    pub fn with_preamble(&self, line: &str) -> RenderedBlock {
+        RenderedBlock {
+            body: format!("{line}\n\n{}", self.body),
+        }
+    }
+
     /// The whole block, from the begin marker through the end marker (no trailing newline).
     pub fn text(&self) -> String {
         format!("{BEGIN}\n{}{END}", self.body)
