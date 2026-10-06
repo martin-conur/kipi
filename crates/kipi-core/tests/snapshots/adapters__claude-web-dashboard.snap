@@ -1,0 +1,35 @@
+---
+source: crates/kipi-core/tests/adapters.rs
+expression: text
+---
+repo: web-dashboard at /Volumes/work/acme/web-dashboard
+write block → CLAUDE.md
+link .claude/skills/code-review → ~/acme-store/skills/code-review
+link .claude/skills/pr-conventions → ~/acme-store/skills/pr-conventions
+link .claude/skills/commit-style → ~/personal-store/skills/commit-style
+grant → .claude/settings.local.json permissions.additionalDirectories
+  + ~/acme-store/repos
+  + ~/acme-store/skills
+  + ~/personal-store/skills
+exclude: .claude/skills/ .claude/settings.local.json .agents/ .kipi/
+
+<!-- kipi:begin (do not edit; regenerate with `kipi sync`) -->
+## Conventions (acme)
+- Every service exposes `/healthz` and `/readyz`; never remove them.
+- Money is stored as integer minor units with an ISO 4217 currency code, never as floats.
+- Public API changes start in the OpenAPI file and go through review before code.
+- Branches are `<ticket>-<short-name>`; squash-merge to `main`.
+
+## Known repos (acme)
+- acme-api — Public REST gateway · /Volumes/work/acme/api
+- billing-api (billing, invoices) — Invoicing and payment orchestration; OpenAPI in api/openapi.yaml · /Volumes/work/acme/billing-api · notes: ~/acme-store/repos/billing-api/notes.md
+- events-pipeline (events, pipeline) — Kafka consumers that turn raw events into billing and ML features · /Volumes/work/acme/ml/events-pipeline · notes: ~/acme-store/repos/events-pipeline/notes.md
+- feature-store (feature, store) — Online and offline feature serving; dbt models in models/ · (not cloned here)
+- ml-platform (ml) — Shared training and feature tooling · /Volumes/work/acme/ml/ml-platform
+- web-dashboard · /Volumes/work/acme/web-dashboard
+
+## This repo
+Scope: acme.
+For any repo above, read its code at the listed path; check its notes first if listed.
+Lookup: `kipi where <alias>`, `kipi grep <term> --repos`.
+<!-- kipi:end -->

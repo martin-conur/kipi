@@ -1,0 +1,5 @@
+---
+source: crates/kipi-core/tests/adapters.rs
+expression: text
+---
+generic is not enabled for events-pipeline

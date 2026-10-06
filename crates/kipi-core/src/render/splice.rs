@@ -15,7 +15,13 @@ const FIX_HINT: &str = "keep exactly one `<!-- kipi:begin … -->` … `<!-- kip
 /// The new contents of the file at `path` (used only in errors), given its current
 /// contents (`None` when it does not exist) and the block to place.
 pub fn splice(path: &Path, existing: Option<&str>, block: &RenderedBlock) -> Result<String> {
-    let block = block.text();
+    splice_text(path, existing, &block.text())
+}
+
+/// [`splice`] for block text an adapter already rendered
+/// ([`crate::adapters::AgentAdapter::render_block`]): from the begin marker through the
+/// end marker, without a trailing newline.
+pub fn splice_text(path: &Path, existing: Option<&str>, block: &str) -> Result<String> {
     let text = match existing {
         None | Some("") => return Ok(format!("{block}\n")),
         Some(text) => text,
