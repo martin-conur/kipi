@@ -1,7 +1,7 @@
 //! Comment-preserving edits to `bindings.toml` and `machine.toml`, and writing them.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use toml_edit::{Array, DocumentMut, Item, Table, Value};
 
@@ -29,20 +29,9 @@ pub fn write_files(writes: &[FileWrite]) -> Result<()> {
         if let Some(dir) = w.path.parent() {
             fs::create_dir_all(dir).map_err(|e| Error::io(dir, e, hint))?;
         }
-        let tmp = tmp_path(&w.path);
-        fs::write(&tmp, &w.after).map_err(|e| Error::io(&tmp, e, hint))?;
-        fs::rename(&tmp, &w.path).map_err(|e| {
-            let _ = fs::remove_file(&tmp);
-            Error::io(&w.path, e, hint)
-        })?;
+        crate::apply::write_atomic(&w.path, &w.after)?;
     }
     Ok(())
-}
-
-fn tmp_path(path: &Path) -> PathBuf {
-    let mut name = path.file_name().unwrap_or_default().to_os_string();
-    name.push(".kipi-tmp");
-    path.with_file_name(name)
 }
 
 /// A value carrying the draft marker.

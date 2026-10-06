@@ -7,8 +7,8 @@ The spec wins wherever it is explicit.
 
 - **YAML crate: `yaml-rust2`.** §12 allows `serde_yaml` or `yaml-rust2`; `serde_yaml` is
   deprecated upstream (`0.9.34+deprecated`), so frontmatter parsing will use `yaml-rust2`.
-- **File lock crate: `fs4`.** §12 allows `fs4` or `fd-lock`; `fs4` has the simpler
-  lock-a-`File` API for `~/.config/kipi/lock`.
+- **File lock crate: `fs4`** (superseded in #7: the apply engine uses `std::fs::File::try_lock`,
+  stable since Rust 1.89, so no lock crate is needed).
 - **Toolchain pinned to 1.92.0, edition 2024, `rust-version = "1.92"`.** One version for local
   and CI runs; bump deliberately in its own PR.
 - **Workspace version `0.1.0`.** The Stage 4 release cuts 0.1.0; until then `--version` reports it
@@ -415,3 +415,62 @@ The spec wins wherever it is explicit.
   block text. A disabled adapter or a repo not cloned here is a one-line snapshot.
 - **Size rule**: a test counts lines of every `adapters/*.rs` except `mod.rs` (shared trait and
   helpers) and fails at 100.
+
+## Stage 2: apply engine (#7)
+
+- **One engine, many targets.** `apply::run(target, actions, options)` takes a `Target` (a root
+  every action path must live under, plus its manifest file) and returns a `Report` of changes,
+  skipped actions (each with a hint) and foreign entries. A consumer repo is
+  `Target::repo(dir)` with `.kipi/manifest.toml`; a store's registries are
+  `Target::generated(store)`, rooted at `generated/` with `generated/.kipi-manifest.toml`, so a
+  registry whose scope drops `registry = true` is removed exactly like a stale link. Registries are
+  `Action::WriteFile` (new variant: a whole file kipi owns), built by `apply::registry_action`.
+  Sync (#8) must call `run` with an empty action list for a repo (or store) that no longer has a
+  plan, so unmounting a store or unbinding a repo cleans up through the manifest.
+- **Manifest** (`manifest.rs`, `version = 1`): paths relative to the target root. `[[link]]`
+  path + absolute target; `[[block]]` path, `created` (kipi created the file) and the block's
+  `sha256:` hash; `[[file]]` path + hash; `[exclude]` patterns; `dirs` kipi created; `[[grant]]`
+  file, key and owned entries, defined here and carried over untouched until the grants engine
+  (#23) fills it. Unknown keys or another version are errors whose hint is "delete the manifest
+  and re-run" (everything it listed is then foreign and left alone). An empty manifest is deleted,
+  with `.kipi/`.
+- **Three-way diff, per kind.**
+  - Link: missing → created; a symlink to the same target → kept (adopted into the manifest if it
+    was not there, so a lost manifest heals); a symlink elsewhere → replaced atomically (temp link
+    + rename); a regular file or directory → skipped unless `--force`, which removes it first.
+    Removal deletes the link only if it is still a symlink to the recorded target; anything else is
+    reported and left in place. Deleting uses `remove_file` on the link, which never touches the
+    target.
+  - Block: spliced as in rendering; written only when the text changes. Removal takes the block out
+    (`render::splice::remove_block`, the inverse of appending: text that ended in one newline gets
+    back byte for byte) and deletes the file only when kipi created it and nothing but whitespace is
+    left. A symlinked or directory always-on file is skipped with a hint: kipi never writes through
+    a symlink (a `CLAUDE.md -> AGENTS.md` setup keeps working, with the block in `AGENTS.md`).
+  - File: written when missing, kipi's, or with `--force`; removed only when its hash still matches.
+  - Exclude: one marker section in `.git/info/exclude` (``# kipi:begin (managed by `kipi sync`; do not
+    edit)`` … `# kipi:end`), replaced in place or appended; removed with the last action. Located with
+    `git rev-parse --git-path info/exclude` when `.git` is a file (worktrees, submodules).
+  - Grants: `MergeGrant` is accepted and ignored until #23.
+- **Directories.** Missing parents are created one by one and recorded; a recorded directory that no
+  wanted path lives under is removed once empty (deepest first) and stays recorded while it still
+  holds something kipi did not write. Nothing is written or removed below a directory that is a
+  symlink (or a file): the action is skipped, and an old entry there is dropped, since acting on it
+  would act on whatever the symlink points at.
+- **Foreign** entries are what sits in a directory holding kipi's links without being in the
+  manifest or wanted (a hand-installed skill); reported, never touched.
+- **Crash safety.** Before touching the disk, `run` writes the union of the old and new manifests,
+  so an interrupted run leaves nothing unrecorded; the final manifest follows. Each file write is a
+  temp file plus rename (`apply::write_atomic`, now shared with `scan`).
+- **Dry run** plans the same steps and returns their changes without executing any. The only
+  possible difference from a real run is a directory predicted empty that turns out not to be.
+- **Skips are not errors.** A refusal (file in the way, malformed markers, a symlinked file) is a
+  `Skipped` with a hint and the rest of the actions still apply; errors are I/O failures and
+  actions outside the target root (a kipi bug).
+- **`Checkout`** is filled by `apply::checkout(dir, allow_tracked)`: the always-on files of every
+  adapter (`CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`) that git tracks (`git ls-files`), and those
+  holding user content: present and not created by kipi per the manifest, or created by kipi but
+  with non-whitespace text outside the block (or a symlink, or unreadable).
+- **Lock: `std::fs::File::try_lock`** on `<config dir>/lock` (stable since Rust 1.89, an advisory
+  `flock` on Unix) instead of `fs4`, which is then not needed. It fails at once with a hint when
+  another process holds it, and is released on drop or exit. `apply::Lock::acquire` is for sync
+  (#8) to hold across all targets.
