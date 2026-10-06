@@ -6,12 +6,12 @@
 //! those edits, under the sync lock. Doctor then runs again and reports what remains.
 //! With `--dry-run` it lists the fixes and changes nothing.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use kipi_core::apply;
 use kipi_core::cache::Caches;
 use kipi_core::config::{self, Env};
-use kipi_core::doctor::fix::Repairs;
+use kipi_core::doctor::fix::{Applied, Repairs, Skipped, resync_skipped};
 use kipi_core::doctor::{self, Checkouts, Diagnosis, Finding, Fix, Level};
 use kipi_core::model::{Machine, Store};
 use kipi_core::sync::{self, RepoState, Selection};
@@ -38,7 +38,7 @@ pub fn run(env: &Env, store_flags: &[PathBuf], args: &Args, out: &Output) -> Res
     let caches = super::caches(env, &cfg);
     let first = Run::load(env, &paths, args.repo, &caches, Some(out))?;
     let mut lines = Vec::new();
-    let mut fixed: Option<Vec<Fix>> = None;
+    let mut fixed: Option<Applied> = None;
     let last = if args.fix {
         let repairs = Repairs::plan(
             &first.diagnosis.findings,
@@ -48,13 +48,13 @@ pub fn run(env: &Env, store_flags: &[PathBuf], args: &Args, out: &Output) -> Res
         );
         if repairs.is_empty() {
             lines.push("nothing to fix".to_owned());
-            fixed = Some(Vec::new());
+            fixed = Some(Applied::default());
             first
         } else if args.dry_run {
             for f in &repairs.fixes {
                 lines.push(format!("would {}", f.describe(Some(&env.home))));
             }
-            fixed = Some(Vec::new());
+            fixed = Some(Applied::default());
             first
         } else {
             let applied = repair(env, &paths, args.repo, &caches, &repairs, &mut lines)?;
@@ -84,7 +84,7 @@ pub fn run(env: &Env, store_flags: &[PathBuf], args: &Args, out: &Output) -> Res
         loaded.repo(name)?;
     }
     if out.json {
-        let text = json::doctor(&loaded.stores, &diagnosis.findings, fixed.as_deref())
+        let text = json::doctor(&loaded.stores, &diagnosis.findings, fixed.as_ref())
             .map_err(|e| Failure::json("the findings", e))?;
         out.print(&text)?;
     } else {
@@ -152,7 +152,12 @@ impl Run {
     }
 }
 
-/// Apply `repairs` under the sync lock, describing each in `lines`; the fixes applied.
+/// The output line of a fix that did not run.
+fn skipped_line(s: &Skipped, home: Option<&Path>) -> String {
+    format!("skipped: {}: {}", s.fix.describe(home), s.reason)
+}
+
+/// Apply `repairs` under the sync lock, describing each in `lines`.
 fn repair(
     env: &Env,
     paths: &[PathBuf],
@@ -160,25 +165,31 @@ fn repair(
     caches: &Caches,
     repairs: &Repairs,
     lines: &mut Vec<String>,
-) -> Result<Vec<Fix>, Failure> {
+) -> Result<Applied, Failure> {
     let home = Some(env.home.as_path());
     let _lock = apply::Lock::acquire(&env.config_dir)?;
     let removed = repairs.apply_files()?;
-    let mut applied = Vec::new();
+    let mut applied = Applied::default();
+    let skip = |applied: &mut Applied, lines: &mut Vec<String>, fix: &Fix, reason: String| {
+        let s = Skipped {
+            fix: fix.clone(),
+            reason,
+        };
+        lines.push(skipped_line(&s, home));
+        applied.skipped.push(s);
+    };
     for fix in &repairs.fixes {
         match fix {
             Fix::Resync { .. } => continue,
             Fix::RemoveLink { link, .. } if !removed.contains(link) => {
-                lines.push(format!(
-                    "skipped: {} (it changed since doctor looked)",
-                    fix.describe(home)
-                ));
+                let reason = "it changed since doctor looked".to_owned();
+                skip(&mut applied, lines, fix, reason);
                 continue;
             }
             _ => {}
         }
         lines.push(format!("fixed: {}", fix.describe(home)));
-        applied.push(fix.clone());
+        applied.fixed.push(fix.clone());
     }
     if repairs.resync.is_empty() {
         return Ok(applied);
@@ -190,7 +201,7 @@ fn repair(
         home: Some(env.home.clone()),
         ..sync::Options::default()
     };
-    let names: Vec<String> = repairs
+    let in_plan: Vec<String> = repairs
         .resync
         .iter()
         .filter(|n| run.diagnosis.plan.repo(n).is_some())
@@ -200,31 +211,38 @@ fn repair(
         &run.diagnosis.stores,
         &run.machine,
         &run.diagnosis.plan,
-        &Selection::Only(names),
+        &Selection::Only(in_plan),
         &opts,
         caches,
     )?;
-    for r in &outcome.repos {
-        let fix = Fix::Resync {
-            repo: r.name.clone(),
-        };
-        let line = match &r.state {
-            RepoState::Applied(report) => {
-                let n = report.changes.len();
-                let mut line = format!(
-                    "fixed: {} ({n} change{})",
-                    fix.describe(home),
-                    if n == 1 { "" } else { "s" }
-                );
-                for s in &report.skipped {
-                    line.push_str(&format!("\n  skipped {}: {}", s.path.display(), s.message));
-                }
-                line
-            }
-            _ => format!("skipped: {} (not cloned here)", fix.describe(home)),
-        };
+    // In finding order, each repo the fixes named: synced, or why not.
+    for name in &repairs.resync {
+        let fix = Fix::Resync { repo: name.clone() };
+        let state = outcome
+            .repos
+            .iter()
+            .find(|r| r.name == *name)
+            .map(|r| &r.state);
+        let checkout_removed = applied
+            .fixed
+            .iter()
+            .any(|f| matches!(f, Fix::RemoveCheckout { entry, .. } if entry == name));
+        if let Some(reason) = resync_skipped(name, state, checkout_removed) {
+            skip(&mut applied, lines, &fix, reason);
+            continue;
+        }
+        let report = state.and_then(RepoState::report);
+        let n = report.map_or(0, |r| r.changes.len());
+        let mut line = format!(
+            "fixed: {} ({n} change{})",
+            fix.describe(home),
+            if n == 1 { "" } else { "s" }
+        );
+        for s in report.iter().flat_map(|r| &r.skipped) {
+            line.push_str(&format!("\n  skipped {}: {}", s.path.display(), s.message));
+        }
         lines.push(line);
-        applied.push(fix);
+        applied.fixed.push(fix);
     }
     Ok(applied)
 }
@@ -265,4 +283,21 @@ fn human(loaded: &Loaded, findings: &[Finding], out: &Output) -> String {
         ));
     }
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_skipped_fix_is_reported_with_its_reason() {
+        let s = Skipped {
+            fix: Fix::Resync { repo: "api".into() },
+            reason: resync_skipped("api", Some(&RepoState::NotCloned), true).unwrap(),
+        };
+        assert_eq!(
+            skipped_line(&s, None),
+            "skipped: re-sync `api`: this run removed its machine.toml entry; nothing to re-sync"
+        );
+    }
 }

@@ -839,7 +839,12 @@ The spec wins wherever it is explicit.
   Re-syncing uses doctor's prepared plan, so references reported as errors stay out of it (the
   same plan doctor checked). Doctor then runs again; the output lists `fixed: …` lines, then the
   remaining findings, and exits 2 if errors remain. `--fix --dry-run` prints `would …` lines and
-  writes nothing; `--json` adds a `fixed` array. Plain `doctor --dry-run` stays accepted and
+  writes nothing; `--json` adds `fixed` and `skipped` arrays.
+- **`fixed` lists only fixes that ran.** A fix that did not run goes in `skipped` with its
+  reason, in the text and in `--json`: a broken link that changed since doctor looked, or a
+  re-sync of a repo that has nothing left to sync after the config edits (no longer cloned,
+  checkout gone, entry gone). It is a separate list rather than a flag on `fixed`, so a
+  script reading `fixed` never mistakes a sync that did not happen for a repair. Plain `doctor --dry-run` stays accepted and
   writes nothing, as before.
 - **CLI doctor tests run on an onboarded home** (checkouts laid out and scanned). The example
   `machine.toml` points at `/Volumes/...` and `/srv/...`, which do not exist in a test home, so

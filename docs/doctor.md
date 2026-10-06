@@ -175,7 +175,11 @@ keep it, or re-sync without `--allow-tracked` to move the block into an untracke
    errors (K003, K005, K012) stay out of the plan it syncs.
 
 Doctor then runs again and prints what was fixed (`fixed: …`) followed by the findings that
-remain. Running `--fix` again finds nothing left to fix (`nothing to fix`). With
+remain. A fix that did not run is never called fixed: it gets a `skipped: <fix>: <why>` line
+instead. That covers a broken link that changed since doctor looked, and a re-sync with
+nothing left to sync: the repo is no longer cloned (`this run removed its machine.toml entry`,
+or `it is not cloned on this machine`), its checkout is no longer a directory, or its entry is
+in no mounted store any more. Running `--fix` again finds nothing left to fix (`nothing to fix`). With
 `--dry-run` it prints the fixes it would apply (`would …`) and changes nothing.
 
 ## JSON
@@ -206,6 +210,10 @@ remain. Running `--fix` again finds nothing left to fix (`nothing to fix`). With
 - `{ "kind": "remove-link", "link": …, "target": … }`
 - `{ "kind": "resync", "repo": … }`
 
-With `--fix`, the document also has `"fixed"`: the fixes applied (an empty list with
-`--dry-run` or when there was nothing to fix), in the same shape, before `findings` (which
-are then the findings that remain).
+With `--fix`, the document also has, before `findings` (which are then the findings that
+remain):
+
+- `"fixed"`: the fixes that ran, in the shape above;
+- `"skipped"`: the fixes that did not, each `{ "fix": { "kind": … }, "reason": "…" }`.
+
+Both are empty lists with `--dry-run` or when there was nothing to fix.

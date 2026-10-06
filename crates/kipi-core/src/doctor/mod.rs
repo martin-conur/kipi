@@ -379,6 +379,23 @@ pub struct Inputs<'a> {
     pub tokens: &'a Counter,
     /// Which files git tracks, for K022.
     pub tracked: &'a TrackedCache,
+    /// Every mounted store's root, as written and resolved ([`store_roots`]), for K018.
+    pub store_roots: &'a [PathBuf],
+}
+
+/// Each store's root as written and, when it differs, resolved: computed once per run,
+/// since K018 compares every link against all of them.
+pub fn store_roots(stores: &StoreSet) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    for s in stores.stores() {
+        let real = std::fs::canonicalize(&s.root).ok();
+        for root in std::iter::once(s.root.clone()).chain(real) {
+            if !roots.contains(&root) {
+                roots.push(root);
+            }
+        }
+    }
+    roots
 }
 
 /// A repo cloned here that kipi has synced: its plan, checkout and manifest.
@@ -483,6 +500,7 @@ pub fn diagnose(
     caches: &Caches,
 ) -> Result<Diagnosis> {
     let prepared = prepare(stores, machine)?;
+    let roots = store_roots(&prepared.stores);
     let inputs = Inputs {
         stores: &prepared.stores,
         machine,
@@ -492,6 +510,7 @@ pub fn diagnose(
         only,
         tokens: &caches.tokens,
         tracked: &caches.tracked,
+        store_roots: &roots,
     };
     let mut findings: Vec<Finding> = prepared
         .findings

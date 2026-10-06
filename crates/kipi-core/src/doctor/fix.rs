@@ -13,8 +13,48 @@ use crate::apply;
 use crate::error::Result;
 use crate::model::{Machine, Store};
 use crate::scan::{self, FileWrite};
+use crate::sync::RepoState;
 
 use super::{Finding, Fix};
+
+/// A fix `--fix` did not carry out, and why. Reported apart from the fixes applied, so a
+/// fix is only ever called fixed when it ran.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Skipped {
+    /// The fix.
+    pub fix: Fix,
+    /// Why it was not carried out.
+    pub reason: String,
+}
+
+/// What `--fix` did: the fixes that ran, and the ones that did not with why.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Applied {
+    /// Fixes that ran, in finding order (re-syncs last).
+    pub fixed: Vec<Fix>,
+    /// Fixes that did not run.
+    pub skipped: Vec<Skipped>,
+}
+
+/// Why the re-sync of `repo` did not run, given its state after the config edits:
+/// `state` is its sync outcome, `None` when it is in no plan any more;
+/// `checkout_removed` says this run removed its `machine.toml` line. `None` when it ran.
+pub fn resync_skipped(
+    repo: &str,
+    state: Option<&RepoState>,
+    checkout_removed: bool,
+) -> Option<String> {
+    let why = match state {
+        Some(RepoState::Applied(_) | RepoState::Orphan(_)) => return None,
+        None => format!("`{repo}` is in no mounted store any more"),
+        Some(RepoState::NotCloned) if checkout_removed => {
+            "this run removed its machine.toml entry".to_owned()
+        }
+        Some(RepoState::NotCloned) => "it is not cloned on this machine".to_owned(),
+        Some(RepoState::CheckoutMissing) => "its checkout is no longer a directory".to_owned(),
+    };
+    Some(format!("{why}; nothing to re-sync"))
+}
 
 /// What `--fix` will do, in order: write the config files, remove the links, re-sync.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -128,5 +168,33 @@ impl Repairs {
             }
         }
         Ok(removed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::apply::Report;
+
+    #[test]
+    fn a_resync_that_did_not_run_says_why() {
+        let ran = RepoState::Applied(Report::default());
+        assert_eq!(resync_skipped("a", Some(&ran), false), None);
+        assert_eq!(
+            resync_skipped("a", Some(&RepoState::NotCloned), true).as_deref(),
+            Some("this run removed its machine.toml entry; nothing to re-sync")
+        );
+        assert_eq!(
+            resync_skipped("a", Some(&RepoState::NotCloned), false).as_deref(),
+            Some("it is not cloned on this machine; nothing to re-sync")
+        );
+        assert_eq!(
+            resync_skipped("a", Some(&RepoState::CheckoutMissing), false).as_deref(),
+            Some("its checkout is no longer a directory; nothing to re-sync")
+        );
+        assert_eq!(
+            resync_skipped("a", None, false).as_deref(),
+            Some("`a` is in no mounted store any more; nothing to re-sync")
+        );
     }
 }

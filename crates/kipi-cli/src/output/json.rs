@@ -7,6 +7,7 @@
 use std::path::{Path, PathBuf};
 
 use kipi_core::apply::Report;
+use kipi_core::doctor::fix::Applied;
 use kipi_core::doctor::{Finding, Fix, Level};
 use kipi_core::model::StoreSet;
 use kipi_core::plan::{
@@ -478,12 +479,21 @@ pub fn sync(outcome: &Outcome, dry_run: bool) -> serde_json::Result<String> {
 pub fn doctor(
     set: &StoreSet,
     findings: &[Finding],
-    fixed: Option<&[Fix]>,
+    fixed: Option<&Applied>,
 ) -> serde_json::Result<String> {
     let count = |level| findings.iter().filter(|f| f.level == level).count();
     let doc = DoctorJson {
         version: JSON_VERSION,
-        fixed: fixed.map(|f| f.iter().map(fix_json).collect()),
+        fixed: fixed.map(|a| a.fixed.iter().map(fix_json).collect()),
+        skipped: fixed.map(|a| {
+            a.skipped
+                .iter()
+                .map(|s| SkippedFixJson {
+                    fix: fix_json(&s.fix),
+                    reason: &s.reason,
+                })
+                .collect()
+        }),
         findings: findings
             .iter()
             .map(|f| FindingJson {
@@ -531,8 +541,17 @@ struct DoctorJson<'a> {
     /// The fixes `--fix` applied (absent without `--fix`).
     #[serde(skip_serializing_if = "Option::is_none")]
     fixed: Option<Vec<FixJson<'a>>>,
+    /// The fixes `--fix` did not carry out, with why (absent without `--fix`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    skipped: Option<Vec<SkippedFixJson<'a>>>,
     findings: Vec<FindingJson<'a>>,
     summary: DoctorSummaryJson,
+}
+
+#[derive(Serialize)]
+struct SkippedFixJson<'a> {
+    fix: FixJson<'a>,
+    reason: &'a str,
 }
 
 #[derive(Serialize)]
@@ -1067,4 +1086,42 @@ struct TreeSkillJson<'a> {
 struct TreeRelatedJson<'a> {
     name: &'a str,
     access: &'static str,
+}
+
+#[cfg(test)]
+mod tests {
+    use kipi_core::doctor::fix::Skipped;
+
+    use super::*;
+
+    #[test]
+    fn doctor_fix_json_lists_what_ran_apart_from_what_did_not() {
+        let set = StoreSet::new(Vec::new()).unwrap();
+        let applied = Applied {
+            fixed: vec![Fix::RemoveCheckout {
+                entry: "api".into(),
+                path: "/c/api".into(),
+            }],
+            skipped: vec![Skipped {
+                fix: Fix::Resync { repo: "api".into() },
+                reason: "this run removed its machine.toml entry; nothing to re-sync".into(),
+            }],
+        };
+        let doc: serde_json::Value =
+            serde_json::from_str(&doctor(&set, &[], Some(&applied)).unwrap()).unwrap();
+        assert_eq!(
+            doc["fixed"],
+            serde_json::json!([{"kind": "remove-checkout", "entry": "api", "path": "/c/api"}])
+        );
+        assert_eq!(
+            doc["skipped"],
+            serde_json::json!([{
+                "fix": {"kind": "resync", "repo": "api"},
+                "reason": "this run removed its machine.toml entry; nothing to re-sync"
+            }])
+        );
+        let plain: serde_json::Value =
+            serde_json::from_str(&doctor(&set, &[], None).unwrap()).unwrap();
+        assert!(plain.get("fixed").is_none() && plain.get("skipped").is_none());
+    }
 }

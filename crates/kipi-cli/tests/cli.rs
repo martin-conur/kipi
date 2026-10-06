@@ -1104,6 +1104,7 @@ fn doctor_fix_repairs_a_dangling_link_a_stale_grant_and_a_missing_exclude() {
     assert_eq!(files_under(home.path()), after);
     let doc = json_of(&home, home.bare().args(["doctor", "--fix", "--json"]));
     assert_eq!(doc["fixed"], serde_json::json!([]));
+    assert_eq!(doc["skipped"], serde_json::json!([]));
     assert_eq!(files_under(home.path()), after);
 }
 

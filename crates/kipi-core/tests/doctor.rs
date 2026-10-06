@@ -302,6 +302,7 @@ fn k003_grant_crossing_scopes_in_a_plan() {
         only: None,
         tokens: &Counter::in_memory(Tokenizer::default()),
         tracked: &TrackedCache::default(),
+        store_roots: &doctor::store_roots(&diagnosis.stores),
     };
     let f = exactly_one(doctor::check(&inputs).unwrap(), Code::ScopeCrossing);
     assert!(f.message.contains("repo `y` (scope `b`)"), "{}", f.message);
@@ -762,13 +763,13 @@ fn k017_checkout_path_no_longer_exists() {
 
 /// Store `work` (skill `review` on disk) with repos `api` and `web` (related to `api`),
 /// both cloned under `<tmp>/w` and synced. Doctor finds nothing in it.
-struct Synced {
+struct SyncedFx {
     fx: Fx,
     store: Store,
     machine: Machine,
 }
 
-impl Synced {
+impl SyncedFx {
     fn new() -> Self {
         let fx = Fx::new();
         let w = fx.dir.path().join("w");
@@ -804,7 +805,7 @@ impl Synced {
             .repo("api", w.join("api"))
             .repo("web", w.join("web"))
             .build();
-        let synced = Synced { fx, store, machine };
+        let synced = SyncedFx { fx, store, machine };
         synced.sync();
         synced
     }
@@ -850,7 +851,7 @@ impl Synced {
 
 #[test]
 fn a_synced_checkout_is_clean() {
-    let s = Synced::new();
+    let s = SyncedFx::new();
     assert!(s.checkout("api").join(".claude/skills/review").is_symlink());
     // The store has no `repos/`: a granted store dir that does not exist yet is not stale.
     assert!(!s.fx.dir.path().join("work/repos").exists());
@@ -859,7 +860,7 @@ fn a_synced_checkout_is_clean() {
 
 #[test]
 fn k018_kipis_link_to_a_missing_skill_is_resynced() {
-    let s = Synced::new();
+    let s = SyncedFx::new();
     fs::remove_dir_all(s.fx.dir.path().join("work/skills/review")).unwrap();
     let found = s.of(Code::StrayLink);
     // One per adapter's skills dir, in each of the two repos.
@@ -875,7 +876,7 @@ fn k018_kipis_link_to_a_missing_skill_is_resynced() {
 
 #[test]
 fn k018_foreign_links_broken_or_outside_every_store() {
-    let s = Synced::new();
+    let s = SyncedFx::new();
     let skills = s.checkout("api").join(".claude/skills");
     let gone = s.fx.dir.path().join("nowhere");
     std::os::unix::fs::symlink(&gone, skills.join("broken")).unwrap();
@@ -901,7 +902,7 @@ fn k018_foreign_links_broken_or_outside_every_store() {
 
 #[test]
 fn k019_grant_to_a_checkout_that_is_gone() {
-    let s = Synced::new();
+    let s = SyncedFx::new();
     fs::remove_dir_all(s.checkout("api")).unwrap();
     let f = s.of(Code::StaleGrant);
     assert_eq!(f.len(), 1, "{f:#?}");
@@ -916,7 +917,7 @@ fn k019_grant_to_a_checkout_that_is_gone() {
 
 #[test]
 fn k019_grant_dropped_from_the_plan() {
-    let s = Synced::new();
+    let s = SyncedFx::new();
     // A grant entry an earlier sync wrote for a directory since deleted and unplanned.
     let path = s.checkout("api").join(".kipi/manifest.toml");
     let mut manifest = Manifest::load(&path).unwrap();
@@ -930,7 +931,7 @@ fn k019_grant_dropped_from_the_plan() {
 
 #[test]
 fn k020_foreign_link_into_a_store() {
-    let s = Synced::new();
+    let s = SyncedFx::new();
     let skills = s.checkout("api").join(".claude/skills");
     let target = s.fx.dir.path().join("work/skills/review");
     std::os::unix::fs::symlink(&target, skills.join("mine")).unwrap();
@@ -941,7 +942,7 @@ fn k020_foreign_link_into_a_store() {
 
 #[test]
 fn k021_exclude_section_lost() {
-    let s = Synced::new();
+    let s = SyncedFx::new();
     let exclude = s.checkout("api").join(".git/info/exclude");
     let text = fs::read_to_string(&exclude).unwrap();
     fs::write(&exclude, text.replace(".kipi/\n", "")).unwrap();
@@ -952,7 +953,7 @@ fn k021_exclude_section_lost() {
 
 #[test]
 fn k022_generated_block_in_a_tracked_file() {
-    let s = Synced::new();
+    let s = SyncedFx::new();
     let api = s.checkout("api");
     let status = std::process::Command::new("git")
         .arg("-C")
@@ -970,7 +971,7 @@ fn k022_generated_block_in_a_tracked_file() {
 
 #[test]
 fn repairs_collect_each_fix_once_in_order() {
-    let s = Synced::new();
+    let s = SyncedFx::new();
     fs::remove_dir_all(s.checkout("api")).unwrap();
     let exclude = s.checkout("web").join(".git/info/exclude");
     fs::write(&exclude, "").unwrap();
