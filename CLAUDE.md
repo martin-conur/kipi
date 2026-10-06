@@ -23,6 +23,7 @@ crates/
                            #      error, templates (include_str! of templates/)
   kipi-cli/src/            # bin `kipi`: main.rs, commands/ (one file per subcommand), output/
   kipi-test-support/src/   # stores.rs (copy example stores), repos.rs (fake git repos),
+                           # builders.rs (in-memory stores/machines for resolve tests),
                            # leak_guard.rs (scanner); tests/ holds the repo-wide leak test
 templates/                 # SKILL.md, notes.md, bindings.toml skeletons
 examples/
@@ -42,12 +43,14 @@ cargo fmt --all                                            # format
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace                                     # all tests, incl. leak guard + example stores
 cargo test -p kipi-test-support --test leak_guard          # leak guard only
+cargo test -p kipi-core --test resolve --test resolve_props  # resolution unit + property tests
+cargo llvm-cov -p kipi-core --test resolve --test resolve_props  # resolve.rs coverage (cargo install cargo-llvm-cov)
 cargo deny check                                           # licenses + banned crates (cargo install cargo-deny)
 cargo run -p kipi-cli -- --help                            # run the CLI
 ```
 
 CI (`.github/workflows/ci.yml`) runs fmt, clippy, test and `cargo deny check` on ubuntu-latest and
-macos-latest.
+macos-latest, plus a report-only nightly branch-coverage job for `resolve.rs`.
 
 ## Leak guard
 

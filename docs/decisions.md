@@ -137,3 +137,73 @@ The spec wins wherever it is explicit.
 - **`git::origin_url`** runs `git config --get remote.origin.url`; exit status 1 (unset) is `None`.
 - **The personal example store no longer mentions the work store** in its comments, so loading it
   alone holds no work data (a test greps it for the work store's names and remote patterns).
+
+## Stage 1: resolution engine (#3)
+
+- **§15 open decision 1 (uncloned repos in the registry): list them.** A repo not cloned on this
+  machine stays in its scope's registry with `local: None`, which the renderer prints as
+  `(not cloned here)`.
+- **§15 open decision 4 (default `grant`): `related`.** `DEFAULT_GRANT` stays `GrantMode::Related`;
+  `grant = "registry"` is the documented opt-in for no prompts at all.
+- **§15 open decision 5 (`@import` in conventions): no.** `always` files are flat; resolution
+  hands their absolute paths to the renderer, which includes them verbatim, so every adapter
+  renders the same text.
+- **Placing a repo that is not cloned here.** §6 rule 2 (deepest root) needs a checkout path, so
+  without one a repo with no explicit `scope` would always fall to `personal` / unscoped and drop
+  out of its registry, which defeats decision 1. Between rules 2 and 3, a repo with **no checkout
+  on this machine** is placed by its `remote`: the scope whose `remote_patterns` has the longest
+  entry that is a prefix of the normalized remote. A tie between scopes decides nothing (fall
+  through). A cloned repo is never placed by pattern, so doctor's "remote matches a pattern but
+  resolved elsewhere" check keeps its meaning. Example: `feature-store` → `acme`.
+- **Rule 3 (`personal`) and every other lookup stay within the repo's own store.** A work-store
+  repo outside every root is unscoped even when the personal store (with its `personal` scope)
+  is mounted.
+- **Roots match whole path components** (`/w` contains `/w/x`, not `/wx`), compared lexically
+  (no canonicalization: resolution does no I/O). Two scopes whose roots contain a checkout at the
+  same depth is a hard error asking for an explicit `scope`. `machine.toml [roots]` replaces a
+  scope's roots on this machine; it does not add to them.
+- **Scope chain** of a repo = its scope's ancestors and descendants. Siblings (two scopes extending
+  the same parent) are not in each other's chain. An unscoped repo's chain is "unscoped repos of
+  the same store": two unscoped repos may be related; a scoped and an unscoped one may not.
+- **The registry** of a repo is the nearest scope in its chain (itself first, then up) with
+  `registry = true`; it lists every repo of that store whose scope is that scope or a descendant,
+  including sibling scopes' repos. Registries live once on the `Plan` (sync writes one file per
+  scope); a `RepoPlan` names its registry's scope (`Plan::registry_of`).
+- **The `registry` grant is filtered by the scope chain.** §6 says the grant is "every cloned repo
+  in the registry" and also that "every granted path must belong to a repo in the scope chain";
+  where they differ (a sibling scope's repo) the leak rule wins and the sibling is listed in the
+  registry but not granted. The `registry` grant also includes the `related` repos, so it is never
+  narrower than `related`. A repo is never granted its own checkout.
+- **`grant = "none"` grants nothing**, not even the store dirs (§6: "`none` → nothing").
+  `related` and `registry` always grant the owning store's `repos/` and `skills/`, plus `skills/`
+  of every store a (non-excluded) shared skill comes from.
+- **`x-kipi.scope` is enforced.** A skill of the repo's own store with `x-kipi.scope: S` may only
+  be bound by scope `S` or a scope extending it, or by a repo in one of those (an unscoped repo
+  cannot use it); an `x-kipi.scope` naming no scope of the store is an error. Shared skills from
+  another store are exempt: sharing is the explicit cross-store exception. `exclude` is never
+  checked, since removing a skill cannot leak it.
+- **Skill references are checked at every level** (scope `skills`, repo `skills` and `exclude`),
+  including scopes no repo uses. Skills are identified by (store, name), so `acme/code-review`
+  inside `acme` is the bare `code-review`; a duplicate keeps its first position and source.
+- **`related` naming the repo itself is an error**; naming an unknown entry is an error with the
+  closest name as the hint.
+- **Precedence** for `agents`, `budget_tokens` and `grant`: repo, then the scopes from the repo's
+  own up to the top-most, then the owning store's `[defaults]`, then the built-in default. The
+  `Source` says which (`built-in default grant` has no location).
+- **Provenance points at table headers.** The model keeps one `Location` per `[scopes.x]` /
+  `[repos.x]` table, so a `Source` is that header's `store:bindings.toml:line` plus the key as the
+  rule (`scopes.acme.skills`). Key-level lines can come later without changing `Source`.
+- **Aliases**: keys are the entry name plus each alias, Unicode-lowercased, whitespace runs
+  collapsed and trimmed, deduplicated per entry. A key claimed by two entries of one registry is
+  an `AliasCollision` on the `Registry`; doctor (#12) turns it into an error. Aliases themselves are
+  kept as written for rendering.
+- **Deterministic output**: `Plan::repos` sorted by name, `registries` by scope, registry entries by
+  name and a registry's scope list by name, grant repos by name after the store dirs. Declared
+  order is kept where it carries meaning: skills (chain top-down, then the repo's, list order),
+  `related`, `always`.
+- **Test builders live in `kipi-test-support::builders`**, which now depends on `kipi-core`. Since
+  that makes `kipi-core`'s unit tests see a second copy of its types, resolve tests are
+  integration tests (`crates/kipi-core/tests/resolve.rs`, `resolve_props.rs`).
+- **Coverage job** (`coverage (report-only)` in CI) runs `cargo +nightly llvm-cov --branch` over
+  the resolve tests and writes the `resolve.rs` row to the job summary. Branch coverage is
+  nightly-only, so the job uses an unpinned nightly and `continue-on-error`; it never gates.

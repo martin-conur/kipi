@@ -47,3 +47,33 @@ jobs:
 
       - name: cargo deny
         run: cargo deny check
+
+  coverage:
+    # Report-only: branch coverage of the pure resolver (roadmap §13 targets 100%).
+    # Branch coverage needs nightly, so this job never gates a merge.
+    name: coverage (report-only)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      RUSTFLAGS: ""
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Install nightly with llvm-tools
+        run: rustup toolchain install nightly --profile minimal --component llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Branch coverage of resolve.rs
+        run: |
+          cargo +nightly llvm-cov -p kipi-core --test resolve --test resolve_props \
+            --branch --summary-only | tee coverage.txt
+          {
+            echo '### Coverage (report-only)'
+            echo '```'
+            grep -E 'Filename|resolve\.rs|plan\.rs' coverage.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

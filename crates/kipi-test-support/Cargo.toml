@@ -9,6 +9,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+kipi-core.workspace = true
 ignore.workspace = true
 regex.workspace = true
 serde_json.workspace = true
