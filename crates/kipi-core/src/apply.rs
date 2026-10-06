@@ -10,6 +10,10 @@
 //! directory where a link goes is replaced only with [`Options::force`], nothing is
 //! written through a symlinked parent directory, and only empty directories kipi itself
 //! created are removed. [`Lock`] serializes whole syncs across processes.
+//!
+//! Read grants (`MergeGrant`) are merged into a settings file with [`json_merge`]: only
+//! the entries the manifest records as kipi's are ever removed, and a file that is
+//! malformed, tracked by git, or a symlink is reported and left untouched.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -20,7 +24,8 @@ use std::path::{Path, PathBuf};
 use crate::adapters;
 use crate::error::{Error, Location, Result};
 use crate::git;
-use crate::manifest::{self, BlockEntry, ExcludeEntry, FileEntry, LinkEntry, Manifest};
+use crate::json_merge::{self, Outcome};
+use crate::manifest::{self, BlockEntry, ExcludeEntry, FileEntry, GrantEntry, LinkEntry, Manifest};
 use crate::model::AgentId;
 use crate::plan::{Action, Checkout, Registry};
 use crate::render::{registry, splice};
@@ -88,6 +93,24 @@ pub struct Report {
     pub skipped: Vec<Skipped>,
     /// Entries kipi did not write found beside what it manages (in skill directories).
     pub foreign: Vec<PathBuf>,
+    /// Each settings file whose grant changed, with its text before and after (for
+    /// `--dry-run` diffs).
+    pub grants: Vec<GrantDiff>,
+}
+
+/// A change to the read grant in one settings file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GrantDiff {
+    /// The settings file (absolute).
+    pub path: PathBuf,
+    /// Entries kipi added.
+    pub added: Vec<String>,
+    /// Entries kipi removed (only ever its own).
+    pub removed: Vec<String>,
+    /// The file's text before; empty when it did not exist.
+    pub before: String,
+    /// The file's text after; empty when it is deleted.
+    pub after: String,
 }
 
 impl Report {
@@ -134,6 +157,8 @@ pub enum What {
     Dir,
     /// kipi's section of `.git/info/exclude`.
     Exclude,
+    /// kipi's read-grant entries in a settings file.
+    Grant,
 }
 
 impl fmt::Display for Change {
@@ -150,6 +175,7 @@ impl fmt::Display for Change {
             What::File => "file",
             What::Dir => "dir",
             What::Exclude => "exclude",
+            What::Grant => "grant",
         };
         write!(f, "{op} {what} {}", self.path.display())
     }
@@ -333,8 +359,6 @@ fn read(path: &Path) -> Result<String> {
 /// manifest. Errors are for I/O failures and actions outside the target root; anything
 /// kipi declines to do is reported in [`Report::skipped`] and the rest still happens.
 ///
-/// `MergeGrant` actions are left to the grants engine: their manifest entries are kept
-/// as they are.
 pub fn run(target: &Target, actions: &[Action], opts: Options) -> Result<Report> {
     let old = Manifest::load(&target.manifest)?;
     let mut diff = Diff::new(target, &old, opts);
@@ -395,10 +419,7 @@ impl<'a> Diff<'a> {
             root: &target.root,
             old,
             opts,
-            new: Manifest {
-                grants: old.grants.clone(),
-                ..Manifest::new()
-            },
+            new: Manifest::new(),
             steps: Vec::new(),
             report: Report {
                 root: target.root.clone(),
@@ -497,8 +518,7 @@ impl<'a> Diff<'a> {
             Action::WriteBlock { file, text } => self.block(file, text),
             Action::WriteFile { path, text } => self.file(path, text),
             Action::Exclude { repo, patterns } => self.exclude(repo, Some(patterns)),
-            // Owned by the grants engine; its manifest entries are carried over as is.
-            Action::MergeGrant { .. } => Ok(()),
+            Action::MergeGrant { file, key, entries } => self.grant(file, key, entries),
             Action::Remove { path } => {
                 // Removal is derived from the manifest; an explicit one is only checked.
                 self.rel(path)?;
@@ -669,6 +689,135 @@ impl<'a> Diff<'a> {
             },
             Some((op, What::File, path)),
         );
+        Ok(())
+    }
+
+    fn grant(&mut self, file: &Path, key: &[&str], entries: &[PathBuf]) -> Result<()> {
+        let rel = self.rel(file)?;
+        if !self.wanted.insert(rel.clone()) {
+            return Ok(());
+        }
+        let mut want = Vec::new();
+        for entry in entries {
+            match entry.to_str() {
+                Some(s) => want.push(s.to_owned()),
+                None => self.skip(
+                    file,
+                    format!("{} is not valid UTF-8; not granted", entry.display()),
+                    "rename the directory, or grant it by hand",
+                ),
+            }
+        }
+        if want.is_empty() {
+            // Nothing to add, so no directory to create; as in removal, nothing below a
+            // directory that is gone or turned symlink is touched.
+            if self.behind_symlink(file) {
+                return Ok(());
+            }
+        } else if !self.parents(file)? {
+            self.new.grants.extend(self.old.grant(&rel).cloned());
+            return Ok(());
+        }
+        let key: Vec<String> = key.iter().map(|k| k.to_string()).collect();
+        self.merge_grant(file, rel, key, &want)
+    }
+
+    /// Bring kipi's entries at `key` of the settings file `file` (`rel` to the root) to
+    /// exactly `want`, recording what it owns afterwards. Anything that stops it keeps the
+    /// old manifest entry, so a later run can still remove what kipi added.
+    fn merge_grant(
+        &mut self,
+        file: &Path,
+        rel: PathBuf,
+        key: Vec<String>,
+        want: &[String],
+    ) -> Result<()> {
+        let old = self.old.grant(&rel).cloned();
+        let keep_old = |diff: &mut Self| diff.new.grants.extend(old.clone());
+        let existing = match kind(file)? {
+            None => None,
+            Some(Kind::File) => Some(read(file)?),
+            Some(k) => {
+                let what = if k == Kind::Dir {
+                    "a directory"
+                } else {
+                    "a symlink"
+                };
+                self.skip(
+                    file,
+                    format!(
+                        "{} is {what}; kipi merges the read grant only into a regular file",
+                        file.display()
+                    ),
+                    "make it a regular file, then re-run",
+                );
+                keep_old(self);
+                return Ok(());
+            }
+        };
+        // A tracked settings.local.json makes Claude Code ask for workspace trust before
+        // applying it (docs/adapters.md), so the grant would silently not take effect.
+        if existing.is_some() && git::tracked(self.root, &[file.to_path_buf()])?.contains(file) {
+            self.skip(
+                file,
+                "tracked by git; Claude Code applies it only once the folder is trusted, so kipi does not write the read grant there",
+                format!("untrack it (`git rm --cached {}`), then re-run", rel.display()),
+            );
+            keep_old(self);
+            return Ok(());
+        }
+        let owned: Vec<String> = old
+            .iter()
+            .flat_map(|g| &g.entries)
+            .filter_map(|e| e.to_str().map(str::to_owned))
+            .collect();
+        let created = old.as_ref().map_or(existing.is_none(), |g| g.created);
+        let merged = match json_merge::merge(existing.as_deref(), &key, want, &owned, created) {
+            Ok(m) => m,
+            Err(e) => {
+                self.skip(file, e.to_string(), e.hint());
+                keep_old(self);
+                return Ok(());
+            }
+        };
+        if !merged.owned.is_empty() {
+            self.new.grants.push(GrantEntry {
+                path: rel,
+                key,
+                created,
+                entries: merged.owned.iter().map(PathBuf::from).collect(),
+            });
+        }
+        let (op, step, after) = match merged.outcome {
+            Outcome::Unchanged => return Ok(()),
+            Outcome::Write(text) => {
+                let op = if existing.is_none() {
+                    Op::Create
+                } else if merged.added.is_empty() {
+                    Op::Remove
+                } else {
+                    Op::Update
+                };
+                let step = Step::Write {
+                    path: file.to_path_buf(),
+                    text: text.clone(),
+                    clear_dir: false,
+                };
+                (op, step, text)
+            }
+            Outcome::Delete => {
+                self.deleted.insert(file.to_path_buf());
+                (Op::Remove, Step::Delete(file.to_path_buf()), String::new())
+            }
+        };
+        self.step(step, Some((op, What::Grant, file)));
+        self.report.grants.push(GrantDiff {
+            path: file.to_path_buf(),
+            added: merged.added,
+            removed: merged.removed,
+            before: existing.unwrap_or_default(),
+            after,
+        });
         Ok(())
     }
 
@@ -848,6 +997,16 @@ impl<'a> Diff<'a> {
                 ),
             }
         }
+        for entry in &old.grants {
+            if self.wanted.contains(&entry.path) {
+                continue;
+            }
+            let file = self.root.join(&entry.path);
+            if self.behind_symlink(&file) {
+                continue;
+            }
+            self.merge_grant(&file, entry.path.clone(), entry.key.clone(), &[])?;
+        }
         if old.exclude.is_some() && !self.exclude_seen {
             let root = self.root.to_path_buf();
             self.exclude(&root, None)?;
@@ -1026,7 +1185,7 @@ fn union(old: &Manifest, new: &Manifest) -> Manifest {
         blocks: merge(&old.blocks, &new.blocks, |e| &e.path),
         files: merge(&old.files, &new.files, |e| &e.path),
         exclude: new.exclude.clone().or_else(|| old.exclude.clone()),
-        grants: new.grants.clone(),
+        grants: merge(&old.grants, &new.grants, |e| &e.path),
     }
 }
 

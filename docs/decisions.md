@@ -450,7 +450,7 @@ The spec wins wherever it is explicit.
   - Exclude: one marker section in `.git/info/exclude` (``# kipi:begin (managed by `kipi sync`; do not
     edit)`` … `# kipi:end`), replaced in place or appended; removed with the last action. Located with
     `git rev-parse --git-path info/exclude` when `.git` is a file (worktrees, submodules).
-  - Grants: `MergeGrant` is accepted and ignored until #23.
+  - Grants: merged into the settings file's JSON array; see "Stage 2: read grants (#23)".
 - **Directories.** Missing parents are created one by one and recorded; a recorded directory that no
   wanted path lives under is removed once empty (deepest first) and stays recorded while it still
   holds something kipi did not write. Nothing is written or removed below a directory that is a
@@ -474,3 +474,35 @@ The spec wins wherever it is explicit.
   `flock` on Unix) instead of `fs4`, which is then not needed. It fails at once with a hint when
   another process holds it, and is released on drop or exit. `apply::Lock::acquire` is for sync
   (#8) to hold across all targets.
+
+## Stage 2: read grants (#23)
+
+- **Owned-entry merge** (`json_merge::merge`): kipi adds the entries the plan grants and removes
+  only the entries the manifest's `[[grant]]` records as its own. An entry already in the array
+  that kipi did not add is the user's, even when kipi wants the same path: kipi does not claim it,
+  so it never removes it later. Non-string entries and every other key are left alone.
+- **Order.** New entries are appended; entries already there keep their place, so a mode switch
+  shows as the lines it adds or removes rather than a reshuffle. Key order is kept by enabling
+  `serde_json`'s `preserve_order` feature (in the §12 set already; it pulls in `indexmap`, which
+  `toml_edit` already depends on). The file is re-indented with the indentation it already uses
+  (two spaces for a new file) and keeps or omits its final newline. Comments are not JSON and
+  fail to parse, so a file with them is reported as malformed.
+- **Idempotence** is decided on the parsed document, not the text: when the document would not
+  change, nothing is written, whatever the file's formatting.
+- **Clean removal.** When removal empties the array, the array is dropped, and so is every object
+  on the way to it that this leaves empty. `[[grant]]` gains `created` (kipi created the file;
+  `serde(default)`, so `version = 1` manifests still load); a created file left as `{}` is
+  deleted, so `grant = "none"` or unbinding returns the checkout to how it was. A file the user
+  had is kept, even as `{}`.
+- **Refusals** (reported in `Report::skipped` with a hint, file untouched, old `[[grant]]` kept so
+  a later run can still remove kipi's entries): malformed JSON or a value of the wrong type on the
+  key path; a settings file that is a symlink or a directory; a settings file git tracks (Claude
+  Code then holds the grant until the folder is trusted, see `docs/adapters.md`, and writing it
+  would show in `git diff`); a symlinked `.claude` (the usual rule: nothing is written through a
+  symlinked directory).
+- **No empty scaffolding.** With nothing to grant (`grant = "none"`), kipi creates neither the file
+  nor `.claude/`.
+- **Dry run.** `Report::grants` lists each settings file whose grant changes, with the entries added
+  and removed and the whole text before and after, for `sync --dry-run` (#8) to print as a diff.
+  The change itself is `What::Grant` (create / update / remove).
+- **Codex CLI** gets no grant: see `docs/adapters.md`.

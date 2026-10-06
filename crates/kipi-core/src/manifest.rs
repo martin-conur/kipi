@@ -93,6 +93,9 @@ pub struct GrantEntry {
     pub path: PathBuf,
     /// The object keys down to the array.
     pub key: Vec<String>,
+    /// kipi created the file (it is deleted once kipi's entries were all that was in it).
+    #[serde(default)]
+    pub created: bool,
     /// The array entries kipi owns.
     pub entries: Vec<PathBuf>,
 }
@@ -159,6 +162,11 @@ impl Manifest {
         self.blocks.iter().find(|b| b.path == path)
     }
 
+    /// The grant entry for the settings file `path`.
+    pub fn grant(&self, path: &Path) -> Option<&GrantEntry> {
+        self.grants.iter().find(|g| g.path == path)
+    }
+
     /// The file entry for `path`.
     pub fn file(&self, path: &Path) -> Option<&FileEntry> {
         self.files.iter().find(|f| f.path == path)
@@ -203,6 +211,7 @@ mod tests {
             grants: vec![GrantEntry {
                 path: ".claude/settings.local.json".into(),
                 key: vec!["permissions".into(), "additionalDirectories".into()],
+                created: true,
                 entries: vec!["/store/repos".into()],
             }],
             ..Manifest::new()
