@@ -4,6 +4,8 @@
 mod explain;
 mod resolve;
 mod scan;
+pub mod status;
+mod sync;
 
 use std::path::PathBuf;
 
@@ -22,7 +24,6 @@ pub struct Loaded {
     /// The mounted stores.
     pub stores: StoreSet,
     /// `machine.toml`.
-    #[allow(dead_code)] // read by `status` and `doctor` in later stages.
     pub machine: Machine,
     /// The resolved plan.
     pub plan: Plan,
@@ -84,10 +85,34 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
     if command.dry_run().is_some_and(|d| d.dry_run) {
         out.info("dry run: nothing will be written");
     }
-    let load = || Loaded::load(&Env::from_process()?, &global.stores, out);
+    let env = || Env::from_process().map_err(Failure::from);
+    let load = |env: &Env| Loaded::load(env, &global.stores, out);
     match command {
-        Command::Resolve { repo } => resolve::run(&load()?, repo.as_deref(), out),
-        Command::Explain { repo } => explain::run(&load()?, repo, out),
+        Command::Resolve { repo } => resolve::run(&load(&env()?)?, repo.as_deref(), out),
+        Command::Explain { repo } => explain::run(&load(&env()?)?, repo, out),
+        Command::Sync {
+            repos,
+            all,
+            agents,
+            force,
+            allow_tracked,
+            dry_run,
+        } => {
+            let env = env()?;
+            let args = sync::Args {
+                repos,
+                all: *all,
+                agents,
+                force: *force,
+                allow_tracked: *allow_tracked,
+                dry_run: dry_run.dry_run,
+            };
+            sync::run(&env, &load(&env)?, &args, out)
+        }
+        Command::Status { repo } => {
+            let env = env()?;
+            status::run(&env, &load(&env)?, repo.as_deref(), out)
+        }
         Command::Scan {
             paths,
             refresh_drafts,
@@ -95,7 +120,7 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
             scope,
             dry_run,
         } => scan::run(
-            &Env::from_process()?,
+            &env()?,
             &global.stores,
             &scan::Args {
                 paths,

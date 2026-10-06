@@ -1,0 +1,40 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: "serde_json::to_string_pretty(&doc).unwrap()"
+---
+{
+  "version": 1,
+  "repos": [
+    {
+      "name": "side-tool",
+      "store": "personal",
+      "scope": "personal",
+      "path": "[HOME]/code/side-tool",
+      "state": "stale",
+      "pending": [
+        {
+          "op": "update",
+          "what": "block",
+          "path": "[HOME]/code/side-tool/CLAUDE.md"
+        },
+        {
+          "op": "update",
+          "what": "grant",
+          "path": "[HOME]/code/side-tool/.claude/settings.local.json"
+        },
+        {
+          "op": "update",
+          "what": "block",
+          "path": "[HOME]/code/side-tool/AGENTS.md"
+        }
+      ],
+      "always_on": {
+        "tokens": 265,
+        "budget": 4000,
+        "over": false
+      },
+      "draft_summary": false
+    }
+  ],
+  "draft_summaries": 0
+}

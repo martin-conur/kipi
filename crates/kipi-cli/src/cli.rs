@@ -108,7 +108,7 @@ pub enum Command {
         /// Repo entries to sync.
         repos: Vec<String>,
         /// Sync every repo cloned on this machine.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "repos")]
         all: bool,
         /// Adapters to render, overriding the plan.
         #[arg(long, value_delimiter = ',')]
@@ -116,6 +116,9 @@ pub enum Command {
         /// Replace files kipi did not write.
         #[arg(long)]
         force: bool,
+        /// Write the generated block into a tracked CLAUDE.md / AGENTS.md.
+        #[arg(long)]
+        allow_tracked: bool,
         #[command(flatten)]
         dry_run: DryRun,
     },

@@ -13,12 +13,8 @@ use crate::output::table::Table;
 pub fn run(loaded: &Loaded, repo: Option<&str>, out: &Output) -> Result<(), Failure> {
     let only = repo.map(|name| loaded.repo(name)).transpose()?;
     if out.json {
-        let text = json::plan(&loaded.stores, &loaded.plan, only).map_err(|e| {
-            Failure::user(
-                format!("cannot print the plan as JSON: {e}"),
-                "JSON output needs every path to be valid UTF-8; rename the offending directory",
-            )
-        })?;
+        let text = json::plan(&loaded.stores, &loaded.plan, only)
+            .map_err(|e| Failure::json("the plan", e))?;
         return Ok(out.print(&text)?);
     }
     out.print(&human(loaded, only, out))?;

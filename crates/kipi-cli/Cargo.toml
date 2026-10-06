@@ -24,6 +24,7 @@ insta.workspace = true
 kipi-test-support.workspace = true
 predicates.workspace = true
 tempfile.workspace = true
+walkdir.workspace = true
 
 [lints]
 workspace = true

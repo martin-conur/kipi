@@ -161,23 +161,41 @@ pub enum What {
     Grant,
 }
 
-impl fmt::Display for Change {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let op = match self.op {
+impl Op {
+    /// `create`, `update`, `replace` or `remove`.
+    pub fn as_str(self) -> &'static str {
+        match self {
             Op::Create => "create",
             Op::Update => "update",
             Op::Replace => "replace",
             Op::Remove => "remove",
-        };
-        let what = match self.what {
+        }
+    }
+}
+
+impl What {
+    /// `link`, `block`, `file`, `dir`, `exclude` or `grant`.
+    pub fn as_str(self) -> &'static str {
+        match self {
             What::Link => "link",
             What::Block => "block",
             What::File => "file",
             What::Dir => "dir",
             What::Exclude => "exclude",
             What::Grant => "grant",
-        };
-        write!(f, "{op} {what} {}", self.path.display())
+        }
+    }
+}
+
+impl fmt::Display for Change {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} {} {}",
+            self.op.as_str(),
+            self.what.as_str(),
+            self.path.display()
+        )
     }
 }
 

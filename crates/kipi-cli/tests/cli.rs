@@ -2,6 +2,7 @@
 //! home with the example `machine.toml`. Output is snapshotted with the home replaced
 //! by `[HOME]`.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -11,6 +12,7 @@ use kipi_test_support::stores::{ExampleStore, copy_example_store_to};
 use kipi_test_support::workspace_root;
 use predicates::prelude::*;
 use tempfile::TempDir;
+use walkdir::WalkDir;
 
 /// Every repo entry of the example stores.
 const EXAMPLE_REPOS: [&str; 10] = [
@@ -281,11 +283,11 @@ fn exit_1_on_usage_errors() {
 #[test]
 fn exit_1_on_unimplemented_commands() {
     let home = Home::new();
-    let (code, err) = failure_of(&home, home.kipi().args(["sync", "--all", "--dry-run"]));
+    let (code, err) = failure_of(&home, home.kipi().args(["tree"]));
     assert_eq!(code, 1);
     assert_eq!(
         err,
-        "error: `kipi sync` is not implemented yet\n  hint: it lands in Stage 2 (roadmap §14); \
+        "error: `kipi tree` is not implemented yet\n  hint: it lands in Stage 3 (roadmap §14); \
          `kipi resolve` and `kipi explain <repo>` work today\n"
     );
     let (code, err) = failure_of(&home, home.kipi().args(["add", "skill", "x"]));
@@ -497,4 +499,344 @@ fn scan_checks_store_and_scope() {
     );
     let (code, _) = failure_of(&home, home.kipi().args(["scan", "--store", "acme"]));
     assert_eq!(code, 1, "--store needs --scope");
+}
+
+/// A home with the example stores mounted through `config.toml` (what `kipi init --store
+/// <existing store>` does; #9 replaces this stub with the real command) and every example
+/// repo checked out under it, scanned into `machine.toml`.
+fn onboarded_home() -> Home {
+    let home = Home::new();
+    fs::remove_file(home.path().join(".config/kipi/machine.toml")).unwrap();
+    lay_out(home.path(), &example_repos(&ExampleStore::ALL).unwrap()).unwrap();
+    let config = "stores = [\"~/stores/personal-store\", \"~/stores/acme-store\"]\n";
+    fs::write(home.path().join(".config/kipi/config.toml"), config).unwrap();
+    home.bare().arg("scan").assert().success();
+    home
+}
+
+/// Everything under `dir` as path → contents (`-> target` for symlinks), skipping
+/// `.git` except its `info/exclude`.
+fn files_under(dir: &Path) -> BTreeMap<PathBuf, String> {
+    let mut out = BTreeMap::new();
+    let walk = WalkDir::new(dir)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|e| e.file_name() != ".git" || e.path().join("info/exclude").is_file());
+    for entry in walk {
+        let entry = entry.unwrap();
+        let in_git = entry.path().components().any(|c| c.as_os_str() == ".git")
+            && !entry.path().ends_with("info/exclude");
+        let value = if entry.path_is_symlink() {
+            format!("-> {}", fs::read_link(entry.path()).unwrap().display())
+        } else if entry.file_type().is_dir() || in_git {
+            continue;
+        } else {
+            fs::read_to_string(entry.path()).unwrap_or_default()
+        };
+        out.insert(entry.path().to_path_buf(), value);
+    }
+    out
+}
+
+fn json_of(home: &Home, cmd: &mut Command) -> serde_json::Value {
+    serde_json::from_str(&stdout_of(home, cmd)).expect("valid JSON")
+}
+
+/// Replace `from` with `to` in the `bindings.toml` of `store`.
+fn edit_bindings(home: &Home, store: ExampleStore, from: &str, to: &str) {
+    let path = home.store(store).join("bindings.toml");
+    let text = fs::read_to_string(&path).unwrap();
+    assert!(text.contains(from), "{from:?} not in bindings");
+    fs::write(&path, text.replacen(from, to, 1)).unwrap();
+}
+
+#[test]
+fn onboarding_init_scan_sync_then_sync_is_a_no_op() {
+    let home = onboarded_home();
+    let first = stdout_of(&home, home.bare().args(["sync", "--all"]));
+    insta::assert_snapshot!("sync-all-first", first);
+    let synced = files_under(home.path());
+
+    let second = stdout_of(&home, home.bare().args(["sync", "--all"]));
+    insta::assert_snapshot!("sync-all-second", second);
+    assert_eq!(
+        files_under(home.path()),
+        synced,
+        "the second sync wrote nothing"
+    );
+
+    let doc = json_of(&home, home.bare().args(["sync", "--all", "--json"]));
+    assert_eq!(doc["dry_run"], false);
+    for repo in doc["repos"].as_array().unwrap() {
+        assert_eq!(repo["status"], "unchanged", "{repo}");
+        let report = &repo["report"];
+        assert_eq!(report["changes"], serde_json::json!([]), "{repo}");
+        assert_eq!(
+            report["links"],
+            serde_json::json!({"added": 0, "removed": 0})
+        );
+        assert_eq!(
+            report["blocks"],
+            serde_json::json!({"written": 0, "removed": 0})
+        );
+        assert_eq!(report["grants"], serde_json::json!([]));
+        assert_eq!(report["exclude_changed"], false);
+    }
+    for store in doc["registries"].as_array().unwrap() {
+        assert_eq!(store["report"]["changes"], serde_json::json!([]), "{store}");
+    }
+}
+
+#[test]
+fn sync_writes_blocks_into_claude_md_and_agents_md_and_the_exclude_file() {
+    let home = onboarded_home();
+    home.bare().args(["sync", "--all"]).assert().success();
+    let dir = home.path().join("work/acme/billing-api");
+    for file in ["CLAUDE.md", "AGENTS.md"] {
+        let text = fs::read_to_string(dir.join(file)).unwrap();
+        assert!(text.starts_with("<!-- kipi:begin"), "{file}: {text}");
+        assert!(text.contains("## Known repos (acme)"), "{file}: {text}");
+    }
+    let exclude = fs::read_to_string(dir.join(".git/info/exclude")).unwrap();
+    for pattern in [
+        ".claude/skills/",
+        ".claude/settings.local.json",
+        ".agents/",
+        ".kipi/",
+    ] {
+        assert!(
+            exclude.contains(&format!("\n{pattern}\n")),
+            "{pattern} in {exclude}"
+        );
+    }
+    assert!(dir.join(".claude/skills/code-review").is_symlink());
+    assert!(dir.join(".agents/skills/code-review").is_symlink());
+    assert!(
+        home.store(ExampleStore::Acme)
+            .join("generated/registry.acme.md")
+            .is_file()
+    );
+}
+
+#[test]
+fn removing_a_related_entry_removes_its_grant_and_its_mention() {
+    let home = onboarded_home();
+    home.bare().args(["sync", "--all"]).assert().success();
+    let dir = home.path().join("code/side-tool");
+    let api = home.path().join("code/api").display().to_string();
+    let api_json = "[HOME]/code/api";
+    let settings = || fs::read_to_string(dir.join(".claude/settings.local.json")).unwrap();
+    let block = || fs::read_to_string(dir.join("CLAUDE.md")).unwrap();
+    assert!(settings().contains(&format!("\"{api}\"")), "{}", settings());
+    assert!(
+        block().contains("Related: api (read access granted)."),
+        "{}",
+        block()
+    );
+
+    edit_bindings(&home, ExampleStore::Personal, "related = [\"api\"]\n", "");
+    let doc = json_of(&home, home.bare().args(["sync", "side-tool", "--json"]));
+    let repos = doc["repos"].as_array().unwrap();
+    assert_eq!(repos.len(), 1, "only the named repo");
+    assert_eq!(
+        repos[0]["report"]["grants"][0]["removed"],
+        serde_json::json!([api_json])
+    );
+    assert!(
+        !settings().contains(&format!("\"{api}\"")),
+        "{}",
+        settings()
+    );
+    assert!(!block().contains("Related:"), "{}", block());
+    assert!(
+        !fs::read_to_string(dir.join("AGENTS.md"))
+            .unwrap()
+            .contains("Related:")
+    );
+    let again = stdout_of(&home, home.bare().args(["sync", "side-tool"]));
+    assert!(
+        again.contains("side-tool  ~/code/side-tool\n  up to date"),
+        "{again}"
+    );
+}
+
+#[test]
+fn dry_run_lists_the_changes_and_writes_nothing() {
+    let home = onboarded_home();
+    let before = files_under(home.path());
+    let out = stdout_of(&home, home.bare().args(["sync", "side-tool", "--dry-run"]));
+    insta::assert_snapshot!("sync-dry-run", out);
+    assert_eq!(files_under(home.path()), before);
+    let doc = json_of(
+        &home,
+        home.bare().args(["sync", "--all", "--dry-run", "--json"]),
+    );
+    assert_eq!(doc["dry_run"], true);
+    assert_eq!(doc["repos"][0]["status"], "changed");
+    assert_eq!(files_under(home.path()), before);
+}
+
+#[test]
+fn repos_not_cloned_here_are_skipped_with_a_note() {
+    let home = onboarded_home();
+    let machine = home.path().join(".config/kipi/machine.toml");
+    let text = fs::read_to_string(&machine).unwrap();
+    let blog = text.lines().find(|l| l.starts_with("blog = ")).unwrap();
+    fs::write(&machine, text.replace(&format!("{blog}\n"), "")).unwrap();
+    fs::remove_dir_all(home.path().join("code/api")).unwrap();
+    let out = stdout_of(&home, home.bare().args(["sync", "blog", "api"]));
+    assert_eq!(
+        out,
+        "blog\n  skipped: not cloned on this machine\n\
+         api  ~/code/api\n  warning: the checkout is gone; skipped\n    \
+         hint: re-run `kipi scan` to record where it lives now\n\
+         store personal  ~/stores/personal-store/generated  1 registry written\n\
+         store acme  ~/stores/acme-store/generated  1 registry written\n\
+         \nSynced 2 repos: 0 changed, 0 up to date, 2 skipped.\n"
+    );
+    let doc = json_of(&home, home.bare().args(["sync", "blog", "api", "--json"]));
+    assert_eq!(doc["repos"][0]["status"], "not_cloned");
+    assert_eq!(doc["repos"][0]["report"], serde_json::Value::Null);
+    assert_eq!(doc["repos"][1]["status"], "checkout_missing");
+}
+
+#[test]
+fn an_entry_gone_from_every_store_is_cleaned_up_by_sync_all() {
+    let home = onboarded_home();
+    home.bare().args(["sync", "--all"]).assert().success();
+    let dir = home.path().join("code/blog");
+    assert!(dir.join("CLAUDE.md").is_file());
+    edit_bindings(
+        &home,
+        ExampleStore::Personal,
+        "[repos.blog]\nremote = \"github.com/example-user/blog\"\n\
+         summary = \"Static site; posts in content/, theme in themes/plain\"\n\
+         aliases = [\"site\"]\n",
+        "",
+    );
+    let out = stdout_of(&home, home.bare().args(["sync", "--all"]));
+    assert!(
+        out.contains("blog  ~/code/blog\n  -4 links, 2 blocks removed, -2 grants, exclude updated; its entry is in no mounted store\n"),
+        "{out}"
+    );
+    for gone in ["CLAUDE.md", "AGENTS.md", ".claude", ".agents", ".kipi"] {
+        assert!(!dir.join(gone).exists(), "{gone} left behind");
+    }
+    let exclude = fs::read_to_string(dir.join(".git/info/exclude")).unwrap_or_default();
+    assert!(!exclude.contains("kipi"), "{exclude}");
+    let again = stdout_of(&home, home.bare().args(["sync", "--all"]));
+    assert!(!again.contains("blog"), "nothing left to clean: {again}");
+}
+
+#[test]
+fn agents_overrides_the_plan_and_unknown_agents_are_user_errors() {
+    let home = onboarded_home();
+    home.bare()
+        .args(["sync", "billing-api", "--agents", "generic"])
+        .assert()
+        .success();
+    let dir = home.path().join("work/acme/billing-api");
+    assert!(dir.join("AGENTS.md").is_file());
+    assert!(!dir.join("CLAUDE.md").exists());
+    assert!(!dir.join(".claude").exists());
+    let (code, err) = failure_of(
+        &home,
+        home.bare().args(["sync", "--all", "--agents", "claud"]),
+    );
+    assert_eq!(code, 1);
+    assert_eq!(
+        err,
+        "error: unknown agent `claud`\n  hint: did you mean `claude`?\n"
+    );
+}
+
+#[test]
+fn sync_needs_repos_or_all() {
+    let home = onboarded_home();
+    let (code, err) = failure_of(&home, home.bare().arg("sync"));
+    assert_eq!(code, 1);
+    assert_eq!(
+        err,
+        "error: no repo to sync\n  hint: name repo entries (`kipi sync billing-api`) or pass `--all`\n"
+    );
+    let (code, err) = failure_of(&home, home.bare().args(["sync", "billing-apu"]));
+    assert_eq!(code, 1);
+    assert!(err.contains("did you mean `billing-api`?"), "{err}");
+    let (code, _) = failure_of(&home, home.bare().args(["sync", "blog", "--all"]));
+    assert_eq!(code, 1, "repos and --all conflict");
+}
+
+#[test]
+fn status_tracks_missing_synced_and_stale_without_writing() {
+    let home = onboarded_home();
+    let before = files_under(home.path());
+    let out = stdout_of(&home, home.bare().arg("status"));
+    insta::assert_snapshot!("status-before-sync", out);
+    assert_eq!(files_under(home.path()), before, "status writes nothing");
+
+    home.bare().args(["sync", "--all"]).assert().success();
+    let out = stdout_of(&home, home.bare().arg("status"));
+    insta::assert_snapshot!("status-synced", out);
+
+    edit_bindings(&home, ExampleStore::Personal, "related = [\"api\"]\n", "");
+    let synced = files_under(home.path());
+    let doc = json_of(&home, home.bare().args(["status", "side-tool", "--json"]));
+    assert_eq!(files_under(home.path()), synced);
+    insta::assert_snapshot!(
+        "status-stale-json",
+        serde_json::to_string_pretty(&doc).unwrap()
+    );
+    let repo = &doc["repos"][0];
+    assert_eq!(repo["state"], "stale");
+    assert_eq!(repo["scope"], "personal");
+    assert!(!repo["pending"].as_array().unwrap().is_empty());
+    assert_eq!(doc["repos"].as_array().unwrap().len(), 1);
+
+    let doc = json_of(&home, home.bare().args(["status", "--json"]));
+    assert_eq!(doc["draft_summaries"], 3, "api's, and the two scan drafted");
+    let api = doc["repos"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["name"] == "api")
+        .unwrap();
+    assert_eq!(api["draft_summary"], true);
+    assert_eq!(api["state"], "synced");
+}
+
+#[test]
+fn status_of_repos_not_cloned_here() {
+    let home = Home::new();
+    let out = stdout_of(&home, home.kipi().args(["status", "events-pipeline"]));
+    assert!(
+        out.contains("events-pipeline  acme-ml  checkout gone"),
+        "the example machine.toml points at /Volumes: {out}"
+    );
+}
+
+#[test]
+fn a_renamed_entry_keeps_its_checkout_synced_not_cleaned_up() {
+    let home = onboarded_home();
+    home.bare().args(["sync", "--all"]).assert().success();
+    edit_bindings(
+        &home,
+        ExampleStore::Personal,
+        "[repos.blog]",
+        "[repos.site-blog]",
+    );
+    let machine = home.path().join(".config/kipi/machine.toml");
+    let text = fs::read_to_string(&machine).unwrap();
+    let line = text.lines().find(|l| l.starts_with("blog = ")).unwrap();
+    // The old name stays in machine.toml beside the new one, pointing at the same checkout.
+    fs::write(
+        &machine,
+        format!("{text}{}\n", line.replacen("blog", "site-blog", 1)),
+    )
+    .unwrap();
+    let out = stdout_of(&home, home.bare().args(["sync", "--all"]));
+    assert!(out.contains("site-blog  ~/code/blog\n"), "{out}");
+    assert!(!out.contains("no mounted store"), "{out}");
+    let dir = home.path().join("code/blog");
+    assert!(dir.join("CLAUDE.md").is_file());
+    assert!(dir.join(".claude/skills/rust-style").is_symlink());
 }

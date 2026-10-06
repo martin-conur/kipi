@@ -42,6 +42,14 @@ impl Failure {
         }
     }
 
+    /// Printing `what` as JSON failed: a path is not valid UTF-8.
+    pub fn json(what: &str, e: serde_json::Error) -> Self {
+        Failure::user(
+            format!("cannot print {what} as JSON: {e}"),
+            "JSON output needs every path to be valid UTF-8; rename the offending directory",
+        )
+    }
+
     /// The process exit code, from the core error's kind.
     pub fn exit_code(&self) -> u8 {
         match self {

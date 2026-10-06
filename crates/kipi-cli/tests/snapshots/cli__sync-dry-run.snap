@@ -1,0 +1,36 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: out
+---
+side-tool  ~/code/side-tool
+  +4 links, 2 blocks written, +3 grants, exclude updated · always-on ~274/4000 tok
+    would create block ~/code/side-tool/CLAUDE.md
+    would create dir ~/code/side-tool/.claude
+    would create dir ~/code/side-tool/.claude/skills
+    would create link ~/code/side-tool/.claude/skills/rust-style
+    would create link ~/code/side-tool/.claude/skills/commit-style
+    would create grant ~/code/side-tool/.claude/settings.local.json
+    would create block ~/code/side-tool/AGENTS.md
+    would create dir ~/code/side-tool/.agents
+    would create dir ~/code/side-tool/.agents/skills
+    would create link ~/code/side-tool/.agents/skills/rust-style
+    would create link ~/code/side-tool/.agents/skills/commit-style
+    would create exclude ~/code/side-tool/.git/info/exclude
+--- ~/code/side-tool/.claude/settings.local.json
++++ ~/code/side-tool/.claude/settings.local.json
+@@ -1,0 +1,9 @@
++{
++  "permissions": {
++    "additionalDirectories": [
++      "[HOME]/stores/personal-store/repos",
++      "[HOME]/stores/personal-store/skills",
++      "[HOME]/code/api"
++    ]
++  }
++}
+store personal  ~/stores/personal-store/generated  1 registry to write
+    would create file ~/stores/personal-store/generated/registry.personal.md
+store acme  ~/stores/acme-store/generated  1 registry to write
+    would create file ~/stores/acme-store/generated/registry.acme.md
+
+Dry run over 1 repo: 1 would change, 0 up to date, 0 skipped.

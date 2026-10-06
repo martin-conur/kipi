@@ -19,7 +19,7 @@ deny.toml                  # license allowlist; bans tokio, reqwest, hyper, git2
 .leak-denylist             # leak-guard regexes (generic only; private ones via env, see below)
 crates/
   kipi-core/src/           # lib: model, config/, frontmatter, resolve, plan, adapters/, render/,
-                           #      apply, manifest, json_merge, scan, doctor/, tokens, search, git,
+                           #      apply, sync, manifest, json_merge, scan, doctor/, tokens, search, git,
                            #      error, templates (include_str! of templates/)
   kipi-cli/src/            # bin `kipi`: main.rs, commands/ (one file per subcommand), output/
   kipi-test-support/src/   # stores.rs (copy example stores), repos.rs (fake git repos),
