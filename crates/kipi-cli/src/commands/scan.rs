@@ -55,12 +55,7 @@ pub fn run(env: &Env, store_flags: &[PathBuf], args: &Args, out: &Output) -> Res
         scan::write_files(&result.writes)?;
     }
     if out.json {
-        let text = json::scan(&result, args.dry_run).map_err(|e| {
-            Failure::user(
-                format!("cannot print the scan as JSON: {e}"),
-                "JSON output needs every path to be valid UTF-8; rename the offending directory",
-            )
-        })?;
+        let text = json::scan(&result, args.dry_run).map_err(|e| Failure::json("the scan", e))?;
         return Ok(out.print(&text)?);
     }
     out.print(&human(&result, args.dry_run, out))?;

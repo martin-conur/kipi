@@ -1,0 +1,26 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: second
+---
+acme-api  ~/work/acme/api
+  up to date · always-on ~405/4000 tok
+api  ~/code/api
+  up to date · always-on ~265/4000 tok
+billing-api  ~/work/acme/billing-api
+  up to date · always-on ~405/4000 tok
+blog  ~/code/blog
+  up to date · always-on ~265/4000 tok
+dotfiles  ~/code/dotfiles
+  up to date · always-on ~265/4000 tok
+events-pipeline  ~/work/acme/ml/events-pipeline
+  up to date · always-on ~443/4000 tok
+feature-store  ~/work/acme/ml/feature-store
+  up to date · always-on ~426/4000 tok
+ml-platform  ~/work/acme/ml/ml-platform
+  up to date · always-on ~426/4000 tok
+side-tool  ~/code/side-tool
+  up to date · always-on ~274/4000 tok
+web-dashboard  ~/work/acme/web-dashboard
+  up to date · always-on ~405/4000 tok
+
+Synced 10 repos: 0 changed, 10 up to date, 0 skipped.

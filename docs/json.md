@@ -2,7 +2,8 @@
 
 `kipi resolve --json` prints the resolved plan; `kipi resolve <repo> --json` and
 `kipi explain <repo> --json` print the same document restricted to one repo and the registry it
-renders; `kipi scan --json` prints its own report ([Scan](#scan)). The shape is stable: fields
+renders; `kipi scan --json`, `kipi sync --json` and `kipi status --json` print their own reports
+([Scan](#scan), [Sync](#sync), [Status](#status)). The shape is stable: fields
 are only ever added, and anything that renames, removes or changes the meaning of a field bumps
 `version`. Output is pretty-printed, deterministic (two runs
 over the same stores and `machine.toml` are byte-identical) and ends with a newline.
@@ -118,6 +119,56 @@ checkouts match one entry, or clone one new repo; `entry` is `null` then), `ambi
 (several entries match a checkout), `unplaced` (a new checkout outside every root, under two
 scopes' roots at the same depth, or without a free name), `vanished` (a `machine.toml` path that no
 longer exists).
+
+## Sync
+
+`kipi sync --json` (with or without `--dry-run`) prints what changed (or would change).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `version` | number | Schema version, currently `1` |
+| `dry_run` | bool | `true` when nothing was written |
+| `repos` | [SyncRepo] | The named repos in the order given, or with `--all` every repo entry sorted by name, then orphaned checkouts sorted by entry name |
+| `registries` | [{`store`, `report`: Report}] | One per mounted store: its `generated/` registries |
+
+**SyncRepo**: `name`, `store` (string \| null; `null` for an orphan), `path` (the checkout from
+`machine.toml`, or `null`), `status`, `always_on` (AlwaysOn \| null; `null` for an orphan),
+`notices` ([{`message`, `hint`}]: what an adapter declined to do, such as a block not written into a
+tracked file), `report` (Report \| null; `null` when the repo was skipped). `status` is one of
+`changed`, `unchanged`, `not_cloned` (no checkout in `machine.toml`; skipped), `checkout_missing`
+(the recorded checkout is gone; skipped), `orphan` (a checkout `machine.toml` lists for an entry no
+mounted store has, synced only with `--all`: everything its manifest recorded was removed).
+
+**AlwaysOn**: `tokens` (estimate over the generated block plus the descriptions of the repo's
+skills; characters ÷ 4 until the tokenizer lands), `budget` (`budget_tokens`), `over` (bool). It is
+the startup cost to one agent session, so it does not depend on which adapters write files: every
+adapter writes the same block and links the same skills, and `--agents` leaves it unchanged.
+
+**Report**: `changes` ([Change], in the order they were made), `links` (`{added, removed}`),
+`blocks` (`{written, removed}`: generated blocks, or registry files in a store), `grants`
+([{`path`, `added`, `removed`}]: read-grant entries per settings file), `exclude_changed` (bool),
+`skipped` ([{`path`, `message`, `hint`}]: actions not carried out, such as a file in the way
+without `--force`), `foreign` ([string]: entries beside kipi's links that kipi did not write).
+
+**Change**: `op` (`create`, `update`, `replace`, `remove`), `what` (`link`, `block`, `file`, `dir`,
+`exclude`, `grant`), `path`.
+
+## Status
+
+`kipi status --json` and `kipi status <repo> --json`. Nothing is written: the state comes from a
+dry-run sync.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `version` | number | Schema version, currently `1` |
+| `repos` | [StatusRepo] | One per repo entry sorted by name, or only the named one |
+| `draft_summaries` | number | How many of those repos have a summary still marked `# kipi:draft` |
+
+**StatusRepo**: `name`, `store`, `scope` (string \| null when unscoped), `path` (string \| null),
+`state`, `pending` ([Change] a sync would make, or `null` when the repo is not cloned here),
+`always_on` (AlwaysOn), `draft_summary` (bool). `state` is one of `synced` (disk and manifest match
+the plan), `stale` (synced before; a sync would change something), `missing` (cloned here, never
+synced), `not_cloned`, `checkout_missing`.
 
 ## Exit codes
 

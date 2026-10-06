@@ -515,3 +515,45 @@ The spec wins wherever it is explicit.
   adds by hand before the next sync cannot be told apart from kipi's own entry, and goes when
   kipi drops the grant. Once a sync has cleared it, the path is the user's for good.
 - **Codex CLI** gets no grant: see `docs/adapters.md`.
+
+## Stage 2: `sync` and `status` (#8)
+
+- **One orchestrator, two commands.** `kipi_core::sync::run(stores, machine, plan, selection,
+  options)` renders each selected repo's block, reads its `Checkout` (`apply::checkout`), builds the
+  adapters' actions (`plan::repo_actions`) and applies them; it also applies every mounted store's
+  registries (`Target::generated`). `status` is the same call with `dry_run`, so "synced" means
+  exactly "a sync would change nothing" and the two can never disagree.
+- **Registries are regenerated on every sync**, named repos or `--all` (roadmap §8 step 2 is
+  unconditional, and they are cheap). A store whose scopes no longer enable a registry gets an empty
+  action list, so its old file goes through the generated manifest.
+- **Orphans (`--all` only).** A `machine.toml [repos]` checkout whose entry is in no mounted store
+  (the entry was deleted, or its store unmounted) and that still has a `.kipi/manifest.toml` is
+  applied with no actions, so everything kipi wrote there is removed (roadmap §6, "Unmounting a store
+  and re-syncing removes everything it contributed"). A checkout that a live entry also points at (a
+  renamed entry whose old name lingers in `machine.toml`) is never treated as an orphan. Named
+  syncs never touch orphans: a name must be a live entry.
+- **Skipped, not failed.** An entry with no checkout in `machine.toml` is reported as not cloned; a
+  recorded checkout that is not a directory is reported with a hint to re-run `kipi scan`. Neither
+  is an error, and nothing is created at a missing path.
+- **`--agents a,b` replaces each repo's `agents` for the run**, like any other plan input: the diff
+  then removes what the other adapters wrote, and the next plain sync puts it back. Unknown names
+  are user errors with a did-you-mean hint. `--allow-tracked` (§15 decision 3) is a sync flag.
+- **`sync` requires repo names or `--all`** (they conflict); a bare `kipi sync` is a user error with
+  a hint rather than an implicit `--all`, since it writes into every checkout. The lock
+  (`apply::Lock`) is held for the whole run unless `--dry-run`; `status` takes no lock.
+- **Always-on size** is estimated over the rendered block (without an adapter's import line) plus
+  the `description` of each effective skill (§10), as characters ÷ 4 (`tokens::estimate`) until the
+  tokenizer lands in Stage 3. Over budget is a warning in the sync summary and `over` in status.
+  It is the cost to one agent session, so it is computed from the plan before any `--agents`
+  override and does not change with the enabled adapters (they all write the same block and skills).
+- **Status states.** `synced` (dry run changes nothing), `stale` (a manifest exists and the dry run
+  changes something), `missing` (cloned here, no manifest: kipi's files are missing), `not_cloned`,
+  `checkout_missing`. "Missing" in §7 is read as "never synced": a repo that is not on this machine
+  has nothing to be missing from, and gets its own state. `status` also counts the repos whose
+  summary is still `# kipi:draft`.
+- **Summary counts** (`sync::Tally`): links created or replaced / removed; blocks written / removed
+  (a kipi-created block file deleted with its block counts as one block removed); read-grant
+  entries added / removed (from `Report::grants`); whether the exclude section changed. Dry runs
+  also list every change and print the settings-file JSON diff.
+- **Onboarding E2E** mounts the stores by writing `config.toml`, which is what `kipi init --store
+  <existing store>` does; it switches to the real command when the authoring issue (#9) lands.

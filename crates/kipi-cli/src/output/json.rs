@@ -6,11 +6,15 @@
 
 use std::path::{Path, PathBuf};
 
+use kipi_core::apply::Report;
 use kipi_core::model::StoreSet;
 use kipi_core::plan::{
     AlwaysOn, Decided, GrantKind, Plan, PlannedSkill, Registry, RepoPlan, SkillOrigin, Source,
 };
+use kipi_core::sync::{AlwaysOnSize, Outcome, RepoState, Tally};
 use serde::Serialize;
+
+use super::status::Row;
 
 /// Bumped on any breaking change to the shape below.
 pub const JSON_VERSION: u32 = 1;
@@ -418,4 +422,227 @@ struct WarningJson<'a> {
     path: &'a Path,
     message: String,
     hint: String,
+}
+
+/// A `kipi sync` outcome as pretty-printed JSON with a trailing newline (`docs/json.md`,
+/// "Sync"). Fails only on a path that is not valid UTF-8.
+pub fn sync(outcome: &Outcome, dry_run: bool) -> serde_json::Result<String> {
+    let doc = SyncJson {
+        version: JSON_VERSION,
+        dry_run,
+        repos: outcome
+            .repos
+            .iter()
+            .map(|r| SyncRepoJson {
+                name: &r.name,
+                store: r.store.as_deref(),
+                path: r.path.as_deref(),
+                status: match &r.state {
+                    RepoState::Applied(report) if report.is_unchanged() => "unchanged",
+                    RepoState::Applied(_) => "changed",
+                    RepoState::NotCloned => "not_cloned",
+                    RepoState::CheckoutMissing => "checkout_missing",
+                    RepoState::Orphan(_) => "orphan",
+                },
+                always_on: r.always_on.map(always_on),
+                notices: r
+                    .notices
+                    .iter()
+                    .map(|n| NoticeJson {
+                        message: &n.message,
+                        hint: &n.hint,
+                    })
+                    .collect(),
+                report: r.state.report().map(report),
+            })
+            .collect(),
+        registries: outcome
+            .registries
+            .iter()
+            .map(|s| StoreSyncJson {
+                store: &s.store,
+                report: report(&s.report),
+            })
+            .collect(),
+    };
+    let mut out = serde_json::to_string_pretty(&doc)?;
+    out.push('\n');
+    Ok(out)
+}
+
+/// A `kipi status` report as pretty-printed JSON with a trailing newline (`docs/json.md`,
+/// "Status"). Fails only on a path that is not valid UTF-8.
+pub fn status(rows: &[Row]) -> serde_json::Result<String> {
+    let doc = StatusJson {
+        version: JSON_VERSION,
+        repos: rows
+            .iter()
+            .map(|r| StatusRepoJson {
+                name: &r.plan.name,
+                store: &r.plan.store,
+                scope: r.plan.scope.value.as_deref(),
+                path: r.plan.path.as_deref(),
+                state: r.state.as_str(),
+                pending: r.outcome.state.report().map(|rep| report(rep).changes),
+                always_on: r.outcome.always_on.map(always_on),
+                draft_summary: r.draft_summary,
+            })
+            .collect(),
+        draft_summaries: rows.iter().filter(|r| r.draft_summary).count(),
+    };
+    let mut out = serde_json::to_string_pretty(&doc)?;
+    out.push('\n');
+    Ok(out)
+}
+
+fn always_on(s: AlwaysOnSize) -> AlwaysOnJson {
+    AlwaysOnJson {
+        tokens: s.tokens,
+        budget: s.budget,
+        over: s.over(),
+    }
+}
+
+fn report(r: &Report) -> ReportJson<'_> {
+    let t = Tally::of(r);
+    ReportJson {
+        changes: r
+            .changes
+            .iter()
+            .map(|c| ChangeJson {
+                op: c.op.as_str(),
+                what: c.what.as_str(),
+                path: &c.path,
+            })
+            .collect(),
+        links: CountJson {
+            added: t.links_added,
+            removed: t.links_removed,
+        },
+        blocks: BlocksJson {
+            written: t.blocks_written,
+            removed: t.blocks_removed,
+        },
+        grants: r
+            .grants
+            .iter()
+            .map(|g| GrantChangeJson {
+                path: &g.path,
+                added: &g.added,
+                removed: &g.removed,
+            })
+            .collect(),
+        exclude_changed: t.exclude_changed,
+        skipped: r
+            .skipped
+            .iter()
+            .map(|s| SkippedJson {
+                path: &s.path,
+                message: &s.message,
+                hint: &s.hint,
+            })
+            .collect(),
+        foreign: r.foreign.iter().map(PathBuf::as_path).collect(),
+    }
+}
+
+#[derive(Serialize)]
+struct SyncJson<'a> {
+    version: u32,
+    dry_run: bool,
+    repos: Vec<SyncRepoJson<'a>>,
+    registries: Vec<StoreSyncJson<'a>>,
+}
+
+#[derive(Serialize)]
+struct SyncRepoJson<'a> {
+    name: &'a str,
+    store: Option<&'a str>,
+    path: Option<&'a Path>,
+    status: &'static str,
+    always_on: Option<AlwaysOnJson>,
+    notices: Vec<NoticeJson<'a>>,
+    report: Option<ReportJson<'a>>,
+}
+
+#[derive(Serialize)]
+struct StoreSyncJson<'a> {
+    store: &'a str,
+    report: ReportJson<'a>,
+}
+
+#[derive(Serialize)]
+struct AlwaysOnJson {
+    tokens: u32,
+    budget: u32,
+    over: bool,
+}
+
+#[derive(Serialize)]
+struct NoticeJson<'a> {
+    message: &'a str,
+    hint: &'a str,
+}
+
+#[derive(Serialize)]
+struct ReportJson<'a> {
+    changes: Vec<ChangeJson<'a>>,
+    links: CountJson,
+    blocks: BlocksJson,
+    grants: Vec<GrantChangeJson<'a>>,
+    exclude_changed: bool,
+    skipped: Vec<SkippedJson<'a>>,
+    foreign: Vec<&'a Path>,
+}
+
+#[derive(Serialize)]
+struct ChangeJson<'a> {
+    op: &'static str,
+    what: &'static str,
+    path: &'a Path,
+}
+
+#[derive(Serialize)]
+struct CountJson {
+    added: usize,
+    removed: usize,
+}
+
+#[derive(Serialize)]
+struct BlocksJson {
+    written: usize,
+    removed: usize,
+}
+
+#[derive(Serialize)]
+struct GrantChangeJson<'a> {
+    path: &'a Path,
+    added: &'a [String],
+    removed: &'a [String],
+}
+
+#[derive(Serialize)]
+struct SkippedJson<'a> {
+    path: &'a Path,
+    message: &'a str,
+    hint: &'a str,
+}
+
+#[derive(Serialize)]
+struct StatusJson<'a> {
+    version: u32,
+    repos: Vec<StatusRepoJson<'a>>,
+    draft_summaries: usize,
+}
+
+#[derive(Serialize)]
+struct StatusRepoJson<'a> {
+    name: &'a str,
+    store: &'a str,
+    scope: Option<&'a str>,
+    path: Option<&'a Path>,
+    state: &'static str,
+    pending: Option<Vec<ChangeJson<'a>>>,
+    always_on: Option<AlwaysOnJson>,
+    draft_summary: bool,
 }
