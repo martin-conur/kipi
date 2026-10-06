@@ -1,0 +1,13 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: out
+---
+add repo notes-app (store personal)
+  + store personal: [repos.notes-app]
+  + remote: github.com/example-user/notes-app
+  + scope: personal
+  + summary: Notes, synced
+  + machine.toml: ~/code/notes-app
+
+Wrote ~/stores/personal-store/bindings.toml
+Wrote ~/.config/kipi/machine.toml

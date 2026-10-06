@@ -68,6 +68,68 @@ pub fn info_exclude(repo: &Path) -> Result<PathBuf> {
     Ok(repo.join(out.trim()))
 }
 
+/// `git init` the directory `dir` (it must exist).
+pub fn init(dir: &Path) -> Result<()> {
+    run(
+        dir,
+        Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["init", "--quiet"]),
+    )
+    .map(drop)
+}
+
+/// Shallow-clone `url` into `dest` (which must not exist yet).
+pub fn clone(url: &str, dest: &Path) -> Result<()> {
+    let out = Command::new("git")
+        .args(["clone", "--quiet", "--depth", "1", "--", url])
+        .arg(dest)
+        .output()
+        .map_err(|e| Error::io(dest, e, "install git and make sure it is on PATH"))?;
+    if !out.status.success() {
+        return Err(Error::io(
+            dest,
+            std::io::Error::other(format!(
+                "git clone {url} failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            )),
+            "check the URL and that git can reach it (try `git clone` by hand)",
+        ));
+    }
+    Ok(())
+}
+
+/// The git state of a directory, for `kipi stores`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DirStatus {
+    /// No uncommitted change under the directory.
+    pub clean: bool,
+    /// The repository has at least one remote.
+    pub has_remote: bool,
+}
+
+/// The git state of `dir`, or `None` when it is not inside a git work tree.
+pub fn status(dir: &Path) -> Option<DirStatus> {
+    let git = |args: &[&str]| {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .output()
+            .ok()?;
+        out.status
+            .success()
+            .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+    };
+    let changes = git(&["status", "--porcelain", "--", "."])?;
+    let remotes = git(&["remote"]).unwrap_or_default();
+    Some(DirStatus {
+        clean: changes.trim().is_empty(),
+        has_remote: !remotes.trim().is_empty(),
+    })
+}
+
 /// Run a git command, returning its stdout; a non-zero exit is an I/O error.
 fn run(repo: &Path, cmd: &mut Command) -> Result<String> {
     let out = cmd

@@ -121,6 +121,15 @@ pub enum Error {
     /// Neither `$HOME` nor the platform reports a home directory.
     #[error("cannot determine the home directory")]
     NoHome,
+    /// A bad argument to a command, about no particular file (an unknown repo name, an
+    /// invalid skill name, ...).
+    #[error("{message}")]
+    Usage {
+        /// What is wrong.
+        message: String,
+        /// What to do about it.
+        hint: String,
+    },
 }
 
 /// What kind of failure an [`Error`] is, for the CLI's exit codes (roadmap §7).
@@ -140,6 +149,7 @@ impl Error {
             Error::Invalid { .. }
             | Error::UnknownKey { .. }
             | Error::Conflict { .. }
+            | Error::Usage { .. }
             | Error::NoHome => ErrorKind::User,
         }
     }
@@ -148,6 +158,14 @@ impl Error {
     pub fn invalid(at: Location, message: impl Into<String>, hint: impl Into<String>) -> Self {
         Error::Invalid {
             at,
+            message: message.into(),
+            hint: hint.into(),
+        }
+    }
+
+    /// An [`Error::Usage`].
+    pub fn usage(message: impl Into<String>, hint: impl Into<String>) -> Self {
+        Error::Usage {
             message: message.into(),
             hint: hint.into(),
         }
@@ -180,9 +198,10 @@ impl Error {
     /// What the user should do about this error.
     pub fn hint(&self) -> String {
         match self {
-            Error::Invalid { hint, .. } | Error::Conflict { hint, .. } | Error::Io { hint, .. } => {
-                hint.clone()
-            }
+            Error::Invalid { hint, .. }
+            | Error::Conflict { hint, .. }
+            | Error::Io { hint, .. }
+            | Error::Usage { hint, .. } => hint.clone(),
             Error::UnknownKey { expected, .. } => {
                 let valid = expected
                     .iter()
@@ -211,7 +230,9 @@ impl Error {
     /// What is wrong, without the location prefix [`Display`](fmt::Display) adds.
     pub fn message(&self) -> String {
         match self {
-            Error::Invalid { message, .. } | Error::Conflict { message, .. } => message.clone(),
+            Error::Invalid { message, .. }
+            | Error::Conflict { message, .. }
+            | Error::Usage { message, .. } => message.clone(),
             Error::UnknownKey { key, table, .. } => format!("unknown key `{key}` in {table}"),
             Error::Io { .. } | Error::NoHome => self.to_string(),
         }
@@ -223,7 +244,36 @@ impl Error {
             Error::Invalid { at, .. }
             | Error::UnknownKey { at, .. }
             | Error::Conflict { at, .. } => Some(at),
-            Error::Io { .. } | Error::NoHome => None,
+            Error::Io { .. } | Error::NoHome | Error::Usage { .. } => None,
+        }
+    }
+
+    /// The same error, saying that the edit it rejects was not written (for the
+    /// authoring commands, which validate an edited file before writing it).
+    pub fn rejected(self) -> Self {
+        const SUFFIX: &str = " (rejected: nothing was written)";
+        match self {
+            Error::Invalid { at, message, hint } => Error::Invalid {
+                at,
+                message: message + SUFFIX,
+                hint,
+            },
+            Error::Conflict {
+                at,
+                other,
+                message,
+                hint,
+            } => Error::Conflict {
+                at,
+                other,
+                message: message + SUFFIX,
+                hint,
+            },
+            Error::Usage { message, hint } => Error::Usage {
+                message: message + SUFFIX,
+                hint,
+            },
+            other => other,
         }
     }
 

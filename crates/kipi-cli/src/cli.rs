@@ -64,7 +64,7 @@ pub enum Command {
     },
     /// List mounted stores, or unmount one.
     Stores {
-        /// Remove this store from config.toml.
+        /// Remove this store (by name or path) from config.toml.
         #[arg(long, value_name = "NAME")]
         unmount: Option<String>,
         #[command(flatten)]
@@ -202,6 +202,9 @@ pub enum Add {
         /// A git URL or path to import from.
         #[arg(long, value_name = "GIT-URL|PATH")]
         from: Option<String>,
+        /// Replace the --from directory with a symlink to the imported copy.
+        #[arg(long, requires = "from")]
+        link_back: bool,
         #[command(flatten)]
         dry_run: DryRun,
     },

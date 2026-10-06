@@ -6,6 +6,7 @@
 
 pub mod adapters;
 pub mod apply;
+pub mod authoring;
 pub mod config;
 pub mod doctor;
 pub mod error;

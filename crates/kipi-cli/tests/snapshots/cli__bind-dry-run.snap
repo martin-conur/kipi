@@ -1,0 +1,22 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: out
+---
+bind events-pipeline (store acme)
+  + skills: code-review
+  = related: billing-api  (already there)
+  + aliases: kafka
+
+Dry run: would write 1 file:
+--- ~/stores/acme-store/bindings.toml
++++ ~/stores/acme-store/bindings.toml
+@@ -36,7 +36,7 @@
+ scope = "acme-ml"                  # optional; explicit beats path
+ summary = "Kafka consumers that turn raw events into billing and ML features"
+-aliases = ["events", "pipeline"]
++aliases = ["events", "pipeline", "kafka"]
+ related = ["billing-api", "ml-platform"]
+-skills = ["stream-recipes"]
++skills = ["stream-recipes", "code-review"]
+ exclude = ["pr-conventions"]
+ agents = ["claude"]                # per-repo override

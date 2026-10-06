@@ -1,11 +1,13 @@
 //! One module per subcommand (roadmap §7). Every command after loading is a function
 //! of the [`Plan`]; nothing reads config twice (roadmap §12).
 
+mod authoring;
 mod doctor;
 mod explain;
 mod resolve;
 mod scan;
 mod status;
+pub mod stores;
 mod sync;
 
 use std::path::PathBuf;
@@ -16,7 +18,7 @@ use kipi_core::model::{Machine, StoreSet};
 use kipi_core::plan::{Plan, RepoPlan};
 use kipi_core::resolve::resolve as resolve_plan;
 
-use crate::cli::{Command, Global};
+use crate::cli::{Add, Command, Global};
 use crate::error::Failure;
 use crate::output::Output;
 
@@ -135,6 +137,77 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
         Command::Doctor { repo, fix, .. } => {
             doctor::run(&env()?, &global.stores, repo.as_deref(), *fix, out)
         }
+        Command::Init {
+            store,
+            name,
+            git,
+            dry_run,
+        } => authoring::init(
+            &env()?,
+            &kipi_core::authoring::InitOptions {
+                path: store.as_deref(),
+                name: name.as_deref(),
+                git: *git,
+            },
+            dry_run.dry_run,
+            out,
+        ),
+        Command::Stores { unmount, dry_run } => match unmount {
+            Some(which) => authoring::unmount(&env()?, which, dry_run.dry_run, out),
+            None => stores::run(&env()?, &global.stores, out),
+        },
+        Command::Add(Add::Skill {
+            name,
+            scope,
+            store,
+            from,
+            link_back,
+            dry_run,
+        }) => authoring::add_skill(
+            &env()?,
+            &global.stores,
+            &kipi_core::authoring::SkillOptions {
+                name,
+                scope: scope.as_deref(),
+                store: store.as_deref(),
+                from: from.as_deref(),
+                link_back: *link_back,
+            },
+            dry_run.dry_run,
+            out,
+        ),
+        Command::Add(Add::Repo {
+            name,
+            scope,
+            path,
+            summary,
+            dry_run,
+        }) => authoring::add_repo(
+            &env()?,
+            &global.stores,
+            &kipi_core::authoring::RepoOptions {
+                name,
+                scope: scope.as_deref(),
+                path: path.as_deref(),
+                summary: summary.as_deref(),
+            },
+            dry_run.dry_run,
+            out,
+        ),
+        Command::Bind(b) | Command::Unbind(b) => authoring::bind(
+            &env()?,
+            &global.stores,
+            &kipi_core::authoring::Binding {
+                repo: &b.repo,
+                skills: &b.skills,
+                related: &b.related,
+                exclude: &b.exclude,
+                aliases: &b.aliases,
+            },
+            matches!(command, Command::Bind(_)),
+            b.dry_run.dry_run,
+            out,
+        ),
         other => Err(not_implemented(other)),
     }
 }
@@ -147,8 +220,7 @@ fn not_implemented(command: &Command) -> Failure {
         | Command::Where { .. }
         | Command::Grep { .. }
         | Command::Edit { .. } => "Stage 3",
-        Command::Completions { .. } => "Stage 4",
-        _ => "Stage 2",
+        _ => "Stage 4",
     };
     Failure::user(
         format!("`kipi {name}` is not implemented yet"),

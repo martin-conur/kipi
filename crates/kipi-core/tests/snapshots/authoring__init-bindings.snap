@@ -1,0 +1,26 @@
+---
+source: crates/kipi-core/tests/authoring.rs
+expression: bindings
+---
+# kipi store bindings. Schema: roadmap §5.1.
+
+[store]
+name = "mine"                      # unique among mounted stores
+version = 1                        # schema version
+share_skills = false               # true lets other mounted stores use "<store>/<skill>"
+
+[defaults]
+budget_tokens = 4000               # always-on cap per repo
+agents = ["claude", "generic"]     # adapters to render by default
+grant = "related"                  # related | registry | none
+
+# [scopes.<scope>]
+# roots = ["~/code"]
+# skills = []
+# always = ["conventions/<scope>.md"]
+# registry = true
+
+# [repos.<name>]
+# remote = "github.com/<owner>/<name>"
+# summary = "One line: what it is and where to look"
+# aliases = []

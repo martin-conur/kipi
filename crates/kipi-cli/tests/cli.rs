@@ -35,6 +35,13 @@ struct Home {
 }
 
 impl Home {
+    /// A home with nothing in it.
+    fn empty() -> Self {
+        Home {
+            dir: tempfile::tempdir().unwrap(),
+        }
+    }
+
     fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
         for store in ExampleStore::ALL {
@@ -290,9 +297,9 @@ fn exit_1_on_unimplemented_commands() {
         "error: `kipi tree` is not implemented yet\n  hint: it lands in Stage 3 (roadmap §14); \
          `kipi resolve` and `kipi explain <repo>` work today\n"
     );
-    let (code, err) = failure_of(&home, home.kipi().args(["add", "skill", "x"]));
+    let (code, err) = failure_of(&home, home.kipi().args(["where", "x"]));
     assert_eq!(code, 1);
-    assert!(err.starts_with("error: `kipi add skill` is not implemented yet"));
+    assert!(err.starts_with("error: `kipi where` is not implemented yet"));
 }
 
 #[test]
@@ -501,15 +508,26 @@ fn scan_checks_store_and_scope() {
     assert_eq!(code, 1, "--store needs --scope");
 }
 
-/// A home with the example stores mounted through `config.toml` (what `kipi init --store
-/// <existing store>` does; #9 replaces this stub with the real command) and every example
-/// repo checked out under it, scanned into `machine.toml`.
+/// A home with the example stores mounted with `kipi init --store <existing store>` and
+/// every example repo checked out under it, scanned into `machine.toml`.
 fn onboarded_home() -> Home {
     let home = Home::new();
     fs::remove_file(home.path().join(".config/kipi/machine.toml")).unwrap();
     lay_out(home.path(), &example_repos(&ExampleStore::ALL).unwrap()).unwrap();
-    let config = "stores = [\"~/stores/personal-store\", \"~/stores/acme-store\"]\n";
-    fs::write(home.path().join(".config/kipi/config.toml"), config).unwrap();
+    for store in ExampleStore::ALL {
+        let path = home.store(store);
+        home.bare()
+            .arg("init")
+            .arg("--store")
+            .arg(path)
+            .assert()
+            .success();
+    }
+    let config = fs::read_to_string(home.path().join(".config/kipi/config.toml")).unwrap();
+    assert_eq!(
+        config,
+        "stores = [\"~/stores/personal-store\", \"~/stores/acme-store\"]\n"
+    );
     home.bare().arg("scan").assert().success();
     home
 }
@@ -1042,4 +1060,247 @@ fn doctor_user_errors_exit_1() {
         err.starts_with("error: `kipi doctor --fix` is not implemented yet"),
         "{err}"
     );
+}
+
+/// A skill directory as a user keeps it under `~/.claude/skills/<name>`.
+fn user_skill(home: &Home, name: &str) -> PathBuf {
+    let dir = home.path().join(".claude/skills").join(name);
+    fs::create_dir_all(dir.join("references")).unwrap();
+    fs::write(
+        dir.join("SKILL.md"),
+        format!("---\nname: {name}\ndescription: Use when reviewing a change.\n---\n\n# {name}\n"),
+    )
+    .unwrap();
+    fs::write(dir.join("references/checklist.md"), "- tests\n").unwrap();
+    dir
+}
+
+#[test]
+fn authoring_from_an_empty_home_to_a_synced_repo() {
+    let home = Home::empty();
+    for (dir, url) in [
+        ("code/app", "https://github.com/example-user/app.git"),
+        (
+            "code/lib-core",
+            "https://github.com/example-user/lib-core.git",
+        ),
+    ] {
+        let repo = FakeRepo {
+            entry: String::new(),
+            dir: dir.into(),
+            origin_url: Some(url.into()),
+            readme: Some("A small example project.\n".into()),
+            manifest: ManifestKind::None,
+            description: None,
+        };
+        repo.create_under(home.path()).unwrap();
+    }
+
+    let out = stdout_of(&home, home.bare().args(["init", "--git"]));
+    assert!(
+        out.contains("+ store: personal at ~/.agents/store"),
+        "{out}"
+    );
+    let store = home.path().join(".agents/store");
+    assert!(store.join(".git").is_dir());
+    // The user declares a scope by hand, as the skeleton's commented example shows.
+    let bindings = store.join("bindings.toml");
+    let mut text = fs::read_to_string(&bindings).unwrap();
+    text.push_str("\n[scopes.personal]\nroots = [\"~/code\"]\nregistry = true\n");
+    fs::write(&bindings, text).unwrap();
+
+    home.bare().arg("scan").assert().success();
+    let src = user_skill(&home, "review");
+    let out = stdout_of(
+        &home,
+        home.bare()
+            .args([
+                "add",
+                "skill",
+                "review",
+                "--scope",
+                "personal",
+                "--link-back",
+                "--from",
+            ])
+            .arg(&src),
+    );
+    assert!(out.contains("+ scopes.personal.skills: review"), "{out}");
+    assert_eq!(fs::read_link(&src).unwrap(), store.join("skills/review"));
+
+    let before_bind = fs::read_to_string(&bindings).unwrap();
+    let out = stdout_of(
+        &home,
+        home.bare().args(["bind", "app", "--related", "lib-core"]),
+    );
+    assert!(out.contains("+ related: lib-core"), "{out}");
+    home.bare().args(["sync", "--all"]).assert().success();
+
+    let app = home.path().join("code/app");
+    assert_eq!(
+        fs::read_link(app.join(".claude/skills/review")).unwrap(),
+        store.join("skills/review")
+    );
+    let block = fs::read_to_string(app.join("CLAUDE.md")).unwrap();
+    assert!(
+        block.contains("Related: lib-core (read access granted)."),
+        "{block}"
+    );
+    let lib = home.path().join("code/lib-core").display().to_string();
+    let settings = || fs::read_to_string(app.join(".claude/settings.local.json")).unwrap();
+    assert!(settings().contains(&lib), "{}", settings());
+
+    home.bare()
+        .args(["unbind", "app", "--related", "lib-core"])
+        .assert()
+        .success();
+    assert_eq!(
+        fs::read_to_string(&bindings).unwrap(),
+        before_bind,
+        "byte-identical"
+    );
+    home.bare().args(["sync", "--all"]).assert().success();
+    assert!(!settings().contains(&lib), "{}", settings());
+}
+
+#[test]
+fn bind_dry_run_prints_the_diff_and_writes_nothing() {
+    let home = Home::new();
+    let bindings = home.store(ExampleStore::Acme).join("bindings.toml");
+    let before = fs::read_to_string(&bindings).unwrap();
+    let out = stdout_of(
+        &home,
+        home.kipi().args([
+            "bind",
+            "events-pipeline",
+            "--skill",
+            "code-review",
+            "--related",
+            "billing-api",
+            "--alias",
+            "kafka",
+            "--dry-run",
+        ]),
+    );
+    insta::assert_snapshot!("bind-dry-run", out);
+    assert_eq!(fs::read_to_string(&bindings).unwrap(), before);
+
+    let doc = json_of(
+        &home,
+        home.kipi().args([
+            "unbind",
+            "events-pipeline",
+            "--exclude",
+            "pr-conventions",
+            "--json",
+        ]),
+    );
+    assert_eq!(doc["command"], "unbind");
+    assert_eq!(doc["store"], "acme");
+    assert_eq!(doc["dry_run"], false);
+    assert_eq!(
+        doc["changes"],
+        serde_json::json!([{"op": "remove", "what": "exclude", "value": "pr-conventions", "note": null}])
+    );
+    assert!(!fs::read_to_string(&bindings).unwrap().contains("exclude ="));
+}
+
+#[test]
+fn a_bind_breaking_the_leak_rule_is_rejected_without_writing() {
+    let home = Home::new();
+    let bindings = home.store(ExampleStore::Personal).join("bindings.toml");
+    let before = fs::read_to_string(&bindings).unwrap();
+    let (code, err) = failure_of(
+        &home,
+        home.kipi()
+            .args(["bind", "side-tool", "--related", "billing-api"]),
+    );
+    assert_eq!(code, 1);
+    assert!(err.contains("(rejected: nothing was written)"), "{err}");
+    assert!(err.contains("\n  hint: "), "{err}");
+    assert_eq!(fs::read_to_string(&bindings).unwrap(), before);
+}
+
+#[test]
+fn add_repo_registers_an_entry_and_its_checkout() {
+    let home = Home::new();
+    let repo = FakeRepo {
+        entry: String::new(),
+        dir: "code/notes-app".into(),
+        origin_url: Some("https://github.com/example-user/notes-app.git".into()),
+        readme: None,
+        manifest: ManifestKind::None,
+        description: None,
+    };
+    let path = repo.create_under(home.path()).unwrap();
+    let out = stdout_of(
+        &home,
+        home.kipi()
+            .args([
+                "add",
+                "repo",
+                "notes-app",
+                "--scope",
+                "personal",
+                "--summary",
+                "Notes, synced",
+                "--path",
+            ])
+            .arg(&path),
+    );
+    insta::assert_snapshot!("add-repo", out);
+    let explain = stdout_of(&home, home.kipi().args(["explain", "notes-app"]));
+    assert!(explain.contains("~/code/notes-app"), "{explain}");
+}
+
+#[test]
+fn stores_lists_and_unmount_cleans_up_everything_a_store_contributed() {
+    let home = onboarded_home();
+    let work = home.path().join("work");
+    let pristine = files_under(&work);
+    insta::assert_snapshot!("stores", stdout_of(&home, home.bare().arg("stores")));
+    let doc = json_of(&home, home.bare().args(["stores", "--json"]));
+    assert_eq!(doc["stores"][1]["name"], "acme");
+    assert_eq!(doc["stores"][1]["repos"], 6);
+    assert_eq!(doc["stores"][0]["share_skills"], true);
+
+    home.bare().args(["sync", "--all"]).assert().success();
+    assert_ne!(files_under(&work), pristine);
+    let out = stdout_of(&home, home.bare().args(["stores", "--unmount", "acme"]));
+    assert!(
+        out.contains("- config.toml stores: acme (~/stores/acme-store)"),
+        "{out}"
+    );
+    home.bare().args(["sync", "--all"]).assert().success();
+    assert_eq!(files_under(&work), pristine, "no work content left");
+    for (path, text) in files_under(&home.path().join("code")) {
+        assert!(!text.contains("acme"), "{}: {text}", path.display());
+    }
+    let out = stdout_of(&home, home.bare().arg("stores"));
+    assert!(!out.contains("acme"), "{out}");
+}
+
+#[test]
+fn init_mounts_an_existing_store_without_touching_it() {
+    let home = Home::new();
+    let store = home.store(ExampleStore::Personal);
+    let before = files_under(&store);
+    let out = stdout_of(&home, home.bare().arg("init").arg("--store").arg(&store));
+    assert!(
+        out.contains("= store: personal at ~/stores/personal-store  (exists; mounted as is)"),
+        "{out}"
+    );
+    assert_eq!(files_under(&store), before);
+    let again = stdout_of(&home, home.bare().arg("init").arg("--store").arg(&store));
+    assert!(again.ends_with("Nothing to write.\n"), "{again}");
+    let (code, err) = failure_of(
+        &home,
+        home.bare()
+            .arg("init")
+            .arg("--store")
+            .arg(&store)
+            .args(["--name", "work"]),
+    );
+    assert_eq!(code, 1);
+    assert!(err.contains("is named `personal`, not `work`"), "{err}");
 }
