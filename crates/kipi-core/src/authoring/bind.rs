@@ -127,7 +127,7 @@ fn edit(
         return Err(Error::usage(
             format!(
                 "alias `{}` of `{}` is already a name or alias of `{}` in the registry of scope \
-                 `{}` (rejected: nothing was written)",
+                 `{}`",
                 c.key,
                 repo.name,
                 others.join("`, `"),
@@ -135,7 +135,8 @@ fn edit(
             ),
             "aliases must be unique within a registry so the agent can resolve them; pick \
              another alias",
-        ));
+        )
+        .rejected());
     }
 
     // An unbound skill the repo still gets from its scope needs `--exclude` instead.

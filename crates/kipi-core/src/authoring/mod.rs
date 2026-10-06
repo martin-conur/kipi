@@ -199,10 +199,24 @@ impl Outcome {
             fs::create_dir_all(dir)
                 .map_err(|e| Error::io(dir, e, "check that the parent directory is writable"))?;
         }
+        // Deliberately skill first, bindings second: a failure in between leaves an
+        // unreferenced skill directory, never a store that references a missing skill.
         if let Some(skill) = &self.skill {
             skill.install()?;
         }
-        write_files(&self.writes)?;
+        if let Err(e) = write_files(&self.writes) {
+            return Err(match (&self.skill, e) {
+                (Some(skill), Error::Io { path, source, hint }) => Error::Io {
+                    path,
+                    source,
+                    hint: format!(
+                        "{hint}; the skill was already installed at {} but is not bound:                          remove that directory, or re-run without it in the way",
+                        skill.to.display()
+                    ),
+                },
+                (_, e) => e,
+            });
+        }
         if let Some(link) = &self.link_back {
             link.apply()?;
         }

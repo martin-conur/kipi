@@ -248,7 +248,8 @@ fn bad_values_are_rejected() {
                 aliases: &strings(&["Billing"]),
                 ..Binding::default()
             },
-            "alias `billing` of `ml-platform` is already a name or alias of `billing-api`",
+            "alias `billing` of `ml-platform` is already a name or alias of `billing-api` in the \
+             registry of scope `acme` (rejected: nothing was written)",
         ),
         (
             Binding {

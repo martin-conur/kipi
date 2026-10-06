@@ -269,6 +269,10 @@ impl Error {
                 message: message + SUFFIX,
                 hint,
             },
+            Error::Usage { message, hint } => Error::Usage {
+                message: message + SUFFIX,
+                hint,
+            },
             other => other,
         }
     }
