@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/machine.toml:2: path `code/one` is relative
+  hint: write an absolute path or one starting with `~/`

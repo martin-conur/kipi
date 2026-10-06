@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/machine.toml:2: invalid type: sequence, expected a string in [repos]
+  hint: change the value to the expected type

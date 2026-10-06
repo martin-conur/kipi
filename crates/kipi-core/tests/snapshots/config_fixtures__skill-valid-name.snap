@@ -1,0 +1,15 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "redact(&out, dir.path())"
+---
+Skill {
+    name: "case",
+    description: None,
+    scope: None,
+    tags: [],
+    dir: "<dir>/skills/case",
+    at: Location {
+        file: "<dir>/skills/case/SKILL.md",
+        line: None,
+    },
+}

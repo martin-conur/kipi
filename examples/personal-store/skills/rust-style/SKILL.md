@@ -1,6 +1,6 @@
 ---
 name: rust-style
-description: Use when writing or reviewing Rust in personal projects: error handling, module layout and testing style.
+description: "Use when writing or reviewing Rust in personal projects: error handling, module layout and testing style."
 x-kipi:
   scope: personal
   tags: [rust]

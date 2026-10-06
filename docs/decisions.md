@@ -45,3 +45,56 @@ The spec wins wherever it is explicit.
 - **Duplicate crate versions are denied** (`multiple-versions = "deny"`). The current lockfile has
   none; a genuine duplicate gets a `skip` entry with a reason rather than a blanket `warn`.
 - **CI actions are pinned to full commit SHAs** with a `# vX.Y.Z` comment; bump them deliberately.
+
+## Stage 1: model and config loading (#2)
+
+- **Loading checks shape, resolution checks references.** `config::load_store` validates types,
+  unknown keys, the store version, names, path forms and SKILL.md frontmatter. Whether `extends`,
+  `scope`, `related`, `skills`, `exclude` and `x-kipi.scope` name something that exists is checked
+  by resolution (#3) and the multi-store checks (#24), which see the whole store set.
+- **`[defaults]` and each of its keys are optional.** Unset keys fall back to the §5.1 values
+  (`budget_tokens = 4000`, `agents = ["claude", "generic"]`, `grant = "related"`) through
+  `Defaults::{budget_tokens, agents, grant}`. The model keeps them as `Option` so provenance can
+  tell "set in the file" from "built in".
+- **Scopes and repos accept `agents`, `grant` and `budget_tokens`.** §6's precedence rule
+  (repo > scope chain > defaults, "same precedence for `budget_tokens` and `grant`") implies the
+  keys exist at every level, although the §5.1 example shows only the repo-level `agents` and `grant`.
+- **The version is checked before the schema.** A store written by a newer kipi reports
+  `unsupported store version 2`, not the new keys it introduced. `[store] name` and `version` are
+  required; `share_skills` defaults to `false`.
+- **Names** (store, scope, repo) are ASCII letters, digits, `-`, `_` and `.`, starting with a letter
+  or digit. `/` and `:` are reserved for `<store>/<skill>` references and `store:bindings.toml:12`
+  provenance. Skill names follow the Agent Skills rule: lowercase letters, digits and `-`, at most
+  64 characters, equal to the directory name.
+- **Path forms.** `roots`, `config.toml` `stores` and every `machine.toml` path must be absolute or
+  start with `~/`; `~` is expanded at load with the home directory from `Env`. `always` entries must
+  be relative paths inside the store (no `..`, not absolute).
+- **`remote` must already be normalized** (`host/owner/name`: no scheme, user, port, `:` or
+  `.git`). Normalizing a raw origin URL is #24's `RemoteUrl`; until then a raw URL in
+  `bindings.toml` is an error that shows the expected form.
+- **Values that would break a registry line are rejected:** an empty summary, alias or remote
+  pattern, and a multi-line summary.
+- **Draft marker.** A value is a draft when its trailing comment's first word is `kipi:draft`
+  (`# kipi:draft`, `# kipi:draft from README`). `# kipi:drafted` is not a marker. The flag is read
+  from `toml_edit` decor, so it works for multi-line arrays and dotted keys.
+- **Config and cache dirs are `~/.config/kipi` and `~/.cache/kipi` on every platform,** as §4 and
+  §10 spell them, not `dirs::config_dir()` (which is `~/Library/Application Support` on macOS).
+  `dirs` supplies only the home directory. `KIPI_CONFIG_DIR` and `KIPI_CACHE_DIR` override them.
+  An absent `machine.toml` or `config.toml` loads as empty.
+- **`KIPI_STORE` is a single path for now.** Splitting it into a list, and repeatable `--store`
+  flags, land with multiple stores (#24). `config::store_paths` already returns a list.
+- **`tokenizer`** must name an encoding tiktoken-rs ships (`cl100k_base`, `o200k_base`,
+  `p50k_base`, `p50k_edit`, `r50k_base`).
+- **SKILL.md frontmatter must be valid YAML.** The example skills' descriptions contained an
+  unquoted `: `, which strict YAML parsers (and Agent Skills validators) reject; they are now quoted.
+  `description` is optional at load, because doctor reports a missing one (§10). Standard fields
+  kipi does not use (`license`, `allowed-tools`, ...) are kept as they are; only `x-kipi` rejects
+  unknown keys. An untouched file renders back byte for byte; changing a field re-emits the YAML in
+  its original key order.
+- **`skills/` entries:** a directory without `SKILL.md` is an error; hidden entries and plain
+  files are skipped.
+- **Unknown-key suggestions** use an edit distance that counts adjacent transpositions as one
+  edit, written in-tree rather than adding `strsim`. Unknown keys and enum values are recovered
+  from serde's `unknown field` / `unknown variant` messages; a unit test guards that wording.
+- **Document order is kept** for scopes, repos and `machine.toml` tables, so output is
+  deterministic and follows the file.

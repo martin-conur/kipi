@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/bindings.toml:6: remote `git@github.com:fx-org/one` is not a normalized origin URL
+  hint: write it as `host/owner/name` (no scheme, user, port or `.git`), e.g. `github.com/acme-org/billing-api`; `kipi scan` fills it in

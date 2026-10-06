@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Use when reviewing a pull request in an acme repository: checklist for correctness, tests, migrations and API compatibility.
+description: "Use when reviewing a pull request in an acme repository: checklist for correctness, tests, migrations and API compatibility."
 x-kipi:
   scope: acme
   tags: [review]

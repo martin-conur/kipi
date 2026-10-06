@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/bindings.toml:5: unknown key `scope` in the top level
+  hint: did you mean `scopes`? Valid keys: `store`, `defaults`, `scopes`, `repos`

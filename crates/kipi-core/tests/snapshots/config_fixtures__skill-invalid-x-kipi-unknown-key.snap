@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/skills/case/SKILL.md:5: unknown key `tgas` in x-kipi
+  hint: did you mean `tags`? Valid keys: `scope`, `tags`

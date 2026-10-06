@@ -1,0 +1,12 @@
+[store]
+name = "fx"
+version = 1
+
+[repos.one]
+summary = "Reviewed summary"
+
+[repos.two]
+summary = "Drafted summary"  # kipi:draft
+
+[repos.three]
+summary = "Not a draft"  # kipi:drafted by hand, not a marker

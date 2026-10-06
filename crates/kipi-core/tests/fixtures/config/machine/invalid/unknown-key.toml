@@ -1,0 +1,4 @@
+hostname = "laptop-a"
+
+[repo]
+"one" = "/srv/code/one"

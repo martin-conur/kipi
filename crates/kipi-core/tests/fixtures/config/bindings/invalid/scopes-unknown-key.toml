@@ -1,0 +1,7 @@
+[store]
+name = "fx"
+version = 1
+
+[scopes.main]
+roots = ["~/fx"]
+skils = ["alpha"]

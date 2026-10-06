@@ -1,0 +1,10 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "redact(&out, dir.path())"
+---
+stores: [
+    "/HOME/.agents/store",
+    "/Volumes/work/.kipi-fx",
+]
+editor: None
+tokenizer: None

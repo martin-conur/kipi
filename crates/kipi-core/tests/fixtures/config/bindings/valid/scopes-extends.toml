@@ -1,0 +1,8 @@
+[store]
+name = "fx"
+version = 1
+
+[scopes.base]
+
+[scopes.child]
+extends = "base"

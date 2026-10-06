@@ -1,0 +1,46 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "redact(&out, dir.path())"
+---
+name: fx
+version: 1
+share_skills: false
+defaults: Defaults {
+    budget_tokens: None,
+    agents: None,
+    grant: None,
+    at: None,
+}
+scopes: []
+repos: [
+    RepoEntry {
+        name: "one",
+        remote: None,
+        summary: Some(
+            Drafted {
+                value: "Declared with dotted keys",
+                is_draft: true,
+            },
+        ),
+        aliases: Drafted {
+            value: [],
+            is_draft: false,
+        },
+        related: [],
+        skills: [],
+        exclude: [],
+        scope: None,
+        agents: None,
+        grant: None,
+        budget_tokens: None,
+        notes: Some(
+            "<dir>/repos/one/notes.md",
+        ),
+        at: Location {
+            file: "<dir>/bindings.toml",
+            line: Some(
+                1,
+            ),
+        },
+    },
+]
