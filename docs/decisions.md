@@ -555,8 +555,72 @@ The spec wins wherever it is explicit.
   (a kipi-created block file deleted with its block counts as one block removed); read-grant
   entries added / removed (from `Report::grants`); whether the exclude section changed. Dry runs
   also list every change and print the settings-file JSON diff.
-- **Onboarding E2E** mounts the stores by writing `config.toml`, which is what `kipi init --store
-  <existing store>` does; it switches to the real command when the authoring issue (#9) lands.
+- **Onboarding E2E** mounts the stores with `kipi init --store <existing store>` (since #9).
+
+## Stage 2: authoring commands (#9)
+
+- **Validate, then write.** Every authoring command computes its edits first
+  (`kipi_core::authoring::Outcome`, nothing written). An edited `bindings.toml` (and, for `add
+  repo`, `machine.toml`) is re-loaded from its new text (`config::load_store_text`) into the mounted
+  set and resolved; any error rejects the whole edit and is reported with `(rejected: nothing was
+  written)` appended. That is how a bind crossing scopes or stores (the leak rule), a missing skill or
+  a store-name clash on `init` is refused. Argument errors that are about no file (unknown repo,
+  invalid skill name, no `--skill/--related/...` given) are a new location-less `Error::Usage`
+  (exit 1, with a hint). Writes take the apply lock; `--dry-run` prints a unified diff per file
+  (shared with `scan`), plus the directories it would create and the files it would copy.
+- **Comment-preserving array edits** (`authoring/toml.rs`). `bind` appends to the entry's list,
+  creating `key = [...]` at the end of the entry when absent; a new element copies the decor of the
+  last one, so multi-line arrays stay one value per line. `unbind` removes the value; a list left
+  empty is removed with its line. So bind followed by the same unbind is byte-identical whenever the
+  key was absent or non-empty (tested for every example repo); the one exception is an explicit
+  empty `skills = []`, which bind+unbind removes (an empty list means the same as none).
+- **Values already there / not there** are reported as `keep` and change nothing (a repeated bind
+  is a no-op). Aliases match case-folded, as the registry matches them; everything else exactly.
+  Unbinding a skill the repo still inherits from its scope reports the `kipi bind <repo> --exclude
+  <skill>` to use instead.
+- **Aliases**: editing `aliases` through `bind`/`unbind` clears its `# kipi:draft` marker (roadmap
+  §5.1: a human edited it), so that round trip is not byte-identical by design. An alias that
+  would collide with another entry's name or alias in the same registry is rejected (a `doctor`
+  error otherwise).
+- **`init`**: default path `~/.agents/store`. Default name: `personal` for the default store,
+  otherwise the directory name without a leading `.` and a `kipi-` prefix (`~/work/.kipi-acme` →
+  `acme`); `--name` overrides. A new store gets `skills/`, `repos/`, `conventions/`, `generated/`,
+  the `bindings.toml` skeleton (its commented example scope included) and a `.gitignore` holding
+  `generated/` (appended to an existing one, never replaced). Pointed at an existing store it reads
+  it, refuses a different `--name`, and only mounts it: no store file is touched. `--git` runs
+  `git init` unless the store already has a `.git`. Mounting appends the path to `config.toml`
+  `stores` written `~/…` under the home; when `config.toml` lists no stores yet and the default
+  store exists, the default is listed first, since listing only the new store would silently
+  unmount the implicit default. Already listed (same path, or the same directory once
+  canonicalized) is a no-op, which makes `init` idempotent.
+- **`stores`** lists name, path, git state (`git status --porcelain -- .` in the store, and whether
+  the repository has a remote; `local, no git` outside a work tree), scopes, repo count and
+  `shares skills`. `--unmount` takes a store name or path, removes that `config.toml` entry and
+  keeps the rest of the file (an emptied list stays as `stores = []`, which mounts the default
+  store, and says so). Only stores listed in `config.toml` can be unmounted; the next `sync --all`
+  cleans up the unmounted store's repos through their manifests (orphans, #8).
+- **`add skill`**: the store is `--store`, else the store owning `--scope`, else the only mounted
+  store, else a usage error. The skill name must be a valid Agent Skills name and the directory must
+  not exist (kipi never overwrites a skill). From the template, `x-kipi.scope` is filled when
+  `--scope` is a scope of the skill's own store and left out otherwise. `--from <dir>` must hold
+  `SKILL.md`; a git URL (`scheme://…` or `user@host:…`) is shallow-cloned with the `git` binary into
+  a temp dir and the skill taken from its root, `skills/<name>/` or `<name>/`. The imported
+  frontmatter is validated and its `name` must equal `<name>`. The tree is copied (`.git` skipped,
+  symlinks kept as symlinks) into a hidden staging dir and renamed into place. With `--scope`, the
+  skill is appended to that scope's `skills`, as `<store>/<name>` when the scope belongs to another
+  store (resolution then requires `share_skills`). `--link-back` (needs `--from <dir>`) replaces the
+  imported directory with a symlink to the store copy after the copy succeeded.
+- **`add repo`**: the entry name must be free in every mounted store. `--path` must be a directory
+  not already recorded in `machine.toml`; its origin, normalized, becomes `remote` and must not
+  already belong to another entry (that is the same repository; `scan` records it). The store is
+  the one owning `--scope`, else the scope whose root holds `--path`, else the only mounted store.
+  `scope =` is written only when `--scope` disagrees with (or there is no) path placement, as in
+  `scan`. `--summary` is written as reviewed (no draft marker). `--path` is recorded in
+  `machine.toml`.
+- **JSON**: `stores --json` and every authoring command's `--json` report are documented in
+  `docs/json.md` ("Stores", "Authoring").
+- **`tempfile`** moves from kipi-core's dev-dependencies to its dependencies (it is in the §12
+  list) for the clone directory of `add skill --from <git-url>`.
 
 ## Stage 3: doctor framework and config/resolution checks (#12)
 

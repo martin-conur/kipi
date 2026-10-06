@@ -12,7 +12,11 @@ Working today: `kipi resolve [repo]` prints the resolved plan (`--json` is stabl
 setting decision comes from. `kipi scan` records your checkouts in `machine.toml`, `kipi sync
 [repo...] [--all]` writes the generated blocks, skill links, read grants and `.git/info/exclude`
 entries into them (`--dry-run` shows the changes first), and `kipi status [repo]` says which repos
-are synced, stale or missing. Try the read-only commands on the example stores:
+are synced, stale or missing. `kipi init` creates (or mounts) a store and `kipi stores` lists or
+unmounts them; `kipi add skill|repo`, `kipi bind` and `kipi unbind` edit `bindings.toml` while
+keeping your comments and layout, and refuse any edit that would break resolution (such as a
+relation crossing scopes). Every writer takes `--dry-run`. Try the read-only commands on the
+example stores:
 
 ```bash
 KIPI_CONFIG_DIR=examples cargo run -p kipi-cli -- \

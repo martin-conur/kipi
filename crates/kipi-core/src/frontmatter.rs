@@ -199,6 +199,16 @@ impl Frontmatter {
     }
 }
 
+/// Whether `name` is a valid Agent Skills name: lowercase letters, digits and `-`, at
+/// most [`MAX_NAME_LEN`] characters.
+pub fn is_skill_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= MAX_NAME_LEN
+        && name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
 /// The fields kipi reads from a `SKILL.md` frontmatter (roadmap §5.4).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillMeta {
@@ -235,12 +245,7 @@ impl SkillMeta {
                 ));
             }
         };
-        let name_ok = !name.is_empty()
-            && name.len() <= MAX_NAME_LEN
-            && name
-                .chars()
-                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
-        if !name_ok {
+        if !is_skill_name(&name) {
             return Err(Error::invalid(
                 at(&["name"]),
                 format!("invalid skill name `{name}`"),

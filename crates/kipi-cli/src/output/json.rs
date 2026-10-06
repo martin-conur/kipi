@@ -723,3 +723,98 @@ struct StatusRepoJson<'a> {
     always_on: Option<AlwaysOnJson>,
     draft_summary: bool,
 }
+
+/// An authoring command's report (`init`, `stores --unmount`, `add skill|repo`, `bind`,
+/// `unbind`) as pretty-printed JSON (`docs/json.md`, "Authoring").
+pub fn authoring(
+    command: &str,
+    outcome: &kipi_core::authoring::Outcome,
+    dry_run: bool,
+) -> serde_json::Result<String> {
+    let doc = AuthoringJson {
+        version: JSON_VERSION,
+        dry_run,
+        command,
+        store: outcome.store.as_deref(),
+        changes: outcome
+            .changes
+            .iter()
+            .map(|c| EditJson {
+                op: c.op.as_str(),
+                what: &c.what,
+                value: &c.value,
+                note: c.note.as_deref(),
+            })
+            .collect(),
+        files: outcome.paths(),
+        git_init: outcome.git_init.as_deref(),
+    };
+    let mut out = serde_json::to_string_pretty(&doc)?;
+    out.push('\n');
+    Ok(out)
+}
+
+#[derive(Serialize)]
+struct AuthoringJson<'a> {
+    version: u32,
+    dry_run: bool,
+    command: &'a str,
+    store: Option<&'a str>,
+    changes: Vec<EditJson<'a>>,
+    files: Vec<&'a Path>,
+    git_init: Option<&'a Path>,
+}
+
+#[derive(Serialize)]
+struct EditJson<'a> {
+    op: &'a str,
+    what: &'a str,
+    value: &'a str,
+    note: Option<&'a str>,
+}
+
+/// `kipi stores` as pretty-printed JSON (`docs/json.md`, "Stores").
+pub fn stores(rows: &[crate::commands::stores::Row]) -> serde_json::Result<String> {
+    let doc = StoresJson {
+        version: JSON_VERSION,
+        stores: rows
+            .iter()
+            .map(|r| StoreJson {
+                name: &r.name,
+                path: &r.path,
+                git: r.git.map(|g| GitJson {
+                    clean: g.clean,
+                    remote: g.has_remote,
+                }),
+                share_skills: r.share_skills,
+                scopes: &r.scopes,
+                repos: r.repos,
+            })
+            .collect(),
+    };
+    let mut out = serde_json::to_string_pretty(&doc)?;
+    out.push('\n');
+    Ok(out)
+}
+
+#[derive(Serialize)]
+struct StoresJson<'a> {
+    version: u32,
+    stores: Vec<StoreJson<'a>>,
+}
+
+#[derive(Serialize)]
+struct StoreJson<'a> {
+    name: &'a str,
+    path: &'a Path,
+    git: Option<GitJson>,
+    share_skills: bool,
+    scopes: &'a [String],
+    repos: usize,
+}
+
+#[derive(Serialize)]
+struct GitJson {
+    clean: bool,
+    remote: bool,
+}

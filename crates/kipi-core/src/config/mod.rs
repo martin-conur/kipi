@@ -14,7 +14,7 @@ mod skills;
 mod source;
 mod stores;
 
-pub use bindings::load_store;
+pub use bindings::{load_store, load_store_text};
 pub use machine::{load_machine, parse_machine_text};
 pub use paths::{
     DEFAULT_STORE, ENV_CACHE_DIR, ENV_CONFIG_DIR, ENV_STORE, Env, expand_tilde, store_paths,

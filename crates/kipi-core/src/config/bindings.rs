@@ -100,6 +100,16 @@ pub fn load_store(root: &Path, env: &Env) -> Result<Store> {
     Ok(store)
 }
 
+/// Load the store at `root` as if its `bindings.toml` held `text` (skills and notes are
+/// read from disk). The authoring commands validate an edit with it before writing.
+pub fn load_store_text(root: &Path, text: String, env: &Env) -> Result<Store> {
+    let src = Source::parse(&root.join(BINDINGS_FILE), text)?;
+    let mut store = parse_store(root, src, &env.home)?;
+    store.skills = load_skills(root)?;
+    store.tag_locations();
+    Ok(store)
+}
+
 /// Validate a parsed `bindings.toml` into a [`Store`] (skills not loaded).
 fn parse_store(root: &Path, src: Source, home: &Path) -> Result<Store> {
     check_version(&src)?;

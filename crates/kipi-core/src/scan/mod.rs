@@ -12,7 +12,7 @@
 
 mod discover;
 mod draft;
-mod write;
+pub(crate) mod write;
 
 pub use discover::{SKIPPED_DIRS, find_checkouts};
 pub use draft::{
@@ -501,14 +501,14 @@ fn dedup(paths: Vec<PathBuf>) -> Vec<PathBuf> {
 }
 
 /// Where a path falls among the scopes' roots.
-enum Placement<'a> {
+pub(crate) enum Placement<'a> {
     Scope(&'a Store, &'a Scope),
     Tie(Vec<String>),
     Outside,
 }
 
 /// The scope whose root is the deepest ancestor of `path`, among `stores`.
-fn place<'a>(
+pub(crate) fn place<'a>(
     stores: impl IntoIterator<Item = &'a Store>,
     machine: &Machine,
     path: &Path,

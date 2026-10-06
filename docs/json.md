@@ -3,7 +3,8 @@
 `kipi resolve --json` prints the resolved plan; `kipi resolve <repo> --json` and
 `kipi explain <repo> --json` print the same document restricted to one repo and the registry it
 renders; `kipi scan --json`, `kipi sync --json` and `kipi status --json` print their own reports
-([Scan](#scan), [Sync](#sync), [Status](#status)), and `kipi doctor --json` prints its findings
+([Scan](#scan), [Sync](#sync), [Status](#status)), as do `kipi stores --json` ([Stores](#stores))
+and the authoring commands ([Authoring](#authoring)); `kipi doctor --json` prints its findings
 (shape in [docs/doctor.md](doctor.md#json)). The shape is stable: fields
 are only ever added, and anything that renames, removes or changes the meaning of a field bumps
 `version`. Output is pretty-printed, deterministic (two runs
@@ -170,6 +171,39 @@ dry-run sync.
 `always_on` (AlwaysOn), `draft_summary` (bool). `state` is one of `synced` (disk and manifest match
 the plan), `stale` (synced before; a sync would change something), `missing` (cloned here, never
 synced), `not_cloned`, `checkout_missing`.
+
+## Stores
+
+`kipi stores --json` lists the mounted stores, in mount order.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `version` | number | Schema version, currently `1` |
+| `stores` | [Store] | One per mounted store |
+
+**Store**: `name`, `path`, `git` (`{clean, remote}` \| null: `clean` when nothing under the store
+is uncommitted, `remote` when its repository has a remote; `null` when the store is not in a git
+work tree), `share_skills` (bool), `scopes` ([string], file order), `repos` (number of entries).
+
+## Authoring
+
+`kipi init`, `kipi stores --unmount`, `kipi add skill`, `kipi add repo`, `kipi bind` and
+`kipi unbind` with `--json` (with or without `--dry-run`) print what they changed (or would).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `version` | number | Schema version, currently `1` |
+| `dry_run` | bool | `true` when nothing was written |
+| `command` | string | `init`, `unmount`, `add skill`, `add repo`, `bind` or `unbind` |
+| `store` | string \| null | The store the command created, mounted, unmounted or edited |
+| `changes` | [Edit] | What changed, in order |
+| `files` | [string] | Directories created, the skill directory installed, files written and the link-back symlink (or, with `dry_run`, that would be) |
+| `git_init` | string \| null | The directory `init --git` ran (or would run) `git init` in |
+
+**Edit**: `op` (`add`, `remove`, `keep`: already as asked, nothing changed), `what` (the list or
+thing changed: `skills`, `related`, `exclude`, `aliases`, `scopes.<scope>.skills`, `store`,
+`config.toml stores`, `machine.toml`, ...), `value`, `note` (string \| null: why nothing changed,
+or what follows).
 
 ## Exit codes
 
