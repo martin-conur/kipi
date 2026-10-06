@@ -17,7 +17,8 @@ fn strings(v: &[&str]) -> Vec<String> {
     v.iter().map(|s| s.to_string()).collect()
 }
 
-/// One simulated sync: merge `want` into `text`, carrying ownership as the manifest does.
+/// A settings file synced the way apply does it: the manifest's `[[grant]]` (owned
+/// entries and `created`) exists only while kipi owns entries in the file.
 struct File {
     text: Option<String>,
     owned: Vec<String>,
@@ -27,33 +28,28 @@ struct File {
 impl File {
     fn new(text: Option<String>) -> File {
         File {
-            created: text.is_none(),
             text,
             owned: Vec::new(),
+            created: false,
         }
     }
 
     fn sync(&mut self, want: &[String]) -> Result<Outcome, String> {
-        let m = merge(
-            self.text.as_deref(),
-            &key(),
-            want,
-            &self.owned,
-            self.created,
-        )
-        .map_err(|e| format!("{e}\nhint: {}", e.hint()))?;
+        // As apply: the recorded flag while kipi owns entries, else whether the file is new.
+        let created = if self.owned.is_empty() {
+            self.text.is_none()
+        } else {
+            self.created
+        };
+        let m = merge(self.text.as_deref(), &key(), want, &self.owned, created)
+            .map_err(|e| format!("{e}\nhint: {}", e.hint()))?;
         match &m.outcome {
             Outcome::Unchanged => {}
             Outcome::Write(t) => self.text = Some(t.clone()),
             Outcome::Delete => self.text = None,
         }
         self.owned = m.owned;
-        if self.text.is_none() {
-            self.created = true;
-        } else if self.owned.is_empty() {
-            // The manifest forgets a file once kipi owns nothing in it.
-            self.created = false;
-        }
+        self.created = created;
         Ok(m.outcome)
     }
 }
@@ -234,6 +230,86 @@ proptest! {
                 prop_assert_eq!(others(&doc), others(u));
             }
             (u, t) => prop_assert!(false, "user {u:?} ended as {t:?}"),
+        }
+    }
+}
+
+/// What happens between syncs.
+#[derive(Debug, Clone)]
+enum Step {
+    /// kipi syncs with this grant (empty: `grant = "none"` or unbound).
+    Sync(Vec<String>),
+    /// The user adds a directory to the array by hand (creating the file if needed).
+    UserAdds(String),
+    /// The user deletes the settings file.
+    UserDeletes,
+}
+
+fn step() -> impl Strategy<Value = Step> {
+    prop_oneof![
+        4 => prop::collection::vec(dir(), 0..4).prop_map(Step::Sync),
+        2 => Just(Step::Sync(Vec::new())),
+        3 => dir().prop_map(Step::UserAdds),
+        1 => Just(Step::UserDeletes),
+    ]
+}
+
+proptest! {
+    /// Clearing the grant (or deleting the file) and then adding, by hand, a path kipi
+    /// once owned makes that path the user's: no later sync removes it or deletes the file.
+    #[test]
+    fn entries_the_user_adds_between_syncs_are_never_removed(
+        steps in prop::collection::vec(step(), 1..16),
+    ) {
+        let mut file = File::new(None);
+        let mut user: Vec<String> = Vec::new();
+        let mut want: Vec<String> = Vec::new();
+        for step in steps {
+            match step {
+                Step::Sync(w) => {
+                    file.sync(&w).unwrap();
+                    want = w;
+                }
+                // A path the manifest still records as kipi's is kipi's: with no sync in
+                // between, nothing on disk tells a hand-added copy apart (docs/decisions.md).
+                Step::UserAdds(d) if file.owned.contains(&d) => {}
+                Step::UserAdds(d) => {
+                    let mut doc: Value = file
+                        .text
+                        .as_deref()
+                        .map_or_else(|| serde_json::json!({}), |t| serde_json::from_str(t).unwrap());
+                    let mut now = entries(&doc);
+                    if now.iter().any(|n| n.as_str() == Some(&d)) {
+                        // Already there; whoever added it still owns it.
+                        continue;
+                    }
+                    now.push(Value::String(d.clone()));
+                    doc["permissions"]["additionalDirectories"] = Value::Array(now);
+                    file.text = Some(serde_json::to_string_pretty(&doc).unwrap());
+                    user.push(d);
+                }
+                Step::UserDeletes => {
+                    file.text = None;
+                    user.clear();
+                }
+            }
+            let now: Vec<String> = file
+                .text
+                .as_deref()
+                .map(|t| entries(&serde_json::from_str(t).unwrap()))
+                .unwrap_or_default()
+                .iter()
+                .map(|v| v.as_str().unwrap().to_owned())
+                .collect();
+            for u in &user {
+                prop_assert!(now.contains(u), "lost the user's {u}: {now:?}");
+            }
+            for n in &now {
+                prop_assert!(user.contains(n) || want.contains(n), "stray {n}");
+            }
+            if !user.is_empty() {
+                prop_assert!(file.text.is_some());
+            }
         }
     }
 }

@@ -504,5 +504,14 @@ The spec wins wherever it is explicit.
   nor `.claude/`.
 - **Dry run.** `Report::grants` lists each settings file whose grant changes, with the entries added
   and removed and the whole text before and after, for `sync --dry-run` (#8) to print as a diff.
-  The change itself is `What::Grant` (create / update / remove).
+  The change itself is `What::Grant`: create (new file), update (entries added or removed, file
+  kept), remove (file deleted), the same convention as `What::File`.
+- **Manifest.** The final manifest records a `[[grant]]` only while kipi owns entries in that
+  file; a cleared grant leaves none behind, so a path the user later adds by hand (or a settings
+  file they write after kipi deleted its own) is theirs. The crash-safety manifest written before
+  the disk changes combines old and new entries per file, since entries being removed are still on
+  disk until the write.
+- **Limit of ownership by value.** While the manifest records a path as kipi's, a copy the user
+  adds by hand before the next sync cannot be told apart from kipi's own entry, and goes when
+  kipi drops the grant. Once a sync has cleared it, the path is the user's for good.
 - **Codex CLI** gets no grant: see `docs/adapters.md`.

@@ -829,8 +829,9 @@ fn switching_grant_modes_changes_exactly_kipis_entries_and_user_content_survives
     let report = world.sync("events-pipeline", Options::default());
     assert!(!report.grants[0].removed.is_empty(), "{report:#?}");
     assert!(report.grants[0].added.is_empty());
+    // Trimming entries updates the file; only deleting it is a removal.
     assert_eq!(
-        changes(&report, What::Grant, Op::Remove),
+        changes(&report, What::Grant, Op::Update),
         [dir.join(SETTINGS)]
     );
 
@@ -1014,4 +1015,98 @@ fn no_repo_is_granted_a_path_outside_its_scope_chain_under_any_mode() {
             }
         }
     }
+}
+
+#[test]
+fn a_cleared_grant_leaves_no_manifest_entry() {
+    let world = World::new();
+    let dir = world.dir("billing-api").to_path_buf();
+    fs::create_dir_all(dir.join(".claude")).unwrap();
+    fs::write(dir.join(SETTINGS), USER_SETTINGS).unwrap();
+    world.sync("billing-api", Options::default());
+    assert_eq!(Manifest::load(&dir.join(MANIFEST)).unwrap().grants.len(), 1);
+    set_all_grants(&world, "none");
+    world.sync("billing-api", Options::default());
+    assert!(
+        Manifest::load(&dir.join(MANIFEST))
+            .unwrap()
+            .grants
+            .is_empty()
+    );
+    // And again, through the no-change path.
+    world.sync("billing-api", Options::default());
+    assert!(
+        Manifest::load(&dir.join(MANIFEST))
+            .unwrap()
+            .grants
+            .is_empty()
+    );
+}
+
+/// Rewrite the settings file with `path` appended to the user's grant.
+fn user_adds(dir: &Path, path: &str) {
+    let file = dir.join(SETTINGS);
+    let mut doc: serde_json::Value = fs::read_to_string(&file)
+        .map(|t| serde_json::from_str(&t).unwrap())
+        .unwrap_or_else(|_| serde_json::json!({}));
+    let perms = doc
+        .as_object_mut()
+        .unwrap()
+        .entry("permissions")
+        .or_insert_with(|| serde_json::json!({}));
+    let dirs = perms
+        .as_object_mut()
+        .unwrap()
+        .entry("additionalDirectories")
+        .or_insert_with(|| serde_json::json!([]));
+    dirs.as_array_mut().unwrap().push(path.into());
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    fs::write(&file, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+}
+
+#[test]
+fn a_path_the_user_re_adds_after_unbinding_is_theirs() {
+    let world = World::new();
+    let dir = world.dir("billing-api").to_path_buf();
+    fs::create_dir_all(dir.join(".claude")).unwrap();
+    fs::write(dir.join(SETTINGS), USER_SETTINGS).unwrap();
+    world.sync("billing-api", Options::default());
+    let formerly = grant_dirs(&world.plan(), "billing-api")[0].clone();
+    // Unbind: no actions at all.
+    world.apply("billing-api", &[], Options::default());
+    assert_eq!(granted(&dir).unwrap(), ["~/notes"]);
+    user_adds(&dir, &formerly);
+    for _ in 0..2 {
+        world.apply("billing-api", &[], Options::default());
+        assert_eq!(
+            granted(&dir).unwrap(),
+            ["~/notes".to_owned(), formerly.clone()]
+        );
+    }
+    // Rebinding with grant = none never takes it either.
+    set_all_grants(&world, "none");
+    world.sync("billing-api", Options::default());
+    assert_eq!(
+        granted(&dir).unwrap(),
+        ["~/notes".to_owned(), formerly.clone()]
+    );
+}
+
+#[test]
+fn a_settings_file_the_user_writes_after_kipi_deleted_its_own_is_never_deleted() {
+    let world = World::new();
+    let dir = world.dir("billing-api").to_path_buf();
+    world.sync("billing-api", Options::default());
+    let formerly = grant_dirs(&world.plan(), "billing-api")[0].clone();
+    set_all_grants(&world, "none");
+    world.sync("billing-api", Options::default());
+    assert!(!dir.join(SETTINGS).exists());
+    user_adds(&dir, &formerly);
+    let text = fs::read_to_string(dir.join(SETTINGS)).unwrap();
+    for _ in 0..2 {
+        world.sync("billing-api", Options::default());
+        assert_eq!(fs::read_to_string(dir.join(SETTINGS)).unwrap(), text);
+    }
+    world.apply("billing-api", &[], Options::default());
+    assert_eq!(fs::read_to_string(dir.join(SETTINGS)).unwrap(), text);
 }

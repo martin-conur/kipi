@@ -793,8 +793,6 @@ impl<'a> Diff<'a> {
             Outcome::Write(text) => {
                 let op = if existing.is_none() {
                     Op::Create
-                } else if merged.added.is_empty() {
-                    Op::Remove
                 } else {
                     Op::Update
                 };
@@ -1169,7 +1167,8 @@ fn save_manifest(target: &Target, manifest: &Manifest) -> Result<()> {
     write_atomic(path, &text)
 }
 
-/// Everything either manifest records, `new` winning per path.
+/// Everything either manifest records, `new` winning per path; grant entries are
+/// combined per file, since entries being removed are still on disk until the write.
 fn union(old: &Manifest, new: &Manifest) -> Manifest {
     fn merge<T: Clone>(old: &[T], new: &[T], key: impl Fn(&T) -> &Path) -> Vec<T> {
         let mut by: BTreeMap<&Path, &T> = old.iter().map(|e| (key(e), e)).collect();
@@ -1185,8 +1184,26 @@ fn union(old: &Manifest, new: &Manifest) -> Manifest {
         blocks: merge(&old.blocks, &new.blocks, |e| &e.path),
         files: merge(&old.files, &new.files, |e| &e.path),
         exclude: new.exclude.clone().or_else(|| old.exclude.clone()),
-        grants: merge(&old.grants, &new.grants, |e| &e.path),
+        grants: union_grants(&old.grants, &new.grants),
     }
+}
+
+fn union_grants(old: &[GrantEntry], new: &[GrantEntry]) -> Vec<GrantEntry> {
+    let mut out: Vec<GrantEntry> = old.to_vec();
+    for n in new {
+        match out.iter_mut().find(|o| o.path == n.path) {
+            Some(o) => {
+                o.created |= n.created;
+                for e in &n.entries {
+                    if !o.entries.contains(e) {
+                        o.entries.push(e.clone());
+                    }
+                }
+            }
+            None => out.push(n.clone()),
+        }
+    }
+    out
 }
 
 /// `text` with kipi's exclude section holding exactly `patterns`: replaced in place, or
@@ -1280,6 +1297,26 @@ mod tests {
         assert!(err.hint().contains("wait for it"));
         drop(held);
         Lock::acquire(&config).unwrap();
+    }
+
+    #[test]
+    fn the_crash_safety_union_keeps_grant_entries_still_on_disk() {
+        let entry = |entries: &[&str], created| GrantEntry {
+            path: ".claude/settings.local.json".into(),
+            key: vec!["permissions".into(), "additionalDirectories".into()],
+            created,
+            entries: entries.iter().map(PathBuf::from).collect(),
+        };
+        let old = Manifest {
+            grants: vec![entry(&["/a", "/b"], true)],
+            ..Manifest::new()
+        };
+        let new = Manifest {
+            grants: vec![entry(&["/b", "/c"], false)],
+            ..Manifest::new()
+        };
+        assert_eq!(union(&old, &new).grants, [entry(&["/a", "/b", "/c"], true)]);
+        assert_eq!(union(&old, &Manifest::new()).grants, old.grants);
     }
 
     #[test]
