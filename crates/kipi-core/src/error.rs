@@ -6,17 +6,24 @@
 use std::fmt;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// `Result` with kipi's [`Error`].
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// A position in a file kipi reads, displayed as `path:line`.
+///
+/// Locations inside a store also carry the store's name, so provenance can be printed
+/// as `acme:bindings.toml:12` (see `StoreSet::provenance`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Location {
     /// The file.
     pub file: PathBuf,
     /// 1-based line, when known.
     pub line: Option<usize>,
+    /// The `[store] name` of the store holding the file, once known (shared, since
+    /// every location in a store carries it).
+    pub store: Option<Arc<str>>,
 }
 
 impl Location {
@@ -25,6 +32,7 @@ impl Location {
         Location {
             file: file.into(),
             line: None,
+            store: None,
         }
     }
 
@@ -33,6 +41,7 @@ impl Location {
         Location {
             file: file.into(),
             line: Some(line),
+            store: None,
         }
     }
 
@@ -41,7 +50,14 @@ impl Location {
         Location {
             file: file.into(),
             line,
+            store: None,
         }
+    }
+
+    /// The same location, tagged as belonging to store `name`.
+    pub fn in_store(mut self, name: &str) -> Self {
+        self.store = Some(name.into());
+        self
     }
 }
 
@@ -77,7 +93,19 @@ pub enum Error {
         /// The table holding it, e.g. `[scopes.acme]`.
         table: String,
         /// Every valid key in that table.
-        expected: Vec<String>,
+        expected: Box<[String]>,
+    },
+    /// Two declarations clash, typically the same name in two mounted stores.
+    #[error("{at}: {message}\n  also at: {other}")]
+    Conflict {
+        /// The later declaration.
+        at: Location,
+        /// The earlier declaration it clashes with.
+        other: Box<Location>,
+        /// What is wrong.
+        message: String,
+        /// What to do about it.
+        hint: String,
     },
     /// Reading a file failed.
     #[error("{}: {source}", path.display())]
@@ -105,6 +133,21 @@ impl Error {
         }
     }
 
+    /// An [`Error::Conflict`] between `at` and the earlier `other`.
+    pub fn conflict(
+        at: Location,
+        other: Location,
+        message: impl Into<String>,
+        hint: impl Into<String>,
+    ) -> Self {
+        Error::Conflict {
+            at,
+            other: Box::new(other),
+            message: message.into(),
+            hint: hint.into(),
+        }
+    }
+
     /// An [`Error::Io`] for `path`.
     pub fn io(path: &Path, source: io::Error, hint: impl Into<String>) -> Self {
         Error::Io {
@@ -117,7 +160,9 @@ impl Error {
     /// What the user should do about this error.
     pub fn hint(&self) -> String {
         match self {
-            Error::Invalid { hint, .. } | Error::Io { hint, .. } => hint.clone(),
+            Error::Invalid { hint, .. } | Error::Conflict { hint, .. } | Error::Io { hint, .. } => {
+                hint.clone()
+            }
             Error::UnknownKey { expected, .. } => {
                 let valid = expected
                     .iter()
@@ -146,7 +191,9 @@ impl Error {
     /// The file (and line) this error points at, if any.
     pub fn location(&self) -> Option<&Location> {
         match self {
-            Error::Invalid { at, .. } | Error::UnknownKey { at, .. } => Some(at),
+            Error::Invalid { at, .. }
+            | Error::UnknownKey { at, .. }
+            | Error::Conflict { at, .. } => Some(at),
             Error::Io { .. } | Error::NoHome => None,
         }
     }
@@ -224,12 +271,27 @@ mod tests {
     }
 
     #[test]
+    fn conflict_report_names_both_locations() {
+        let err = Error::conflict(
+            Location::at("b/bindings.toml", 4),
+            Location::at("a/bindings.toml", 2),
+            "store name `x` is used by two mounted stores",
+            "rename one",
+        );
+        assert_eq!(
+            err.report(),
+            "error: b/bindings.toml:4: store name `x` is used by two mounted stores\n  \
+             also at: a/bindings.toml:2\n  hint: rename one"
+        );
+    }
+
+    #[test]
     fn unknown_key_hint_names_suggestion_and_valid_keys() {
         let err = Error::UnknownKey {
             at: Location::at("bindings.toml", 7),
             key: "skils".into(),
             table: "[scopes.acme]".into(),
-            expected: vec!["roots".into(), "skills".into()],
+            expected: ["roots".into(), "skills".into()].into(),
         };
         assert_eq!(
             err.report(),

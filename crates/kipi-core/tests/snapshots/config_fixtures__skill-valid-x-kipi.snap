@@ -11,5 +11,8 @@ Skill {
     at: Location {
         file: "<dir>/skills/case/SKILL.md",
         line: None,
+        store: Some(
+            "fx",
+        ),
     },
 }

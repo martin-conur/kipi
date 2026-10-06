@@ -38,6 +38,9 @@ repos: [
             line: Some(
                 5,
             ),
+            store: Some(
+                "fx",
+            ),
         },
     },
     RepoEntry {
@@ -62,6 +65,9 @@ repos: [
             file: "<dir>/bindings.toml",
             line: Some(
                 8,
+            ),
+            store: Some(
+                "fx",
             ),
         },
     },

@@ -106,7 +106,7 @@ impl Source {
                 at,
                 key,
                 table,
-                expected,
+                expected: expected.into(),
             };
         }
         if let Some((value, expected)) = parse_unknown(msg, "unknown variant") {
@@ -278,7 +278,7 @@ mod tests {
                 assert_eq!(at.line, Some(3));
                 assert_eq!(key, "alpah");
                 assert_eq!(e.suggestion(), Some("alpha"));
-                assert_eq!(*expected, ["alpha", "beta"]);
+                assert_eq!(**expected, ["alpha", "beta"]);
             }
             other => panic!("{other:?}"),
         }

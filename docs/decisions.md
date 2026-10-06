@@ -81,7 +81,7 @@ The spec wins wherever it is explicit.
   §10 spell them, not `dirs::config_dir()` (which is `~/Library/Application Support` on macOS).
   `dirs` supplies only the home directory. `KIPI_CONFIG_DIR` and `KIPI_CACHE_DIR` override them.
   An absent `machine.toml` or `config.toml` loads as empty.
-- **`KIPI_STORE` is a single path for now.** Splitting it into a list, and repeatable `--store`
+- **`KIPI_STORE` is a single path for now** (superseded in #24 below). Splitting it into a list, and repeatable `--store`
   flags, land with multiple stores (#24). `config::store_paths` already returns a list.
 - **`tokenizer`** must name an encoding tiktoken-rs ships (`cl100k_base`, `o200k_base`,
   `p50k_base`, `p50k_edit`, `r50k_base`).
@@ -98,3 +98,42 @@ The spec wins wherever it is explicit.
   from serde's `unknown field` / `unknown variant` messages; a unit test guards that wording.
 - **Document order is kept** for scopes, repos and `machine.toml` tables, so output is
   deterministic and follows the file.
+
+## Stage 1: multiple stores and repo identity (#24)
+
+- **`KIPI_STORE` is a `:`-separated list**, split like `PATH` (`std::env::split_paths`; empty
+  segments skipped, each `~`-expanded). Flags, `KIPI_STORE` and `config.toml` `stores` each
+  replace the sources below them as a whole; they never merge. The repeatable `--store` clap
+  flag lands with the CLI foundation (#4); `config::store_paths` already takes the flag list.
+- **`StoreSet` checks only what needs more than one store**: store, scope and entry names unique
+  across stores, and references crossing into another store (`extends`, a repo's `scope`,
+  `related`, bare `skills` / `exclude` naming another store's skill, qualified skills). Whether a
+  reference within its own store names something that exists stays with resolution (#3), so an
+  unknown name that exists in no mounted store is not a load error here.
+- **Qualified skill references are checked completely at load**: the named store must be mounted,
+  set `share_skills = true` and contain the skill. Consequently the example work store does not
+  load alone (it uses `personal/commit-style`); the personal store does. A reference qualified with
+  its own store's name (`acme/code-review` inside `acme`) is accepted and means the bare name.
+- **Conflicts name both locations.** `Error::Conflict { at, other }` reports the later declaration
+  (mount order, then file order) and prints the earlier one as `also at:`. Scope and repo references
+  point at the referencing `[scopes.x]` / `[repos.x]` header, since the model keeps one location
+  per table. Mounting the same directory twice is reported as such rather than as a name clash.
+- **Every location in a store carries the store name** (`Location::store`, an `Arc<str>` shared by
+  all of a store's locations), set by `load_store`. `StoreSet::provenance` renders it as
+  `acme:bindings.toml:12` / `personal:skills/commit-style/SKILL.md`; errors keep printing full paths.
+- **`RemoteUrl` normalization**: accepted schemes are `https`, `http`, `ssh`, `git`, `git+ssh`,
+  `ssh+git`, plus scp-like `[user@]host:path`; `file://` and plain paths are local, not remotes
+  (such a checkout matches by name only). User info and port are stripped, the host is lowercased,
+  empty segments and trailing slashes dropped, and a trailing `.git` removed from the last segment.
+  Path case is kept: self-hosted forges may treat it as significant. Nested groups keep every segment.
+- **`remote` in `bindings.toml` must equal its own normalization** (checked by normalizing
+  `https://<remote>`); a raw or non-canonical URL is rejected with the normalized value as the
+  hint. `RepoEntry::remote` is now a `RemoteUrl`.
+- **Checkout matching** (`model::match_checkout`): normalized `remote` → directory name (entries
+  without `remote` only) → origin basename, where the basename step matches an entry whose *name*
+  or whose `remote`'s basename equals it. The first rule with any candidate decides; more than one
+  candidate is returned as `RepoMatch::Ambiguous`, never resolved by order. A basename match on an
+  entry with a different `remote` is left for doctor to report.
+- **`git::origin_url`** runs `git config --get remote.origin.url`; exit status 1 (unset) is `None`.
+- **The personal example store no longer mentions the work store** in its comments, so loading it
+  alone holds no work data (a test greps it for the work store's names and remote patterns).

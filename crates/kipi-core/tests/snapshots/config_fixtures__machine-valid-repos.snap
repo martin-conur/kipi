@@ -13,6 +13,7 @@ repos: [
             line: Some(
                 2,
             ),
+            store: None,
         },
     },
     MachineRepo {
@@ -23,6 +24,7 @@ repos: [
             line: Some(
                 3,
             ),
+            store: None,
         },
     },
 ]

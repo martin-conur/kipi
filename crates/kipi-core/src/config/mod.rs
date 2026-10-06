@@ -2,8 +2,9 @@
 //! cross-store checks (toml_edit + serde, `deny_unknown_fields`).
 //!
 //! Loading is strict: unknown keys are errors naming the closest valid key, and every
-//! error points at `file:line` with a hint. Cross-references (`extends`, `related`,
-//! skill names, scope names) are checked by resolution, which knows the whole store set.
+//! error points at `file:line` with a hint. Each store loads on its own; [`load_stores`]
+//! then checks the mounted set (unique names, nothing crossing stores). Whether a
+//! reference within a store names something that exists is checked by resolution.
 
 mod bindings;
 mod machine;
@@ -11,6 +12,7 @@ mod paths;
 mod settings;
 mod skills;
 mod source;
+mod stores;
 
 pub use bindings::load_store;
 pub use machine::{load_machine, parse_machine_text};
@@ -19,6 +21,7 @@ pub use paths::{
 };
 pub use settings::{TOKENIZERS, load_config, parse_config_text};
 pub use skills::SKILL_FILE;
+pub use stores::load_stores;
 
 /// A store's bindings file.
 pub const BINDINGS_FILE: &str = "bindings.toml";
