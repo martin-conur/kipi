@@ -1,0 +1,35 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: help
+---
+kipi: a scoped map of your local repos and shared skills for LLM coding agents.
+
+Usage: kipi [OPTIONS] <COMMAND>
+
+Commands:
+  init         Create a store and mount it, or mount an existing one
+  stores       List mounted stores, or unmount one
+  scan         Find git repos under scope roots (or PATHs) and record them
+  add          Add a skill or a repo entry
+  bind         Add skills, relations, exclusions or aliases to a repo entry
+  unbind       Remove skills, relations, exclusions or aliases from a repo entry
+  resolve      Print the resolved plan (no side effects)
+  explain      Show where every decision for a repo comes from
+  sync         Materialize the plan into repos
+  status       Per-repo sync state and always-on tokens vs budget
+  tree         Stores → scopes → repos → skills, with provenance markers
+  where        Resolve an alias to a repo, its summary and paths
+  grep         Search skills, notes and conventions (and checkouts with --repos)
+  edit         Open a repo entry, skill, notes:<repo> or conventions:<scope> in $EDITOR
+  doctor       Check stores, repos and grants for problems
+  completions  Print shell completions
+  help         Print this message or the help of the given subcommand(s)
+
+Options:
+      --store <PATH>  Mount this store instead of the configured ones (repeatable; before the subcommand)
+      --json          Print machine-readable JSON (see docs/json.md)
+      --no-color      Never color output (NO_COLOR is respected too)
+  -v, --verbose...    Say more on stderr (repeatable)
+  -q, --quiet         Say nothing on stderr but errors
+  -h, --help          Print help
+  -V, --version       Print version

@@ -1,0 +1,9 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: "stdout_of(&home, home.kipi().args([\"resolve\", \"side-tool\"]))"
+---
+REPO       STORE     SCOPE     SKILLS                   RELATED  GRANT             CHECKOUT
+side-tool  personal  personal  rust-style,commit-style  api      related (3 dirs)  /srv/code/side-tool
+
+REGISTRY  STORE     SCOPES    REPOS  ALIAS COLLISIONS
+personal  personal  personal  4      -

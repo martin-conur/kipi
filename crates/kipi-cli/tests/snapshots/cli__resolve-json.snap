@@ -1,0 +1,1670 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: out
+---
+{
+  "version": 1,
+  "repos": [
+    {
+      "name": "acme-api",
+      "store": "acme",
+      "at": "acme:bindings.toml:30",
+      "path": "/Volumes/work/acme/api",
+      "scope": {
+        "value": "acme",
+        "source": {
+          "rule": "machine.toml [roots] acme",
+          "at": "[HOME]/.config/kipi/machine.toml:7"
+        }
+      },
+      "chain": [
+        "acme"
+      ],
+      "skills": [
+        {
+          "name": "code-review",
+          "store": "acme",
+          "reference": "code-review",
+          "dir": "[HOME]/stores/acme-store/skills/code-review",
+          "inherited_from": "acme",
+          "source": {
+            "rule": "scopes.acme.skills",
+            "at": "acme:bindings.toml:13"
+          }
+        },
+        {
+          "name": "pr-conventions",
+          "store": "acme",
+          "reference": "pr-conventions",
+          "dir": "[HOME]/stores/acme-store/skills/pr-conventions",
+          "inherited_from": "acme",
+          "source": {
+            "rule": "scopes.acme.skills",
+            "at": "acme:bindings.toml:13"
+          }
+        },
+        {
+          "name": "commit-style",
+          "store": "personal",
+          "reference": "personal/commit-style",
+          "dir": "[HOME]/stores/personal-store/skills/commit-style",
+          "inherited_from": "acme",
+          "source": {
+            "rule": "scopes.acme.skills",
+            "at": "acme:bindings.toml:13"
+          }
+        }
+      ],
+      "excluded": [],
+      "always": [
+        {
+          "kind": "file",
+          "path": "[HOME]/stores/acme-store/conventions/acme.md",
+          "scope": "acme",
+          "source": {
+            "rule": "scopes.acme.always",
+            "at": "acme:bindings.toml:13"
+          }
+        },
+        {
+          "kind": "registry",
+          "scope": "acme",
+          "source": {
+            "rule": "scopes.acme.registry",
+            "at": "acme:bindings.toml:13"
+          }
+        },
+        {
+          "kind": "this-repo"
+        }
+      ],
+      "registry": {
+        "value": "acme",
+        "source": {
+          "rule": "scopes.acme.registry",
+          "at": "acme:bindings.toml:13"
+        }
+      },
+      "related": [],
+      "grant": {
+        "mode": {
+          "value": "related",
+          "source": {
+            "rule": "defaults.grant",
+            "at": "acme:bindings.toml:8"
+          }
+        },
+        "dirs": [
+          {
+            "path": "[HOME]/stores/acme-store/repos",
+            "kind": "store-repos",
+            "store": "acme",
+            "repo": null,
+            "source": {
+              "rule": "grant: store `acme` dirs",
+              "at": null
+            }
+          },
+          {
+            "path": "[HOME]/stores/acme-store/skills",
+            "kind": "store-skills",
+            "store": "acme",
+            "repo": null,
+            "source": {
+              "rule": "grant: store `acme` dirs",
+              "at": null
+            }
+          },
+          {
+            "path": "[HOME]/stores/personal-store/skills",
+            "kind": "store-skills",
+            "store": "personal",
+            "repo": null,
+            "source": {
+              "rule": "scopes.acme.skills",
+              "at": "acme:bindings.toml:13"
+            }
+          }
+        ]
+      },
+      "agents": {
+        "value": [
+          "claude",
+          "generic"
+        ],
+        "source": {
+          "rule": "defaults.agents",
+          "at": "acme:bindings.toml:8"
+        }
+      },
+      "budget_tokens": {
+        "value": 4000,
+        "source": {
+          "rule": "defaults.budget_tokens",
+          "at": "acme:bindings.toml:8"
+        }
+      }
+    },
+    {
+      "name": "api",
+      "store": "personal",
+      "at": "personal:bindings.toml:26",
+      "path": "/srv/code/api",
+      "scope": {
+        "value": "personal",
+        "source": {
+          "rule": "fallback: scope `personal`",
+          "at": "personal:bindings.toml:13"
+        }
+      },
+      "chain": [
+        "personal"
+      ],
+      "skills": [
+        {
+          "name": "rust-style",
+          "store": "personal",
+          "reference": "rust-style",
+          "dir": "[HOME]/stores/personal-store/skills/rust-style",
+          "inherited_from": "personal",
+          "source": {
+            "rule": "scopes.personal.skills",
+            "at": "personal:bindings.toml:13"
+          }
+        },
+        {
+          "name": "commit-style",
+          "store": "personal",
+          "reference": "commit-style",
+          "dir": "[HOME]/stores/personal-store/skills/commit-style",
+          "inherited_from": "personal",
+          "source": {
+            "rule": "scopes.personal.skills",
+            "at": "personal:bindings.toml:13"
+          }
+        }
+      ],
+      "excluded": [],
+      "always": [
+        {
+          "kind": "file",
+          "path": "[HOME]/stores/personal-store/conventions/personal.md",
+          "scope": "personal",
+          "source": {
+            "rule": "scopes.personal.always",
+            "at": "personal:bindings.toml:13"
+          }
+        },
+        {
+          "kind": "registry",
+          "scope": "personal",
+          "source": {
+            "rule": "scopes.personal.registry",
+            "at": "personal:bindings.toml:13"
+          }
+        },
+        {
+          "kind": "this-repo"
+        }
+      ],
+      "registry": {
+        "value": "personal",
+        "source": {
+          "rule": "scopes.personal.registry",
+          "at": "personal:bindings.toml:13"
+        }
+      },
+      "related": [],
+      "grant": {
+        "mode": {
+          "value": "related",
+          "source": {
+            "rule": "defaults.grant",
+            "at": "personal:bindings.toml:8"
+          }
+        },
+        "dirs": [
+          {
+            "path": "[HOME]/stores/personal-store/repos",
+            "kind": "store-repos",
+            "store": "personal",
+            "repo": null,
+            "source": {
+              "rule": "grant: store `personal` dirs",
+              "at": null
+            }
+          },
+          {
+            "path": "[HOME]/stores/personal-store/skills",
+            "kind": "store-skills",
+            "store": "personal",
+            "repo": null,
+            "source": {
+              "rule": "grant: store `personal` dirs",
+              "at": null
+            }
+          }
+        ]
+      },
+      "agents": {
+        "value": [
+          "claude",
+          "generic"
+        ],
+        "source": {
+          "rule": "defaults.agents",
+          "at": "personal:bindings.toml:8"
+        }
+      },
+      "budget_tokens": {
+        "value": 4000,
+        "source": {
+          "rule": "defaults.budget_tokens",
+          "at": "personal:bindings.toml:8"
+        }
+      }
+    },
+    {
+      "name": "billing-api",
+      "store": "acme",
+      "at": "acme:bindings.toml:25",
+      "path": "/Volumes/work/acme/billing-api",
+      "scope": {
+        "value": "acme",
+        "source": {
+          "rule": "machine.toml [roots] acme",
+          "at": "[HOME]/.config/kipi/machine.toml:7"
+        }
+      },
+      "chain": [
+        "acme"
+      ],
+      "skills": [
+        {
+          "name": "code-review",
+          "store": "acme",
+          "reference": "code-review",
+          "dir": "[HOME]/stores/acme-store/skills/code-review",
+          "inherited_from": "acme",
+          "source": {
+            "rule": "scopes.acme.skills",
+            "at": "acme:bindings.toml:13"
+          }
+        },
+        {
+          "name": "pr-conventions",
+          "store": "acme",
+          "reference": "pr-conventions",
+          "dir": "[HOME]/stores/acme-store/skills/pr-conventions",
+          "inherited_from": "acme",
+          "source": {
+            "rule": "scopes.acme.skills",
+            "at": "acme:bindings.toml:13"
+          }
+        },
+        {
+          "name": "commit-style",
+          "store": "personal",
+          "reference": "personal/commit-style",
+          "dir": "[HOME]/stores/personal-store/skills/commit-style",
+          "inherited_from": "acme",
+          "source": {
+            "rule": "scopes.acme.skills",
+            "at": "acme:bindings.toml:13"
+          }
+        }
+      ],
+      "excluded": [],
+      "always": [
+        {
+          "kind": "file",
+          "path": "[HOME]/stores/acme-store/conventions/acme.md",
+          "scope": "acme",
+          "source": {
+            "rule": "scopes.acme.always",
+            "at": "acme:bindings.toml:13"
+          }
+        },
+        {
+          "kind": "registry",
+          "scope": "acme",
+          "source": {
+            "rule": "scopes.acme.registry",
+            "at": "acme:bindings.toml:13"
+          }
+        },
+        {
+          "kind": "this-repo"
+        }
+      ],
+      "registry": {
+        "value": "acme",
+        "source": {
+          "rule": "scopes.acme.registry",
+          "at": "acme:bindings.toml:13"
+        }
+      },
+      "related": [],
+      "grant": {
+        "mode": {
+          "value": "related",
+          "source": {
+            "rule": "defaults.grant",
+            "at": "acme:bindings.toml:8"
+          }
+        },
+        "dirs": [
+          {
+            "path": "[HOME]/stores/acme-store/repos",
+            "kind": "store-repos",
+            "store": "acme",
+            "repo": null,
+            "source": {
+              "rule": "grant: store `acme` dirs",
+              "at": null
+            }
+          },
+          {
+            "path": "[HOME]/stores/acme-store/skills",
+            "kind": "store-skills",
+            "store": "acme",
+            "repo": null,
+            "source": {
+              "rule": "grant: store `acme` dirs",
+              "at": null
+            }
+          },
+          {
+            "path": "[HOME]/stores/personal-store/skills",
+            "kind": "store-skills",
+            "store": "personal",
+            "repo": null,
+            "source": {
+              "rule": "scopes.acme.skills",
+              "at": "acme:bindings.toml:13"
+            }
+          }
+        ]
+      },
+      "agents": {
+        "value": [
+          "claude",
+          "generic"
+        ],
+        "source": {
+          "rule": "defaults.agents",
+          "at": "acme:bindings.toml:8"
+        }
+      },
+      "budget_tokens": {
+        "value": 4000,
+        "source": {
+          "rule": "defaults.budget_tokens",
+          "at": "acme:bindings.toml:8"
+        }
+      }
+    },
+    {
+      "name": "blog",
+      "store": "personal",
+      "at": "personal:bindings.toml:31",
+      "path": "/srv/code/blog",
+      "scope": {
+        "value": "personal",
+        "source": {
+          "rule": "fallback: scope `personal`",
+          "at": "personal:bindings.toml:13"
+        }
+      },
+      "chain": [
+        "personal"
+      ],
+      "skills": [
+        {
+          "name": "rust-style",
+          "store": "personal",
+          "reference": "rust-style",
+          "dir": "[HOME]/stores/personal-store/skills/rust-style",
+          "inherited_from": "personal",
+          "source": {
+            "rule": "scopes.personal.skills",
+            "at": "personal:bindings.toml:13"
+          }
+        },
+        {
+          "name": "commit-style",
+          "store": "personal",
+          "reference": "commit-style",
+          "dir": "[HOME]/stores/personal-store/skills/commit-style",
+          "inherited_from": "personal",
+          "source": {
+            "rule": "scopes.personal.skills",
+            "at": "personal:bindings.toml:13"
+          }
+        }
+      ],
+      "excluded": [],
+      "always": [
+        {
+          "kind": "file",
+          "path": "[HOME]/stores/personal-store/conventions/personal.md",
+          "scope": "personal",
+          "source": {
+            "rule": "scopes.personal.always",
+            "at": "personal:bindings.toml:13"
+          }
+        },
+        {
+          "kind": "registry",
+          "scope": "personal",
+          "source": {
+            "rule": "scopes.personal.registry",
+            "at": "personal:bindings.toml:13"
+          }
+        },
+        {
+          "kind": "this-repo"
+        }
+      ],
+      "registry": {
+        "value": "personal",
+        "source": {
+          "rule": "scopes.personal.registry",
+          "at": "personal:bindings.toml:13"
+        }
+      },
+      "related": [],
+      "grant": {
+        "mode": {
+          "value": "related",
+          "source": {
+            "rule": "defaults.grant",
+            "at": "personal:bindings.toml:8"
+          }
+        },
+        "dirs": [
+          {
+            "path": "[HOME]/stores/personal-store/repos",
+            "kind": "store-repos",
+            "store": "personal",
+            "repo": null,
+            "source": {
+              "rule": "grant: store `personal` dirs",
+              "at": null
+            }
+          },
+          {
+            "path": "[HOME]/stores/personal-store/skills",
+            "kind": "store-skills",
+            "store": "personal",
+            "repo": null,
+            "source": {
+              "rule": "grant: store `personal` dirs",
+              "at": null
+            }
+          }
+        ]
+      },
+      "agents": {
+        "value": [
+          "claude",
+          "generic"
+        ],
+        "source": {
+          "rule": "defaults.agents",
+          "at": "personal:bindings.toml:8"
+        }
+      },
+      "budget_tokens": {
+        "value": 4000,
+        "source": {
+          "rule": "defaults.budget_tokens",
+          "at": "personal:bindings.toml:8"
+        }
+      }
+    },
+    {
+      "name": "dotfiles",
+      "store": "personal",
+      "at": "personal:bindings.toml:36",
+      "path": "/srv/code/dotfiles",
+      "scope": {
+        "value": "personal",
+        "source": {
+          "rule": "fallback: scope `personal`",
+          "at": "personal:bindings.toml:13"
+        }
+      },
+      "chain": [
+        "personal"
+      ],
+      "skills": [
+        {
+          "name": "rust-style",
+          "store": "personal",
+          "reference": "rust-style",
+          "dir": "[HOME]/stores/personal-store/skills/rust-style",
+          "inherited_from": "personal",
+          "source": {
+            "rule": "scopes.personal.skills",
+            "at": "personal:bindings.toml:13"
+          }
+        },
+        {
+          "name": "commit-style",
+          "store": "personal",
+          "reference": "commit-style",
+          "dir": "[HOME]/stores/personal-store/skills/commit-style",
+          "inherited_from": "personal",
+          "source": {
+            "rule": "scopes.personal.skills",
+            "at": "personal:bindings.toml:13"
+          }
+        }
+      ],
+      "excluded": [],
+      "always": [
+        {
+          "kind": "file",
+          "path": "[HOME]/stores/personal-store/conventions/personal.md",
+          "scope": "personal",
+          "source": {
+            "rule": "scopes.personal.always",
+            "at": "personal:bindings.toml:13"
+          }
+        },
+        {
+          "kind": "registry",
+          "scope": "personal",
+          "source": {
+            "rule": "scopes.personal.registry",
+            "at": "personal:bindings.toml:13"
+          }
+        },
+        {
+          "kind": "this-repo"
+        }
+      ],
+      "registry": {
+        "value": "personal",
+        "source": {
+          "rule": "scopes.personal.registry",
+          "at": "personal:bindings.toml:13"
+        }
+      },
+      "related": [],
+      "grant": {
+        "mode": {
+          "value": "related",
+          "source": {
+            "rule": "defaults.grant",
+            "at": "personal:bindings.toml:8"
+          }
+        },
+        "dirs": [
+          {
+            "path": "[HOME]/stores/personal-store/repos",
+            "kind": "store-repos",
+            "store": "personal",
+            "repo": null,
+            "source": {
+              "rule": "grant: store `personal` dirs",
+              "at": null
+            }
+          },
+          {
+            "path": "[HOME]/stores/personal-store/skills",
+            "kind": "store-skills",
+            "store": "personal",
+            "repo": null,
+            "source": {
+              "rule": "grant: store `personal` dirs",
+              "at": null
+            }
+          }
+        ]
+      },
+      "agents": {
+        "value": [
+          "claude",
+          "generic"
+        ],
+        "source": {
+          "rule": "defaults.agents",
+          "at": "personal:bindings.toml:8"
+        }
+      },
+      "budget_tokens": {
+        "value": 4000,
+        "source": {
+          "rule": "defaults.budget_tokens",
+          "at": "personal:bindings.toml:8"
+        }
+      }
+    },
+    {
+      "name": "events-pipeline",
+      "store": "acme",
+      "at": "acme:bindings.toml:34",
+      "path": "/Volumes/work/acme/ml/events-pipeline",
+      "scope": {
+        "value": "acme-ml",
+        "source": {
+          "rule": "repos.events-pipeline.scope",
+          "at": "acme:bindings.toml:34"
+        }
+      },
+      "chain": [
+        "acme",
+        "acme-ml"
+      ],
+      "skills": [
+        {
+          "name": "code-review",
+          "store": "acme",
+          "reference": "code-review",
+          "dir": "[HOME]/stores/acme-store/skills/code-review",
+          "inherited_from": "acme",
+          "source": {
+            "rule": "scopes.acme.skills",
+            "at": "acme:bindings.toml:13"
+          }
+        },
+        {
+          "name": "commit-style",
+          "store": "personal",
+          "reference": "personal/commit-style",
+          "dir": "[HOME]/stores/personal-store/skills/commit-style",
+          "inherited_from": "acme",
+          "source": {
+            "rule": "scopes.acme.skills",
+            "at": "acme:bindings.toml:13"
+          }
+        },
+        {
+          "name": "dbt-conventions",
+          "store": "acme",
+          "reference": "dbt-conventions",
+          "dir": "[HOME]/stores/acme-store/skills/dbt-conventions",
+          "inherited_from": "acme-ml",
+          "source": {
+            "rule": "scopes.acme-ml.skills",
+            "at": "acme:bindings.toml:20"
+          }
+        },
+        {
+          "name": "stream-recipes",
+          "store": "acme",
+          "reference": "stream-recipes",
+          "dir": "[HOME]/stores/acme-store/skills/stream-recipes",
+          "inherited_from": null,
+          "source": {
+            "rule": "repos.events-pipeline.skills",
+            "at": "acme:bindings.toml:34"
+          }
+        }
+      ],
+      "excluded": [
+        {
+          "name": "pr-conventions",
+          "store": "acme",
+          "reference": "pr-conventions",
+          "dir": "[HOME]/stores/acme-store/skills/pr-conventions",
+          "inherited_from": null,
+          "source": {
+            "rule": "repos.events-pipeline.exclude",
+            "at": "acme:bindings.toml:34"
+          }
+        }
+      ],
+      "always": [
+        {
+          "kind": "file",
+          "path": "[HOME]/stores/acme-store/conventions/acme.md",
+          "scope": "acme",
+          "source": {
+            "rule": "scopes.acme.always",
+            "at": "acme:bindings.toml:13"
+          }
+        },
+        {
+          "kind": "registry",
+          "scope": "acme",
+          "source": {
+            "rule": "scopes.acme.registry",
+            "at": "acme:bindings.toml:13"
+          }
+        },
+        {
+          "kind": "this-repo"
+        }
+      ],
+      "registry": {
+        "value": "acme",
+        "source": {
+          "rule": "scopes.acme.registry",
+          "at": "acme:bindings.toml:13"
+        }
+      },
+      "related": [
+        {
+          "name": "billing-api",
+          "scope": "acme",
+          "path": "/Volumes/work/acme/billing-api",
+          "notes": "[HOME]/stores/acme-store/repos/billing-api/notes.md",
+          "source": {
+            "rule": "repos.events-pipeline.related",
+            "at": "acme:bindings.toml:34"
+          }
+        },
+        {
+          "name": "ml-platform",
+          "scope": "acme-ml",
+          "path": "/Volumes/work/acme/ml/ml-platform",
+          "notes": null,
+          "source": {
+            "rule": "repos.events-pipeline.related",
+            "at": "acme:bindings.toml:34"
+          }
+        }
+      ],
+      "grant": {
+        "mode": {
+          "value": "registry",
+          "source": {
+            "rule": "repos.events-pipeline.grant",
+            "at": "acme:bindings.toml:34"
+          }
+        },
+        "dirs": [
+          {
+            "path": "[HOME]/stores/acme-store/repos",
+            "kind": "store-repos",
+            "store": "acme",
+            "repo": null,
+            "source": {
+              "rule": "grant: store `acme` dirs",
+              "at": null
+            }
+          },
+          {
+            "path": "[HOME]/stores/acme-store/skills",
+            "kind": "store-skills",
+            "store": "acme",
+            "repo": null,
+            "source": {
+              "rule": "grant: store `acme` dirs",
+              "at": null
+            }
+          },
+          {
+            "path": "[HOME]/stores/personal-store/skills",
+            "kind": "store-skills",
+            "store": "personal",
+            "repo": null,
+            "source": {
+              "rule": "scopes.acme.skills",
+              "at": "acme:bindings.toml:13"
+            }
+          },
+          {
+            "path": "/Volumes/work/acme/api",
+            "kind": "repo",
+            "store": null,
+            "repo": "acme-api",
+            "source": {
+              "rule": "scopes.acme.registry",
+              "at": "acme:bindings.toml:13"
+            }
+          },
+          {
+            "path": "/Volumes/work/acme/billing-api",
+            "kind": "repo",
+            "store": null,
+            "repo": "billing-api",
+            "source": {
+              "rule": "repos.events-pipeline.related",
+              "at": "acme:bindings.toml:34"
+            }
+          },
+          {
+            "path": "/Volumes/work/acme/ml/ml-platform",
+            "kind": "repo",
+            "store": null,
+            "repo": "ml-platform",
+            "source": {
+              "rule": "repos.events-pipeline.related",
+              "at": "acme:bindings.toml:34"
+            }
+          },
+          {
+            "path": "/Volumes/work/acme/web-dashboard",
+            "kind": "repo",
+            "store": null,
+            "repo": "web-dashboard",
+            "source": {
+              "rule": "scopes.acme.registry",
+              "at": "acme:bindings.toml:13"
+            }
+          }
+        ]
+      },
+      "agents": {
+        "value": [
+          "claude"
+        ],
+        "source": {
+          "rule": "repos.events-pipeline.agents",
+          "at": "acme:bindings.toml:34"
+        }
+      },
+      "budget_tokens": {
+        "value": 4000,
+        "source": {
+          "rule": "defaults.budget_tokens",
+          "at": "acme:bindings.toml:8"
+        }
+      }
+    },
+    {
+      "name": "feature-store",
+      "store": "acme",
+      "at": "acme:bindings.toml:50",
+      "path": null,
+      "scope": {
+        "value": "acme",
+        "source": {
+          "rule": "scopes.acme.remote_patterns (not cloned here)",
+          "at": "acme:bindings.toml:13"
+        }
+      },
+      "chain": [
+        "acme"
+      ],
+      "skills": [
+        {
+          "name": "code-review",
+          "store": "acme",
+          "reference": "code-review",
+          "dir": "[HOME]/stores/acme-store/skills/code-review",
+          "inherited_from": "acme",
+          "source": {
+            "rule": "scopes.acme.skills",
+            "at": "acme:bindings.toml:13"
+          }
+        },
+        {
+          "name": "pr-conventions",
+          "store": "acme",
+          "reference": "pr-conventions",
+          "dir": "[HOME]/stores/acme-store/skills/pr-conventions",
+          "inherited_from": "acme",
+          "source": {
+            "rule": "scopes.acme.skills",
+            "at": "acme:bindings.toml:13"
+          }
+        },
+        {
+          "name": "commit-style",
+          "store": "personal",
+          "reference": "personal/commit-style",
+          "dir": "[HOME]/stores/personal-store/skills/commit-style",
+          "inherited_from": "acme",
+          "source": {
+            "rule": "scopes.acme.skills",
+            "at": "acme:bindings.toml:13"
+          }
+        }
+      ],
+      "excluded": [],
+      "always": [
+        {
+          "kind": "file",
+          "path": "[HOME]/stores/acme-store/conventions/acme.md",
+          "scope": "acme",
+          "source": {
+            "rule": "scopes.acme.always",
+            "at": "acme:bindings.toml:13"
+          }
+        },
+        {
+          "kind": "registry",
+          "scope": "acme",
+          "source": {
+            "rule": "scopes.acme.registry",
+            "at": "acme:bindings.toml:13"
+          }
+        },
+        {
+          "kind": "this-repo"
+        }
+      ],
+      "registry": {
+        "value": "acme",
+        "source": {
+          "rule": "scopes.acme.registry",
+          "at": "acme:bindings.toml:13"
+        }
+      },
+      "related": [],
+      "grant": {
+        "mode": {
+          "value": "related",
+          "source": {
+            "rule": "defaults.grant",
+            "at": "acme:bindings.toml:8"
+          }
+        },
+        "dirs": [
+          {
+            "path": "[HOME]/stores/acme-store/repos",
+            "kind": "store-repos",
+            "store": "acme",
+            "repo": null,
+            "source": {
+              "rule": "grant: store `acme` dirs",
+              "at": null
+            }
+          },
+          {
+            "path": "[HOME]/stores/acme-store/skills",
+            "kind": "store-skills",
+            "store": "acme",
+            "repo": null,
+            "source": {
+              "rule": "grant: store `acme` dirs",
+              "at": null
+            }
+          },
+          {
+            "path": "[HOME]/stores/personal-store/skills",
+            "kind": "store-skills",
+            "store": "personal",
+            "repo": null,
+            "source": {
+              "rule": "scopes.acme.skills",
+              "at": "acme:bindings.toml:13"
+            }
+          }
+        ]
+      },
+      "agents": {
+        "value": [
+          "claude",
+          "generic"
+        ],
+        "source": {
+          "rule": "defaults.agents",
+          "at": "acme:bindings.toml:8"
+        }
+      },
+      "budget_tokens": {
+        "value": 4000,
+        "source": {
+          "rule": "defaults.budget_tokens",
+          "at": "acme:bindings.toml:8"
+        }
+      }
+    },
+    {
+      "name": "ml-platform",
+      "store": "acme",
+      "at": "acme:bindings.toml:45",
+      "path": "/Volumes/work/acme/ml/ml-platform",
+      "scope": {
+        "value": "acme-ml",
+        "source": {
+          "rule": "machine.toml [roots] acme-ml",
+          "at": "[HOME]/.config/kipi/machine.toml:8"
+        }
+      },
+      "chain": [
+        "acme",
+        "acme-ml"
+      ],
+      "skills": [
+        {
+          "name": "code-review",
+          "store": "acme",
+          "reference": "code-review",
+          "dir": "[HOME]/stores/acme-store/skills/code-review",
+          "inherited_from": "acme",
+          "source": {
+            "rule": "scopes.acme.skills",
+            "at": "acme:bindings.toml:13"
+          }
+        },
+        {
+          "name": "pr-conventions",
+          "store": "acme",
+          "reference": "pr-conventions",
+          "dir": "[HOME]/stores/acme-store/skills/pr-conventions",
+          "inherited_from": "acme",
+          "source": {
+            "rule": "scopes.acme.skills",
+            "at": "acme:bindings.toml:13"
+          }
+        },
+        {
+          "name": "commit-style",
+          "store": "personal",
+          "reference": "personal/commit-style",
+          "dir": "[HOME]/stores/personal-store/skills/commit-style",
+          "inherited_from": "acme",
+          "source": {
+            "rule": "scopes.acme.skills",
+            "at": "acme:bindings.toml:13"
+          }
+        },
+        {
+          "name": "dbt-conventions",
+          "store": "acme",
+          "reference": "dbt-conventions",
+          "dir": "[HOME]/stores/acme-store/skills/dbt-conventions",
+          "inherited_from": "acme-ml",
+          "source": {
+            "rule": "scopes.acme-ml.skills",
+            "at": "acme:bindings.toml:20"
+          }
+        }
+      ],
+      "excluded": [],
+      "always": [
+        {
+          "kind": "file",
+          "path": "[HOME]/stores/acme-store/conventions/acme.md",
+          "scope": "acme",
+          "source": {
+            "rule": "scopes.acme.always",
+            "at": "acme:bindings.toml:13"
+          }
+        },
+        {
+          "kind": "registry",
+          "scope": "acme",
+          "source": {
+            "rule": "scopes.acme.registry",
+            "at": "acme:bindings.toml:13"
+          }
+        },
+        {
+          "kind": "this-repo"
+        }
+      ],
+      "registry": {
+        "value": "acme",
+        "source": {
+          "rule": "scopes.acme.registry",
+          "at": "acme:bindings.toml:13"
+        }
+      },
+      "related": [],
+      "grant": {
+        "mode": {
+          "value": "related",
+          "source": {
+            "rule": "defaults.grant",
+            "at": "acme:bindings.toml:8"
+          }
+        },
+        "dirs": [
+          {
+            "path": "[HOME]/stores/acme-store/repos",
+            "kind": "store-repos",
+            "store": "acme",
+            "repo": null,
+            "source": {
+              "rule": "grant: store `acme` dirs",
+              "at": null
+            }
+          },
+          {
+            "path": "[HOME]/stores/acme-store/skills",
+            "kind": "store-skills",
+            "store": "acme",
+            "repo": null,
+            "source": {
+              "rule": "grant: store `acme` dirs",
+              "at": null
+            }
+          },
+          {
+            "path": "[HOME]/stores/personal-store/skills",
+            "kind": "store-skills",
+            "store": "personal",
+            "repo": null,
+            "source": {
+              "rule": "scopes.acme.skills",
+              "at": "acme:bindings.toml:13"
+            }
+          }
+        ]
+      },
+      "agents": {
+        "value": [
+          "claude",
+          "generic"
+        ],
+        "source": {
+          "rule": "defaults.agents",
+          "at": "acme:bindings.toml:8"
+        }
+      },
+      "budget_tokens": {
+        "value": 4000,
+        "source": {
+          "rule": "defaults.budget_tokens",
+          "at": "acme:bindings.toml:8"
+        }
+      }
+    },
+    {
+      "name": "side-tool",
+      "store": "personal",
+      "at": "personal:bindings.toml:20",
+      "path": "/srv/code/side-tool",
+      "scope": {
+        "value": "personal",
+        "source": {
+          "rule": "fallback: scope `personal`",
+          "at": "personal:bindings.toml:13"
+        }
+      },
+      "chain": [
+        "personal"
+      ],
+      "skills": [
+        {
+          "name": "rust-style",
+          "store": "personal",
+          "reference": "rust-style",
+          "dir": "[HOME]/stores/personal-store/skills/rust-style",
+          "inherited_from": "personal",
+          "source": {
+            "rule": "scopes.personal.skills",
+            "at": "personal:bindings.toml:13"
+          }
+        },
+        {
+          "name": "commit-style",
+          "store": "personal",
+          "reference": "commit-style",
+          "dir": "[HOME]/stores/personal-store/skills/commit-style",
+          "inherited_from": "personal",
+          "source": {
+            "rule": "scopes.personal.skills",
+            "at": "personal:bindings.toml:13"
+          }
+        }
+      ],
+      "excluded": [],
+      "always": [
+        {
+          "kind": "file",
+          "path": "[HOME]/stores/personal-store/conventions/personal.md",
+          "scope": "personal",
+          "source": {
+            "rule": "scopes.personal.always",
+            "at": "personal:bindings.toml:13"
+          }
+        },
+        {
+          "kind": "registry",
+          "scope": "personal",
+          "source": {
+            "rule": "scopes.personal.registry",
+            "at": "personal:bindings.toml:13"
+          }
+        },
+        {
+          "kind": "this-repo"
+        }
+      ],
+      "registry": {
+        "value": "personal",
+        "source": {
+          "rule": "scopes.personal.registry",
+          "at": "personal:bindings.toml:13"
+        }
+      },
+      "related": [
+        {
+          "name": "api",
+          "scope": "personal",
+          "path": "/srv/code/api",
+          "notes": null,
+          "source": {
+            "rule": "repos.side-tool.related",
+            "at": "personal:bindings.toml:20"
+          }
+        }
+      ],
+      "grant": {
+        "mode": {
+          "value": "related",
+          "source": {
+            "rule": "defaults.grant",
+            "at": "personal:bindings.toml:8"
+          }
+        },
+        "dirs": [
+          {
+            "path": "[HOME]/stores/personal-store/repos",
+            "kind": "store-repos",
+            "store": "personal",
+            "repo": null,
+            "source": {
+              "rule": "grant: store `personal` dirs",
+              "at": null
+            }
+          },
+          {
+            "path": "[HOME]/stores/personal-store/skills",
+            "kind": "store-skills",
+            "store": "personal",
+            "repo": null,
+            "source": {
+              "rule": "grant: store `personal` dirs",
+              "at": null
+            }
+          },
+          {
+            "path": "/srv/code/api",
+            "kind": "repo",
+            "store": null,
+            "repo": "api",
+            "source": {
+              "rule": "repos.side-tool.related",
+              "at": "personal:bindings.toml:20"
+            }
+          }
+        ]
+      },
+      "agents": {
+        "value": [
+          "claude",
+          "generic"
+        ],
+        "source": {
+          "rule": "defaults.agents",
+          "at": "personal:bindings.toml:8"
+        }
+      },
+      "budget_tokens": {
+        "value": 4000,
+        "source": {
+          "rule": "defaults.budget_tokens",
+          "at": "personal:bindings.toml:8"
+        }
+      }
+    },
+    {
+      "name": "web-dashboard",
+      "store": "acme",
+      "at": "acme:bindings.toml:55",
+      "path": "/Volumes/work/acme/web-dashboard",
+      "scope": {
+        "value": "acme",
+        "source": {
+          "rule": "machine.toml [roots] acme",
+          "at": "[HOME]/.config/kipi/machine.toml:7"
+        }
+      },
+      "chain": [
+        "acme"
+      ],
+      "skills": [
+        {
+          "name": "code-review",
+          "store": "acme",
+          "reference": "code-review",
+          "dir": "[HOME]/stores/acme-store/skills/code-review",
+          "inherited_from": "acme",
+          "source": {
+            "rule": "scopes.acme.skills",
+            "at": "acme:bindings.toml:13"
+          }
+        },
+        {
+          "name": "pr-conventions",
+          "store": "acme",
+          "reference": "pr-conventions",
+          "dir": "[HOME]/stores/acme-store/skills/pr-conventions",
+          "inherited_from": "acme",
+          "source": {
+            "rule": "scopes.acme.skills",
+            "at": "acme:bindings.toml:13"
+          }
+        },
+        {
+          "name": "commit-style",
+          "store": "personal",
+          "reference": "personal/commit-style",
+          "dir": "[HOME]/stores/personal-store/skills/commit-style",
+          "inherited_from": "acme",
+          "source": {
+            "rule": "scopes.acme.skills",
+            "at": "acme:bindings.toml:13"
+          }
+        }
+      ],
+      "excluded": [],
+      "always": [
+        {
+          "kind": "file",
+          "path": "[HOME]/stores/acme-store/conventions/acme.md",
+          "scope": "acme",
+          "source": {
+            "rule": "scopes.acme.always",
+            "at": "acme:bindings.toml:13"
+          }
+        },
+        {
+          "kind": "registry",
+          "scope": "acme",
+          "source": {
+            "rule": "scopes.acme.registry",
+            "at": "acme:bindings.toml:13"
+          }
+        },
+        {
+          "kind": "this-repo"
+        }
+      ],
+      "registry": {
+        "value": "acme",
+        "source": {
+          "rule": "scopes.acme.registry",
+          "at": "acme:bindings.toml:13"
+        }
+      },
+      "related": [],
+      "grant": {
+        "mode": {
+          "value": "related",
+          "source": {
+            "rule": "defaults.grant",
+            "at": "acme:bindings.toml:8"
+          }
+        },
+        "dirs": [
+          {
+            "path": "[HOME]/stores/acme-store/repos",
+            "kind": "store-repos",
+            "store": "acme",
+            "repo": null,
+            "source": {
+              "rule": "grant: store `acme` dirs",
+              "at": null
+            }
+          },
+          {
+            "path": "[HOME]/stores/acme-store/skills",
+            "kind": "store-skills",
+            "store": "acme",
+            "repo": null,
+            "source": {
+              "rule": "grant: store `acme` dirs",
+              "at": null
+            }
+          },
+          {
+            "path": "[HOME]/stores/personal-store/skills",
+            "kind": "store-skills",
+            "store": "personal",
+            "repo": null,
+            "source": {
+              "rule": "scopes.acme.skills",
+              "at": "acme:bindings.toml:13"
+            }
+          }
+        ]
+      },
+      "agents": {
+        "value": [
+          "claude",
+          "generic"
+        ],
+        "source": {
+          "rule": "defaults.agents",
+          "at": "acme:bindings.toml:8"
+        }
+      },
+      "budget_tokens": {
+        "value": 4000,
+        "source": {
+          "rule": "defaults.budget_tokens",
+          "at": "acme:bindings.toml:8"
+        }
+      }
+    }
+  ],
+  "registries": [
+    {
+      "scope": "acme",
+      "store": "acme",
+      "scopes": [
+        "acme",
+        "acme-ml"
+      ],
+      "entries": [
+        {
+          "name": "acme-api",
+          "aliases": [],
+          "aliases_draft": false,
+          "summary": "Public REST gateway",
+          "summary_draft": false,
+          "scope": "acme",
+          "local": "/Volumes/work/acme/api",
+          "notes": null,
+          "keys": [
+            "acme-api"
+          ],
+          "source": {
+            "rule": "repos.acme-api",
+            "at": "acme:bindings.toml:30"
+          }
+        },
+        {
+          "name": "billing-api",
+          "aliases": [
+            "billing",
+            "invoices"
+          ],
+          "aliases_draft": false,
+          "summary": "Invoicing and payment orchestration; OpenAPI in api/openapi.yaml",
+          "summary_draft": true,
+          "scope": "acme",
+          "local": "/Volumes/work/acme/billing-api",
+          "notes": "[HOME]/stores/acme-store/repos/billing-api/notes.md",
+          "keys": [
+            "billing-api",
+            "billing",
+            "invoices"
+          ],
+          "source": {
+            "rule": "repos.billing-api",
+            "at": "acme:bindings.toml:25"
+          }
+        },
+        {
+          "name": "events-pipeline",
+          "aliases": [
+            "events",
+            "pipeline"
+          ],
+          "aliases_draft": false,
+          "summary": "Kafka consumers that turn raw events into billing and ML features",
+          "summary_draft": false,
+          "scope": "acme-ml",
+          "local": "/Volumes/work/acme/ml/events-pipeline",
+          "notes": "[HOME]/stores/acme-store/repos/events-pipeline/notes.md",
+          "keys": [
+            "events-pipeline",
+            "events",
+            "pipeline"
+          ],
+          "source": {
+            "rule": "repos.events-pipeline",
+            "at": "acme:bindings.toml:34"
+          }
+        },
+        {
+          "name": "feature-store",
+          "aliases": [
+            "features"
+          ],
+          "aliases_draft": true,
+          "summary": "Online and offline feature serving; dbt models in models/",
+          "summary_draft": true,
+          "scope": "acme",
+          "local": null,
+          "notes": null,
+          "keys": [
+            "feature-store",
+            "features"
+          ],
+          "source": {
+            "rule": "repos.feature-store",
+            "at": "acme:bindings.toml:50"
+          }
+        },
+        {
+          "name": "ml-platform",
+          "aliases": [
+            "ml"
+          ],
+          "aliases_draft": false,
+          "summary": "Shared training and feature tooling",
+          "summary_draft": false,
+          "scope": "acme-ml",
+          "local": "/Volumes/work/acme/ml/ml-platform",
+          "notes": null,
+          "keys": [
+            "ml-platform",
+            "ml"
+          ],
+          "source": {
+            "rule": "repos.ml-platform",
+            "at": "acme:bindings.toml:45"
+          }
+        },
+        {
+          "name": "web-dashboard",
+          "aliases": [],
+          "aliases_draft": false,
+          "summary": null,
+          "summary_draft": false,
+          "scope": "acme",
+          "local": "/Volumes/work/acme/web-dashboard",
+          "notes": null,
+          "keys": [
+            "web-dashboard"
+          ],
+          "source": {
+            "rule": "repos.web-dashboard",
+            "at": "acme:bindings.toml:55"
+          }
+        }
+      ],
+      "collisions": [],
+      "source": {
+        "rule": "scopes.acme.registry",
+        "at": "acme:bindings.toml:13"
+      }
+    },
+    {
+      "scope": "personal",
+      "store": "personal",
+      "scopes": [
+        "personal"
+      ],
+      "entries": [
+        {
+          "name": "api",
+          "aliases": [
+            "personal-api"
+          ],
+          "aliases_draft": false,
+          "summary": "Personal JSON API behind the blog and side-tool uploads",
+          "summary_draft": true,
+          "scope": "personal",
+          "local": "/srv/code/api",
+          "notes": null,
+          "keys": [
+            "api",
+            "personal-api"
+          ],
+          "source": {
+            "rule": "repos.api",
+            "at": "personal:bindings.toml:26"
+          }
+        },
+        {
+          "name": "blog",
+          "aliases": [
+            "site"
+          ],
+          "aliases_draft": false,
+          "summary": "Static site; posts in content/, theme in themes/plain",
+          "summary_draft": false,
+          "scope": "personal",
+          "local": "/srv/code/blog",
+          "notes": null,
+          "keys": [
+            "blog",
+            "site"
+          ],
+          "source": {
+            "rule": "repos.blog",
+            "at": "personal:bindings.toml:31"
+          }
+        },
+        {
+          "name": "dotfiles",
+          "aliases": [],
+          "aliases_draft": false,
+          "summary": null,
+          "summary_draft": false,
+          "scope": "personal",
+          "local": "/srv/code/dotfiles",
+          "notes": null,
+          "keys": [
+            "dotfiles"
+          ],
+          "source": {
+            "rule": "repos.dotfiles",
+            "at": "personal:bindings.toml:36"
+          }
+        },
+        {
+          "name": "side-tool",
+          "aliases": [
+            "photos",
+            "renamer"
+          ],
+          "aliases_draft": false,
+          "summary": "Small CLI that renames photos by EXIF date; Rust, entry point src/main.rs",
+          "summary_draft": false,
+          "scope": "personal",
+          "local": "/srv/code/side-tool",
+          "notes": "[HOME]/stores/personal-store/repos/side-tool/notes.md",
+          "keys": [
+            "side-tool",
+            "photos",
+            "renamer"
+          ],
+          "source": {
+            "rule": "repos.side-tool",
+            "at": "personal:bindings.toml:20"
+          }
+        }
+      ],
+      "collisions": [],
+      "source": {
+        "rule": "scopes.personal.registry",
+        "at": "personal:bindings.toml:13"
+      }
+    }
+  ]
+}

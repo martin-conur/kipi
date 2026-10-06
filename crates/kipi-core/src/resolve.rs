@@ -17,7 +17,7 @@ use crate::model::{
 };
 use crate::plan::{
     AliasCollision, AlwaysOn, Decided, Grant, GrantDir, GrantKind, Plan, PlannedSkill, Registry,
-    RegistryEntry, RelatedRepo, RepoPlan, Source, alias_key,
+    RegistryEntry, RelatedRepo, RepoPlan, SkillOrigin, Source, alias_key,
 };
 
 /// The scope a repo falls back to when nothing else places it (roadmap §6, rule 3).
@@ -107,6 +107,7 @@ impl<'a> StoreCtx<'a> {
                     &scope.at,
                     &rule,
                     Binder::Scope(Some(&scope.name)),
+                    SkillOrigin::Scope(scope.name.clone()),
                 )?);
             }
             ctx.scope_skills.insert(&scope.name, skills);
@@ -313,6 +314,7 @@ impl<'a> StoreCtx<'a> {
         at: &Location,
         rule: &str,
         binder: Binder<'_>,
+        origin: SkillOrigin,
     ) -> Result<PlannedSkill> {
         let store = self.store;
         let Some((owner, skill)) = self.set.skill(&store.name, reference) else {
@@ -367,6 +369,7 @@ impl<'a> StoreCtx<'a> {
                 name: skill.name.clone(),
             },
             dir: skill.dir.clone(),
+            origin,
             source: Source::at(at, rule),
         })
     }
@@ -460,7 +463,8 @@ impl<'a> StoreCtx<'a> {
         }
         let rule = format!("repos.{}.skills", repo.name);
         for r in &repo.skills {
-            let skill = self.skill(r, &repo.at, &rule, Binder::Scope(scope.value.as_deref()))?;
+            let binder = Binder::Scope(scope.value.as_deref());
+            let skill = self.skill(r, &repo.at, &rule, binder, SkillOrigin::Repo)?;
             push_skill(&mut skills, skill);
         }
         let rule = format!("repos.{}.exclude", repo.name);
@@ -468,7 +472,7 @@ impl<'a> StoreCtx<'a> {
         for r in &repo.exclude {
             push_skill(
                 &mut excluded,
-                self.skill(r, &repo.at, &rule, Binder::Exclude)?,
+                self.skill(r, &repo.at, &rule, Binder::Exclude, SkillOrigin::Repo)?,
             );
         }
         skills.retain(|s| !excluded.iter().any(|x| same_skill(s, x)));

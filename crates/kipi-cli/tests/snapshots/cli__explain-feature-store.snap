@@ -1,0 +1,39 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: out
+---
+feature-store
+  entry     acme:bindings.toml:50
+  store     acme
+  checkout  (not cloned here)
+
+Scope
+  acme  ← scopes.acme.remote_patterns (not cloned here) (acme:bindings.toml:13)
+  chain: acme
+
+Skills  ○ inherited  ● explicit  ✗ excluded
+  ○ code-review            ← scopes.acme.skills (acme:bindings.toml:13)
+  ○ pr-conventions         ← scopes.acme.skills (acme:bindings.toml:13)
+  ○ personal/commit-style  ← scopes.acme.skills (acme:bindings.toml:13)
+
+Always-on
+  conventions/acme.md  ← scopes.acme.always (acme:bindings.toml:13)
+  registry of acme     ← scopes.acme.registry (acme:bindings.toml:13)
+  this-repo section    ← built in
+
+Registry
+  acme  ← scopes.acme.registry (acme:bindings.toml:13)
+  6 repos in scopes acme, acme-ml
+
+Related
+  (none)
+
+Grant: related  ← defaults.grant (acme:bindings.toml:8)
+  ~/stores/acme-store/repos       store acme repos/       ← grant: store `acme` dirs
+  ~/stores/acme-store/skills      store acme skills/      ← grant: store `acme` dirs
+  ~/stores/personal-store/skills  store personal skills/  ← scopes.acme.skills (acme:bindings.toml:13)
+
+Settings  (repo > scope chain > defaults > built-in)
+  agents         claude, generic  ← defaults.agents (acme:bindings.toml:8)
+  budget_tokens  4000             ← defaults.budget_tokens (acme:bindings.toml:8)
+  grant          related          ← defaults.grant (acme:bindings.toml:8)
