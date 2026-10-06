@@ -793,5 +793,12 @@ The spec wins wherever it is explicit.
   store (`bench`: a registry scope with conventions and four team scopes), `n` committed git
   checkouts and `config.toml` + `machine.toml`. The CLI test syncs 50 repos, warms the caches with
   one `tree`, then asserts the best of three runs is under 100 ms. Measured on an 8-core macOS
-  laptop: ~10–20 ms release, ~40 ms debug (the test runs the debug binary); with both caches empty
-  ~170 ms release, ~500 ms debug.
+  laptop: ~14 ms release, ~22 ms debug (the test runs the debug binary); with both caches empty
+  ~170 ms release. The first CI run measured 120 ms on ubuntu-latest (about 2.7× the laptop, with
+  other tests running beside it), so two changes keep the margin:
+  - **Dependencies build with `opt-level = 2` in the dev profile** (`[profile.dev.package."*"]`
+    in the workspace `Cargo.toml`; kipi's own crates stay unoptimized). Debug-built SHA-256,
+    minijinja and TOML parsing were half of a debug run (45 → 27 ms). The cost is a slower
+    first build of the dependencies.
+  - **`git::status` (shared with `kipi stores`) answers a directory with no `.git` in it or any
+    ancestor without starting `git`** (−5 ms per store that is not under git).

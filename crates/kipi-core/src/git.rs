@@ -245,8 +245,15 @@ pub struct DirStatus {
     pub has_remote: bool,
 }
 
-/// The git state of `dir`, or `None` when it is not inside a git work tree.
+/// The git state of `dir`, or `None` when it is not inside a git work tree. A directory
+/// with no `.git` in it or any ancestor is answered without starting `git`.
 pub fn status(dir: &Path) -> Option<DirStatus> {
+    if !dir
+        .ancestors()
+        .any(|d| fs::symlink_metadata(d.join(".git")).is_ok())
+    {
+        return None;
+    }
     let git = |args: &[&str]| {
         let out = Command::new("git")
             .arg("-C")
@@ -356,6 +363,26 @@ mod tests {
         // A path not asked before is asked.
         let c = repo.join("CLAUDE.local.md");
         assert!(warm.tracked(&repo, &[c]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn status_of_plain_and_git_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let plain = dir.path().join("plain");
+        std::fs::create_dir(&plain).unwrap();
+        assert_eq!(status(&plain), None, "no .git anywhere above: no git run");
+        let repo = dir.path().join("repo");
+        std::fs::create_dir(&repo).unwrap();
+        git(&repo, &["init", "--quiet"]);
+        let sub = repo.join("sub");
+        std::fs::create_dir(&sub).unwrap();
+        let clean = DirStatus {
+            clean: true,
+            has_remote: false,
+        };
+        assert_eq!(status(&sub), Some(clean), "inside a work tree");
+        std::fs::write(sub.join("x"), "x").unwrap();
+        assert!(!status(&sub).unwrap().clean);
     }
 
     #[test]
