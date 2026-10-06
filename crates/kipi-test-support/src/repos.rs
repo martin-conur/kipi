@@ -215,25 +215,26 @@ fn manifest_file(
     description: Option<&str>,
 ) -> Option<(&'static str, String)> {
     let desc = description.unwrap_or_default();
+    // Serialized through toml_edit / serde_json so any summary text stays well-formed.
+    let toml = |table: &str, edition: Option<&str>| {
+        let mut doc = DocumentMut::new();
+        doc[table] = toml_edit::table();
+        doc[table]["name"] = toml_edit::value(name);
+        doc[table]["version"] = toml_edit::value("0.1.0");
+        if let Some(edition) = edition {
+            doc[table]["edition"] = toml_edit::value(edition);
+        }
+        doc[table]["description"] = toml_edit::value(desc);
+        doc.to_string()
+    };
     match kind {
-        ManifestKind::Cargo => Some((
-            "Cargo.toml",
-            format!(
-                "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\ndescription = \"{desc}\"\n"
-            ),
-        )),
-        ManifestKind::PackageJson => Some((
-            "package.json",
-            format!(
-                "{{\n  \"name\": \"{name}\",\n  \"version\": \"0.1.0\",\n  \"description\": \"{desc}\"\n}}\n"
-            ),
-        )),
-        ManifestKind::Pyproject => Some((
-            "pyproject.toml",
-            format!(
-                "[project]\nname = \"{name}\"\nversion = \"0.1.0\"\ndescription = \"{desc}\"\n"
-            ),
-        )),
+        ManifestKind::Cargo => Some(("Cargo.toml", toml("package", Some("2024")))),
+        ManifestKind::PackageJson => {
+            let json = serde_json::json!({ "name": name, "version": "0.1.0", "description": desc });
+            let text = serde_json::to_string_pretty(&json).expect("a JSON object serializes");
+            Some(("package.json", text + "\n"))
+        }
+        ManifestKind::Pyproject => Some(("pyproject.toml", toml("project", None))),
         ManifestKind::None => None,
     }
 }
@@ -308,6 +309,24 @@ mod tests {
         let laid = lay_out(b.path(), &repos).unwrap();
         assert_eq!(laid[0], ("side-tool".to_owned(), b.path().join("src/st")));
         assert!(a.path().join("code/side-tool/.git").is_dir());
+    }
+
+    #[test]
+    fn manifests_round_trip_descriptions_with_quotes_and_backslashes() {
+        let desc = "Parses \"quoted\" C:\\paths\nand a tab\t";
+        for (kind, key) in [
+            (ManifestKind::Cargo, "package"),
+            (ManifestKind::Pyproject, "project"),
+        ] {
+            let (_, text) = manifest_file(kind, "x", Some(desc)).unwrap();
+            let doc: DocumentMut = text.parse().unwrap_or_else(|e| panic!("{text}\n{e}"));
+            assert_eq!(doc[key]["description"].as_str(), Some(desc));
+            assert_eq!(doc[key]["name"].as_str(), Some("x"));
+        }
+        let (_, text) = manifest_file(ManifestKind::PackageJson, "x", Some(desc)).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(json["description"], desc);
+        assert!(manifest_file(ManifestKind::None, "x", Some(desc)).is_none());
     }
 
     #[test]

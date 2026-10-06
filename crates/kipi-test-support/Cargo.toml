@@ -11,6 +11,7 @@ publish = false
 [dependencies]
 ignore.workspace = true
 regex.workspace = true
+serde_json.workspace = true
 tempfile.workspace = true
 toml_edit.workspace = true
 walkdir.workspace = true

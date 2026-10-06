@@ -42,3 +42,6 @@ The spec wins wherever it is explicit.
 - **Fake repo remotes** in `kipi-test-support` use the SSH form for acme repos
   (`git@github.com:acme-org/billing-api.git`) and HTTPS for personal ones, so Stage 1's remote
   normalization is exercised on both shapes by the same fixtures.
+- **Duplicate crate versions are denied** (`multiple-versions = "deny"`). The current lockfile has
+  none; a genuine duplicate gets a `skip` entry with a reason rather than a blanket `warn`.
+- **CI actions are pinned to full commit SHAs** with a `# vX.Y.Z` comment; bump them deliberately.

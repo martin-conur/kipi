@@ -27,7 +27,9 @@ exceptions = [
 ]
 
 [bans]
-multiple-versions = "warn"
+# Duplicate versions fail the check; allow a genuine one with
+# skip = [{ crate = "<name>@<version>", reason = "..." }]. None today.
+multiple-versions = "deny"
 wildcards = "deny"
 allow-wildcard-paths = true
 # Roadmap §1/§12: no network, no async runtime, no libgit2, no SQLite.
