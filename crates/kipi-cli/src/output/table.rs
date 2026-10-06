@@ -39,6 +39,8 @@ impl Table {
         let mut widths = vec![0; cols];
         for row in &self.rows {
             for (i, (text, _)) in row.iter().enumerate() {
+                // Chars, not display columns: right for the narrow Unicode kipi prints
+                // (○ ● ✗ ← →); wide characters such as CJK or emoji would misalign.
                 widths[i] = widths[i].max(text.chars().count());
             }
         }

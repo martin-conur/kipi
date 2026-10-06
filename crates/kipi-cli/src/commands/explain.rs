@@ -9,9 +9,9 @@ use kipi_core::plan::{AlwaysOn, GrantKind, RepoPlan, SkillOrigin, Source};
 
 use super::Loaded;
 use crate::error::Failure;
-use crate::output::Output;
 use crate::output::color::styles;
 use crate::output::table::Table;
+use crate::output::{Output, display_path};
 
 /// A skill inherited from the scope chain.
 pub const INHERITED: &str = "○";
@@ -22,10 +22,10 @@ pub const EXCLUDED: &str = "✗";
 
 /// Explain repo entry `name`.
 pub fn run(loaded: &Loaded, name: &str, out: &Output) -> Result<(), Failure> {
-    let repo = loaded.repo(name)?;
     if out.json {
         return super::resolve::run(loaded, Some(name), out);
     }
+    let repo = loaded.repo(name)?;
     out.print(&explain(loaded, repo, out))?;
     Ok(())
 }
@@ -38,10 +38,11 @@ fn because(set: &StoreSet, source: &Source) -> String {
     }
 }
 
-/// `path` relative to `root` when it lies inside it.
-fn within(path: &Path, root: &Path) -> String {
+/// `path` relative to `root` when it lies inside it, else as [`display_path`] shows it
+/// (`~/…` under `home`), so a home directory never reaches the output.
+fn within(path: &Path, root: &Path, home: Option<&Path>) -> String {
     path.strip_prefix(root)
-        .map_or_else(|_| path.display().to_string(), |p| p.display().to_string())
+        .map_or_else(|_| display_path(path, home), |p| p.display().to_string())
 }
 
 fn explain(loaded: &Loaded, repo: &RepoPlan, out: &Output) -> String {
@@ -125,8 +126,8 @@ fn explain(loaded: &Loaded, repo: &RepoPlan, out: &Output) -> String {
     for a in &repo.always {
         match a {
             AlwaysOn::File { path, source, .. } => {
-                let shown =
-                    store_root(&repo.store).map_or_else(|| out.path(path), |r| within(path, r));
+                let shown = store_root(&repo.store)
+                    .map_or_else(|| out.path(path), |r| within(path, r, out.home.as_deref()));
                 t.row([plain(shown), src(source)]);
             }
             AlwaysOn::Registry { scope, source } => {
@@ -229,4 +230,20 @@ fn explain(loaded: &Loaded, repo: &RepoPlan, out: &Output) -> String {
     );
 
     head + &text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn within_is_store_relative_and_never_shows_the_home_outside_it() {
+        let home = Some(Path::new("/h/me"));
+        let root = Path::new("/h/me/stores/acme");
+        let inside = Path::new("/h/me/stores/acme/conventions/acme.md");
+        assert_eq!(within(inside, root, home), "conventions/acme.md");
+        let outside = Path::new("/h/me/elsewhere/acme.md");
+        assert_eq!(within(outside, root, home), "~/elsewhere/acme.md");
+        assert_eq!(within(Path::new("/srv/x.md"), root, home), "/srv/x.md");
+    }
 }
