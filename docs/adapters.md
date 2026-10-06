@@ -49,6 +49,11 @@ fetched (the latter has moved under `learn.chatgpt.com`); the `.agents/skills` l
 sandbox read behaviour above are carried from the spec (§3) and earlier reading of those pages.
 Confirm both before 0.1.0 (#18).
 
+The same applies to two Claude Code rows: the memory and settings pages were reachable but only
+partly readable in this check. That `CLAUDE.local.md` is still loaded (and not deprecated), and the
+exact edit semantics of `additionalDirectories`, are carried from earlier reading; confirm them
+before 0.1.0 as well.
+
 ## Policy decisions
 
 Recorded in `docs/decisions.md` under "Stage 2: adapters (#6)": AGENTS.md by default (§15
