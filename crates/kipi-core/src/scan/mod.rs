@@ -19,7 +19,7 @@ pub use draft::{
     GENERIC_WORDS, SUMMARY_CHARS, draft_aliases, draft_summary, first_paragraph,
     manifest_description, readme_summary,
 };
-pub use write::{DRAFT_MARK, FileWrite, write_files};
+pub use write::{DRAFT_MARK, FileWrite, set_repo_key, write_files};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;

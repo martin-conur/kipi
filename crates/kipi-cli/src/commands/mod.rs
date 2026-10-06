@@ -205,8 +205,13 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
             };
             tree::run(&env, &load(&env)?, &args, out)
         }
-        Command::Doctor { repo, fix, .. } => {
-            doctor::run(&env()?, &global.stores, repo.as_deref(), *fix, out)
+        Command::Doctor { repo, fix, dry_run } => {
+            let args = doctor::Args {
+                repo: repo.as_deref(),
+                fix: *fix,
+                dry_run: dry_run.dry_run,
+            };
+            doctor::run(&env()?, &global.stores, &args, out)
         }
         Command::Init {
             store,

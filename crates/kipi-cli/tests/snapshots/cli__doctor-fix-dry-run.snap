@@ -1,0 +1,35 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: dry
+---
+would remove `api` (~/code/api) from machine.toml [repos]
+would remove the broken link ~/code/side-tool/.claude/skills/old-skill
+would re-sync `side-tool`
+would re-sync `billing-api`
+
+warn[K017] api: machine.toml places `api` at ~/code/api, which is no longer a directory
+  --> [HOME]/.config/kipi/machine.toml:3
+  hint: if the repo moved, `kipi scan` records its new path; if it is gone, `kipi doctor --fix` removes the line
+warn[K018] side-tool: link .claude/skills/old-skill points at ~/nowhere, which does not exist
+  hint: kipi did not create it; `kipi doctor --fix` removes the broken link
+warn[K019] side-tool: .claude/settings.local.json grants read access to ~/code/api, which does not exist
+  hint: `kipi doctor --fix` removes `api` from machine.toml and re-syncs, which drops the entry
+warn[K021] billing-api: .git/info/exclude lacks `.claude/skills/`, `.claude/settings.local.json`, `.agents/`, `.kipi/`, so git shows kipi's files as untracked
+  hint: `kipi doctor --fix` (or `kipi sync billing-api`) restores kipi's section
+info[K008] api: the summary of repo `api` is still a draft
+  --> personal:bindings.toml:26
+  hint: review it, then remove its `# kipi:draft` marker
+info[K008] billing-api: the summary of repo `billing-api` is still a draft
+  --> acme:bindings.toml:25
+  hint: review it, then remove its `# kipi:draft` marker
+info[K008] dotfiles: repo `dotfiles` has no summary; the registry lists it by name only
+  --> personal:bindings.toml:36
+  hint: add `summary = "…"` to [repos.dotfiles] (one line: what it is, where to look)
+info[K008] feature-store: the summary of repo `feature-store` is still a draft
+  --> acme:bindings.toml:50
+  hint: review it, then remove its `# kipi:draft` marker
+info[K008] web-dashboard: repo `web-dashboard` has no summary; the registry lists it by name only
+  --> acme:bindings.toml:55
+  hint: add `summary = "…"` to [repos.web-dashboard] (one line: what it is, where to look)
+
+0 errors, 4 warnings, 5 info

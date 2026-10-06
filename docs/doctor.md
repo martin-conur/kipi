@@ -2,15 +2,17 @@
 
 `kipi doctor [repo]` runs every check in roadmap §10 and prints one finding per problem,
 each with a hint. It exits 2 when any finding is an **error**; warnings and info leave the
-exit code at 0. `--json` prints the same findings (shape below).
+exit code at 0. `--json` prints the same findings (shape below). `--fix` applies the fixes
+marked safe (see [Fixing](#fixing)).
 
 Codes are stable: a check keeps its code for good, and a removed check's code is never
 reused. With a `repo` argument only findings about that repo entry are printed; findings
 about a skill or a store file (K005 in a scope, K006 in `bindings.toml` or conventions,
 K009, K011) are left out.
 
-Checks that need the filesystem beyond the stores (missing checkouts, stray symlinks,
-grants pointing nowhere, `.git/info/exclude`, budgets) and `--fix` land with #13.
+The filesystem checks K018–K022 look only at **synced** checkouts: repos cloned here
+(their `machine.toml [repos]` path is a directory) that hold a `.kipi/manifest.toml`. A
+checkout kipi never synced is not kipi's business; `kipi status` reports it as `missing`.
 
 ## How doctor runs
 
@@ -107,8 +109,78 @@ then directory name, then origin basename).
 
 ## K015 missing-remote
 
-**info.** An entry without `remote` whose checkout has a network origin. Safe fix (applied
-by `--fix`, #13): fill `remote` with the normalized origin.
+**info.** An entry without `remote` whose checkout has a network origin. Safe fix: fill
+`remote` with the normalized origin (a comment-preserving edit of `bindings.toml`).
+
+## K016 budget
+
+**warn.** A repo's always-on text is over its `budget_tokens`: the generated block plus the
+`description` of each effective skill, counted as `sync` and `status` count it (the
+`config.toml` `tokenizer`, an estimate). The message names the three largest parts among
+each conventions file, the registry, the this-repo section (the rest of the block) and each
+skill description. No fix.
+
+## K017 checkout-gone
+
+**warn.** A `machine.toml [repos]` path that is no longer a directory. Safe fix: remove the
+line. If the repo only moved, `kipi scan` records the new path instead.
+
+## K018 stray-link
+
+**warn.** A symlink in a synced checkout's skill directories (`.claude/skills/`,
+`.agents/skills/`) pointing at a path that does not exist or lies outside every mounted
+store. Safe fix: for a link kipi created (its manifest lists it), re-sync the repo, which
+re-links or removes it; for a broken link kipi did not create, remove it. A working link of
+the user's that points outside the stores is reported and left alone.
+
+## K019 stale-grant
+
+**warn.** A read-grant entry kipi merged into a settings file (its manifest lists it) that
+points at a path that does not exist. Safe fix: re-sync the repo, which drops an entry the
+plan no longer grants; a related checkout that is gone is first removed from `machine.toml`
+(K017's fix), so its entry goes too. A store's `repos/` or `skills/` the plan still grants is
+not reported: git keeps no empty directories, and the grant is harmless until it appears.
+
+## K020 foreign-link
+
+**info.** A symlink in a synced checkout's skill directories that kipi's manifest does not
+list, pointing into a mounted store. kipi leaves it alone; the next sync adopts it if the
+plan links the same skill there. (A foreign link that is broken or points outside the stores
+is K018 instead; each link gets one finding.)
+
+## K021 missing-exclude
+
+**warn.** A pattern kipi keeps in a synced checkout's `.git/info/exclude` (as its manifest
+records them) is no longer in the file, so git shows kipi's links, settings or manifest as
+untracked files. Safe fix: re-sync the repo, which rewrites kipi's section.
+
+## K022 tracked-block
+
+**info.** A file holding kipi's generated block that git tracks (written with
+`sync --allow-tracked`, or tracked afterwards), so the block shows in `git diff`. No fix:
+keep it, or re-sync without `--allow-tracked` to move the block into an untracked side file.
+
+## Fixing
+
+`kipi doctor --fix` applies every safe fix of the findings (of one repo with `kipi doctor
+<repo> --fix`), under the sync lock, in this order:
+
+1. Config edits: `remote` into `bindings.toml` (K015), `machine.toml [repos]` lines removed
+   (K017). Both keep comments and ordering.
+2. Broken links kipi did not create are removed (K018), each only if it still points where
+   it did when doctor looked.
+3. The stores and `machine.toml` are loaded and resolved again, and each repo a fix names is
+   re-synced through the apply engine (K018, K019, K021), exactly as `kipi sync <repo>`
+   would, so nothing outside what kipi wrote is touched. References doctor reports as
+   errors (K003, K005, K012) stay out of the plan it syncs.
+
+Doctor then runs again and prints what was fixed (`fixed: …`) followed by the findings that
+remain. A fix that did not run is never called fixed: it gets a `skipped: <fix>: <why>` line
+instead. That covers a broken link that changed since doctor looked, and a re-sync with
+nothing left to sync: the repo is no longer cloned (`this run removed its machine.toml entry`,
+or `it is not cloned on this machine`), its checkout is no longer a directory, or its entry is
+in no mounted store any more. Running `--fix` again finds nothing left to fix (`nothing to fix`). With
+`--dry-run` it prints the fixes it would apply (`would …`) and changes nothing.
 
 ## JSON
 
@@ -131,4 +203,17 @@ by `--fix`, #13): fill `remote` with the normalized origin.
 }
 ```
 
-`fix` is `null` or `{ "kind": "fill-remote", "store": …, "repo": …, "remote": … }`.
+`fix` is `null` or one of
+
+- `{ "kind": "fill-remote", "store": …, "repo": …, "remote": … }`
+- `{ "kind": "remove-checkout", "entry": …, "path": … }`
+- `{ "kind": "remove-link", "link": …, "target": … }`
+- `{ "kind": "resync", "repo": … }`
+
+With `--fix`, the document also has, before `findings` (which are then the findings that
+remain):
+
+- `"fixed"`: the fixes that ran, in the shape above;
+- `"skipped"`: the fixes that did not, each `{ "fix": { "kind": … }, "reason": "…" }`.
+
+Both are empty lists with `--dry-run` or when there was nothing to fix.
