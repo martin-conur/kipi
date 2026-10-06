@@ -1,0 +1,15 @@
+{
+  "model": "opus",
+  "permissions": {
+    "allow": [
+      "Bash(cargo test:*)"
+    ],
+    "additionalDirectories": [
+      "~/notes"
+    ],
+    "deny": []
+  },
+  "env": {
+    "RUST_LOG": "debug"
+  }
+}

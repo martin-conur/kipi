@@ -1,0 +1,32 @@
+---
+source: crates/kipi-core/tests/json_merge.rs
+expression: transcript(None)
+---
+## before: (absent)
+
+## grant = related: write (owned: ["/w/store/repos", "/w/store/skills", "/w/billing-api"])
+{
+  "permissions": {
+    "additionalDirectories": [
+      "/w/store/repos",
+      "/w/store/skills",
+      "/w/billing-api"
+    ]
+  }
+}
+
+## grant = related (again): unchanged
+
+## grant = registry: write (owned: ["/w/store/repos", "/w/store/skills", "/w/billing-api", "/w/ml-platform"])
+{
+  "permissions": {
+    "additionalDirectories": [
+      "/w/store/repos",
+      "/w/store/skills",
+      "/w/billing-api",
+      "/w/ml-platform"
+    ]
+  }
+}
+
+## grant = none: deleted

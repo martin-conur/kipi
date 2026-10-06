@@ -25,8 +25,14 @@ follow the current permission mode." Under `acceptEdits` that means edits in gra
 auto-accepted too, so the grant does widen auto-accepted writes in that mode. The grant gives file
 access only: directories in `permissions.additionalDirectories` "grant file access only and don't
 load any of the configuration" from those directories (source: permissions page, "Working
-directories"). kipi only adds and removes its own entries (the manifest records them, #23); every
-other key and every user entry is left alone.
+directories"). Re-checked for #23: the key and semantics are as above, so kipi writes the grant
+there unchanged.
+
+**How kipi merges.** kipi only adds and removes its own entries (the manifest's `[[grant]]`
+records them); every other key and every user entry is left alone, and a path the user already
+listed is never claimed. Malformed JSON, a tracked or symlinked settings file, and a symlinked
+`.claude` are reported and left untouched. A settings file kipi created is deleted again once its
+entries are all that is left. Details: `docs/decisions.md`, "Stage 2: read grants (#23)".
 
 **Trust.** `settings.local.json` is applied without the workspace-trust step unless it is tracked
 in git or `.claude` is a symlink; then Claude Code holds its additional directories until the
@@ -61,7 +67,17 @@ the CLAUDE files, and kipi does not look above the repo.
 *writes* to the workspace (plus configured writable roots) but let the agent read outside it, so
 another repo's path from the registry is readable without a grant. Extra writable roots exist
 (`sandbox_workspace_write.writable_roots`, `--add-dir`), but kipi never needs to write elsewhere,
-so the generic adapter writes nothing; see #23 for the follow-up investigation.
+so the generic adapter writes nothing.
+
+**Grant equivalent (investigated in #23; future work, not implemented).** Checked 2026-10-06
+against <https://learn.chatgpt.com/docs/sandboxing> (was
+`developers.openai.com/codex/concepts/sandboxing`): the only extra-directory setting it names is
+`sandbox_workspace_write.writable_roots` in `config.toml` (the `--add-dir` flag adds to it), and it
+grants **write** access. That page does not say outright that reads outside the workspace are
+allowed (third-party guides say they are; see "Still to re-verify"), but nothing there offers a
+read-only root either. A writable root would let the agent change other repos, which is more than
+kipi's grant means, so the generic adapter keeps writing no grant; revisit if Codex adds a
+read-only root setting.
 
 **Still to re-verify.** In this check the Codex skills page and Codex sandbox page could not be
 fetched (the latter has moved under `learn.chatgpt.com`); the `.agents/skills` location and the

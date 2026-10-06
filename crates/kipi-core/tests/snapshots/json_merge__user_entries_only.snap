@@ -1,0 +1,52 @@
+---
+source: crates/kipi-core/tests/json_merge.rs
+expression: "transcript(Some(\"user-entries.json\"))"
+---
+## before
+{
+  "permissions": {
+    "additionalDirectories": [
+      "~/notes",
+      "/opt/shared/docs"
+    ]
+  }
+}
+
+## grant = related: write (owned: ["/w/store/repos", "/w/store/skills", "/w/billing-api"])
+{
+  "permissions": {
+    "additionalDirectories": [
+      "~/notes",
+      "/opt/shared/docs",
+      "/w/store/repos",
+      "/w/store/skills",
+      "/w/billing-api"
+    ]
+  }
+}
+
+## grant = related (again): unchanged
+
+## grant = registry: write (owned: ["/w/store/repos", "/w/store/skills", "/w/billing-api", "/w/ml-platform"])
+{
+  "permissions": {
+    "additionalDirectories": [
+      "~/notes",
+      "/opt/shared/docs",
+      "/w/store/repos",
+      "/w/store/skills",
+      "/w/billing-api",
+      "/w/ml-platform"
+    ]
+  }
+}
+
+## grant = none: write (owned: [])
+{
+  "permissions": {
+    "additionalDirectories": [
+      "~/notes",
+      "/opt/shared/docs"
+    ]
+  }
+}

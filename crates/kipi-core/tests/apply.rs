@@ -696,3 +696,417 @@ fn removal_never_reaches_through_a_directory_turned_symlink() {
     assert!(dir.join(".claude").is_symlink());
     assert!(!dir.join(".agents").exists());
 }
+
+// Read grants (#23): `.claude/settings.local.json` → `permissions.additionalDirectories`.
+
+const SETTINGS: &str = ".claude/settings.local.json";
+
+/// The `additionalDirectories` entries of `dir`'s settings file; `None` without a file.
+fn granted(dir: &Path) -> Option<Vec<String>> {
+    let text = fs::read_to_string(dir.join(SETTINGS)).ok()?;
+    let doc: serde_json::Value = serde_json::from_str(&text).unwrap();
+    Some(
+        doc.pointer("/permissions/additionalDirectories")
+            .and_then(|a| a.as_array())
+            .map(|a| a.iter().map(|v| v.as_str().unwrap().to_owned()).collect())
+            .unwrap_or_default(),
+    )
+}
+
+fn grant_dirs(plan: &Plan, repo: &str) -> Vec<String> {
+    plan.repo(repo)
+        .unwrap()
+        .grant
+        .dirs
+        .iter()
+        .map(|d| d.path.display().to_string())
+        .collect()
+}
+
+/// Set every `grant = …` line of both stores to `mode`.
+fn set_all_grants(world: &World, mode: &str) {
+    let re = regex::Regex::new(r#"(?m)^grant = "\w+""#).unwrap();
+    for store in ExampleStore::ALL {
+        let path = world.store(store).join("bindings.toml");
+        let text = fs::read_to_string(&path).unwrap();
+        let text = re.replace_all(&text, format!("grant = \"{mode}\""));
+        fs::write(&path, text.as_ref()).unwrap();
+    }
+}
+
+/// A settings file the user wrote, with their own keys and a grant of their own.
+const USER_SETTINGS: &str = r#"{
+  "model": "opus",
+  "permissions": {
+    "allow": [
+      "Bash(cargo test:*)"
+    ],
+    "additionalDirectories": [
+      "~/notes"
+    ]
+  }
+}
+"#;
+
+#[test]
+fn the_grant_is_merged_and_a_second_sync_changes_nothing() {
+    let world = World::new();
+    let plan = world.plan();
+    let dir = world.dir("events-pipeline");
+    let first = world.sync("events-pipeline", Options::default());
+    assert_eq!(
+        changes(&first, What::Grant, Op::Create),
+        [dir.join(SETTINGS)]
+    );
+    assert_eq!(granted(dir).unwrap(), grant_dirs(&plan, "events-pipeline"));
+    let manifest = Manifest::load(&dir.join(MANIFEST)).unwrap();
+    assert_eq!(manifest.grants.len(), 1);
+    assert!(manifest.grants[0].created);
+    assert_eq!(
+        manifest.grants[0].entries,
+        plan.repo("events-pipeline")
+            .unwrap()
+            .grant
+            .dirs
+            .iter()
+            .map(|d| d.path.clone())
+            .collect::<Vec<_>>()
+    );
+
+    let text = fs::read_to_string(dir.join(SETTINGS)).unwrap();
+    let second = world.sync("events-pipeline", Options::default());
+    assert!(second.is_unchanged(), "{:#?}", second.changes);
+    assert!(second.grants.is_empty());
+    assert_eq!(fs::read_to_string(dir.join(SETTINGS)).unwrap(), text);
+}
+
+#[test]
+fn switching_grant_modes_changes_exactly_kipis_entries_and_user_content_survives() {
+    let world = World::new();
+    let dir = world.dir("events-pipeline").to_path_buf();
+    fs::create_dir_all(dir.join(".claude")).unwrap();
+    fs::write(dir.join(SETTINGS), USER_SETTINGS).unwrap();
+    let user = || vec!["~/notes".to_owned()];
+
+    let override_line =
+        |mode: &str| format!("grant = \"{mode}\"                 # per-repo override");
+    let mut current = "registry".to_owned();
+    for mode in ["registry", "related", "none", "registry"] {
+        if mode != current {
+            world.edit_bindings(
+                ExampleStore::Acme,
+                &override_line(&current),
+                &override_line(mode),
+            );
+            current = mode.to_owned();
+        }
+        let plan = world.plan();
+        let report = world.sync("events-pipeline", Options::default());
+        assert!(report.skipped.is_empty(), "{mode}: {:#?}", report.skipped);
+        let mut want = user();
+        want.extend(grant_dirs(&plan, "events-pipeline"));
+        assert_eq!(granted(&dir).unwrap(), want, "{mode}");
+        let doc: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(dir.join(SETTINGS)).unwrap()).unwrap();
+        assert_eq!(doc["model"], "opus");
+        assert_eq!(doc["permissions"]["allow"][0], "Bash(cargo test:*)");
+        let manifest = Manifest::load(&dir.join(MANIFEST)).unwrap();
+        let owned: Vec<String> = manifest
+            .grants
+            .iter()
+            .flat_map(|g| &g.entries)
+            .map(|e| e.display().to_string())
+            .collect();
+        assert_eq!(owned, grant_dirs(&plan, "events-pipeline"), "{mode}");
+        assert!(manifest.grants.iter().all(|g| !g.created));
+    }
+    // related lists fewer repos than registry: the switch removed some of kipi's entries.
+    world.edit_bindings(
+        ExampleStore::Acme,
+        &override_line("registry"),
+        &override_line("related"),
+    );
+    let report = world.sync("events-pipeline", Options::default());
+    assert!(!report.grants[0].removed.is_empty(), "{report:#?}");
+    assert!(report.grants[0].added.is_empty());
+    // Trimming entries updates the file; only deleting it is a removal.
+    assert_eq!(
+        changes(&report, What::Grant, Op::Update),
+        [dir.join(SETTINGS)]
+    );
+
+    // Removing everything gives the user's file back byte for byte.
+    world.apply("events-pipeline", &[], Options::default());
+    assert_eq!(
+        fs::read_to_string(dir.join(SETTINGS)).unwrap(),
+        USER_SETTINGS
+    );
+}
+
+#[test]
+fn a_created_settings_file_goes_with_the_last_grant_entry() {
+    let world = World::new();
+    let dir = world.dir("billing-api").to_path_buf();
+    let before = tree(&dir);
+    world.sync("billing-api", Options::default());
+    assert!(dir.join(SETTINGS).is_file());
+    set_all_grants(&world, "none");
+    let report = world.sync("billing-api", Options::default());
+    assert_eq!(
+        changes(&report, What::Grant, Op::Remove),
+        [dir.join(SETTINGS)]
+    );
+    assert!(!dir.join(SETTINGS).exists());
+    world.apply("billing-api", &[], Options::default());
+    assert_eq!(tree(&dir), before);
+}
+
+#[test]
+fn a_malformed_settings_file_is_reported_and_left_untouched() {
+    let world = World::new();
+    let dir = world.dir("billing-api").to_path_buf();
+    fs::create_dir_all(dir.join(".claude")).unwrap();
+    let bad = "{ \"permissions\": { \"additionalDirectories\": [\"~/notes\",] }\n";
+    fs::write(dir.join(SETTINGS), bad).unwrap();
+    let report = world.sync("billing-api", Options::default());
+    assert_eq!(report.skipped.len(), 1, "{:#?}", report.skipped);
+    let skip = &report.skipped[0];
+    assert_eq!(skip.path, dir.join(SETTINGS));
+    assert!(skip.message.contains("malformed JSON"), "{}", skip.message);
+    assert!(skip.hint.contains("fix the JSON"), "{}", skip.hint);
+    assert_eq!(fs::read_to_string(dir.join(SETTINGS)).unwrap(), bad);
+    // The rest of the sync still happened.
+    assert!(dir.join("CLAUDE.md").is_file());
+    assert!(
+        Manifest::load(&dir.join(MANIFEST))
+            .unwrap()
+            .grants
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_tracked_settings_file_gets_no_grant() {
+    let world = World::new();
+    let dir = world.dir("billing-api").to_path_buf();
+    fs::create_dir_all(dir.join(".claude")).unwrap();
+    fs::write(dir.join(SETTINGS), USER_SETTINGS).unwrap();
+    git(&dir, &["add", "-f", SETTINGS]);
+    let report = world.sync("billing-api", Options::default());
+    assert_eq!(report.skipped.len(), 1, "{:#?}", report.skipped);
+    assert!(report.skipped[0].message.contains("tracked by git"));
+    assert!(report.skipped[0].hint.contains("git rm --cached"));
+    assert_eq!(
+        fs::read_to_string(dir.join(SETTINGS)).unwrap(),
+        USER_SETTINGS
+    );
+}
+
+#[test]
+fn a_symlinked_settings_file_is_not_written_through() {
+    let world = World::new();
+    let dir = world.dir("billing-api").to_path_buf();
+    fs::create_dir_all(dir.join(".claude")).unwrap();
+    let elsewhere = world.home.join("shared-settings.json");
+    fs::write(&elsewhere, USER_SETTINGS).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, dir.join(SETTINGS)).unwrap();
+    let report = world.sync("billing-api", Options::default());
+    assert_eq!(report.skipped.len(), 1, "{:#?}", report.skipped);
+    assert!(report.skipped[0].message.contains("a symlink"));
+    assert_eq!(fs::read_to_string(&elsewhere).unwrap(), USER_SETTINGS);
+    assert!(
+        fs::symlink_metadata(dir.join(SETTINGS))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+}
+
+#[test]
+fn a_dry_run_shows_the_json_diff() {
+    let world = World::new();
+    let dir = world.dir("billing-api").to_path_buf();
+    fs::create_dir_all(dir.join(".claude")).unwrap();
+    fs::write(dir.join(SETTINGS), USER_SETTINGS).unwrap();
+    let dry = world.sync(
+        "billing-api",
+        Options {
+            dry_run: true,
+            ..Options::default()
+        },
+    );
+    assert_eq!(
+        fs::read_to_string(dir.join(SETTINGS)).unwrap(),
+        USER_SETTINGS
+    );
+    let [diff] = dry.grants.as_slice() else {
+        panic!("{:#?}", dry.grants)
+    };
+    assert_eq!(diff.before, USER_SETTINGS);
+    assert_eq!(diff.added, grant_dirs(&world.plan(), "billing-api"));
+    assert!(diff.removed.is_empty());
+    let real = world.sync("billing-api", Options::default());
+    assert_eq!(real.grants, dry.grants);
+    assert_eq!(fs::read_to_string(dir.join(SETTINGS)).unwrap(), diff.after);
+}
+
+/// Every entry kipi writes is one the plan grants, and none leaves the repo's scope
+/// chain or store (a shared skill's `skills/` dir aside), under every `grant` mode.
+#[test]
+fn no_repo_is_granted_a_path_outside_its_scope_chain_under_any_mode() {
+    let world = World::new();
+    for mode in ["related", "registry", "none"] {
+        set_all_grants(&world, mode);
+        let plan = world.plan();
+        world.sync_all();
+        for repo in &plan.repos {
+            let Some(dir) = &repo.path else { continue };
+            let Some(entries) = granted(dir) else {
+                assert!(
+                    mode == "none"
+                        || !repo
+                            .agents
+                            .value
+                            .contains(&kipi_core::model::AgentId::Claude),
+                    "{mode}: {} has no grant",
+                    repo.name
+                );
+                continue;
+            };
+            assert_ne!(mode, "none", "{} still has {entries:?}", repo.name);
+            // Same set; a mode switch appends new entries and keeps the others in place.
+            let sorted = |mut v: Vec<String>| {
+                v.sort();
+                v
+            };
+            assert_eq!(
+                sorted(entries.clone()),
+                sorted(grant_dirs(&plan, &repo.name)),
+                "{mode}: {}",
+                repo.name
+            );
+            let own = ExampleStore::ALL
+                .into_iter()
+                .find(|s| s.name() == repo.store)
+                .map(|s| world.store(s))
+                .unwrap();
+            for entry in &entries {
+                let path = Path::new(entry);
+                let in_chain = |other: &kipi_core::plan::RepoPlan| match (
+                    repo.scope.value.as_deref(),
+                    other.scope.value.as_deref(),
+                ) {
+                    (Some(a), Some(b)) => {
+                        repo.chain.iter().any(|s| s == b) || other.chain.iter().any(|s| s == a)
+                    }
+                    (None, None) => true,
+                    _ => false,
+                };
+                let ok = path == own.join("repos")
+                    || path == own.join("skills")
+                    || repo.skills.iter().any(|s| s.dir.parent() == Some(path))
+                    || plan.repos.iter().any(|r| {
+                        r.name != repo.name
+                            && r.store == repo.store
+                            && r.path.as_deref() == Some(path)
+                            && in_chain(r)
+                    });
+                assert!(ok, "{mode}: {} granted {entry}", repo.name);
+            }
+        }
+    }
+}
+
+#[test]
+fn a_cleared_grant_leaves_no_manifest_entry() {
+    let world = World::new();
+    let dir = world.dir("billing-api").to_path_buf();
+    fs::create_dir_all(dir.join(".claude")).unwrap();
+    fs::write(dir.join(SETTINGS), USER_SETTINGS).unwrap();
+    world.sync("billing-api", Options::default());
+    assert_eq!(Manifest::load(&dir.join(MANIFEST)).unwrap().grants.len(), 1);
+    set_all_grants(&world, "none");
+    world.sync("billing-api", Options::default());
+    assert!(
+        Manifest::load(&dir.join(MANIFEST))
+            .unwrap()
+            .grants
+            .is_empty()
+    );
+    // And again, through the no-change path.
+    world.sync("billing-api", Options::default());
+    assert!(
+        Manifest::load(&dir.join(MANIFEST))
+            .unwrap()
+            .grants
+            .is_empty()
+    );
+}
+
+/// Rewrite the settings file with `path` appended to the user's grant.
+fn user_adds(dir: &Path, path: &str) {
+    let file = dir.join(SETTINGS);
+    let mut doc: serde_json::Value = fs::read_to_string(&file)
+        .map(|t| serde_json::from_str(&t).unwrap())
+        .unwrap_or_else(|_| serde_json::json!({}));
+    let perms = doc
+        .as_object_mut()
+        .unwrap()
+        .entry("permissions")
+        .or_insert_with(|| serde_json::json!({}));
+    let dirs = perms
+        .as_object_mut()
+        .unwrap()
+        .entry("additionalDirectories")
+        .or_insert_with(|| serde_json::json!([]));
+    dirs.as_array_mut().unwrap().push(path.into());
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    fs::write(&file, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+}
+
+#[test]
+fn a_path_the_user_re_adds_after_unbinding_is_theirs() {
+    let world = World::new();
+    let dir = world.dir("billing-api").to_path_buf();
+    fs::create_dir_all(dir.join(".claude")).unwrap();
+    fs::write(dir.join(SETTINGS), USER_SETTINGS).unwrap();
+    world.sync("billing-api", Options::default());
+    let formerly = grant_dirs(&world.plan(), "billing-api")[0].clone();
+    // Unbind: no actions at all.
+    world.apply("billing-api", &[], Options::default());
+    assert_eq!(granted(&dir).unwrap(), ["~/notes"]);
+    user_adds(&dir, &formerly);
+    for _ in 0..2 {
+        world.apply("billing-api", &[], Options::default());
+        assert_eq!(
+            granted(&dir).unwrap(),
+            ["~/notes".to_owned(), formerly.clone()]
+        );
+    }
+    // Rebinding with grant = none never takes it either.
+    set_all_grants(&world, "none");
+    world.sync("billing-api", Options::default());
+    assert_eq!(
+        granted(&dir).unwrap(),
+        ["~/notes".to_owned(), formerly.clone()]
+    );
+}
+
+#[test]
+fn a_settings_file_the_user_writes_after_kipi_deleted_its_own_is_never_deleted() {
+    let world = World::new();
+    let dir = world.dir("billing-api").to_path_buf();
+    world.sync("billing-api", Options::default());
+    let formerly = grant_dirs(&world.plan(), "billing-api")[0].clone();
+    set_all_grants(&world, "none");
+    world.sync("billing-api", Options::default());
+    assert!(!dir.join(SETTINGS).exists());
+    user_adds(&dir, &formerly);
+    let text = fs::read_to_string(dir.join(SETTINGS)).unwrap();
+    for _ in 0..2 {
+        world.sync("billing-api", Options::default());
+        assert_eq!(fs::read_to_string(dir.join(SETTINGS)).unwrap(), text);
+    }
+    world.apply("billing-api", &[], Options::default());
+    assert_eq!(fs::read_to_string(dir.join(SETTINGS)).unwrap(), text);
+}

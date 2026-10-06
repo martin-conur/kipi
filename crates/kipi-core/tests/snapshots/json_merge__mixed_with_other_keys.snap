@@ -1,0 +1,80 @@
+---
+source: crates/kipi-core/tests/json_merge.rs
+expression: "transcript(Some(\"mixed.json\"))"
+---
+## before
+{
+  "model": "opus",
+  "permissions": {
+    "allow": [
+      "Bash(cargo test:*)"
+    ],
+    "additionalDirectories": [
+      "~/notes"
+    ],
+    "deny": []
+  },
+  "env": {
+    "RUST_LOG": "debug"
+  }
+}
+
+## grant = related: write (owned: ["/w/store/repos", "/w/store/skills", "/w/billing-api"])
+{
+  "model": "opus",
+  "permissions": {
+    "allow": [
+      "Bash(cargo test:*)"
+    ],
+    "additionalDirectories": [
+      "~/notes",
+      "/w/store/repos",
+      "/w/store/skills",
+      "/w/billing-api"
+    ],
+    "deny": []
+  },
+  "env": {
+    "RUST_LOG": "debug"
+  }
+}
+
+## grant = related (again): unchanged
+
+## grant = registry: write (owned: ["/w/store/repos", "/w/store/skills", "/w/billing-api", "/w/ml-platform"])
+{
+  "model": "opus",
+  "permissions": {
+    "allow": [
+      "Bash(cargo test:*)"
+    ],
+    "additionalDirectories": [
+      "~/notes",
+      "/w/store/repos",
+      "/w/store/skills",
+      "/w/billing-api",
+      "/w/ml-platform"
+    ],
+    "deny": []
+  },
+  "env": {
+    "RUST_LOG": "debug"
+  }
+}
+
+## grant = none: write (owned: [])
+{
+  "model": "opus",
+  "permissions": {
+    "allow": [
+      "Bash(cargo test:*)"
+    ],
+    "additionalDirectories": [
+      "~/notes"
+    ],
+    "deny": []
+  },
+  "env": {
+    "RUST_LOG": "debug"
+  }
+}

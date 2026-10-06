@@ -1,0 +1,21 @@
+---
+source: crates/kipi-core/tests/json_merge.rs
+expression: "transcript(Some(\"malformed.json\"))"
+---
+## before
+{
+  "permissions": {
+    "additionalDirectories": ["~/notes",]
+  }
+
+## grant = related: skipped: malformed JSON: trailing comma at line 3 column 41
+hint: fix the JSON syntax (or delete the file), then re-run; kipi never overwrites a file it cannot parse
+
+## grant = related (again): skipped: malformed JSON: trailing comma at line 3 column 41
+hint: fix the JSON syntax (or delete the file), then re-run; kipi never overwrites a file it cannot parse
+
+## grant = registry: skipped: malformed JSON: trailing comma at line 3 column 41
+hint: fix the JSON syntax (or delete the file), then re-run; kipi never overwrites a file it cannot parse
+
+## grant = none: skipped: malformed JSON: trailing comma at line 3 column 41
+hint: fix the JSON syntax (or delete the file), then re-run; kipi never overwrites a file it cannot parse
