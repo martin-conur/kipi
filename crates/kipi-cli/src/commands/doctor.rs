@@ -48,6 +48,7 @@ pub fn run(
         .filter(|f| f.level == Level::Error)
         .count();
     let loaded = Loaded {
+        config: cfg,
         stores: diagnosis.stores,
         machine,
         plan: diagnosis.plan,

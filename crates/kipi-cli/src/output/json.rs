@@ -12,6 +12,7 @@ use kipi_core::model::StoreSet;
 use kipi_core::plan::{
     AlwaysOn, Decided, GrantKind, Plan, PlannedSkill, Registry, RepoPlan, SkillOrigin, Source,
 };
+use kipi_core::search::{HitSource, RepoInfo, Search, View};
 use kipi_core::sync::{AlwaysOnSize, Outcome, RepoState, Tally};
 use serde::Serialize;
 
@@ -817,4 +818,95 @@ struct StoreJson<'a> {
 struct GitJson {
     clean: bool,
     remote: bool,
+}
+
+/// A `kipi where` result as pretty-printed JSON with a trailing newline (`docs/json.md`,
+/// "Where"). `notes_text` is the notes' contents with `--notes`. Fails only on a path
+/// that is not valid UTF-8.
+pub fn lookup(info: &RepoInfo, notes_text: Option<&str>) -> serde_json::Result<String> {
+    let doc = LookupJson {
+        version: JSON_VERSION,
+        name: &info.name,
+        store: &info.store,
+        scope: info.scope.as_deref(),
+        aliases: &info.aliases,
+        aliases_draft: info.aliases_draft,
+        summary: info.summary.as_deref(),
+        summary_draft: info.summary_draft,
+        local: info.local.as_deref(),
+        notes: info.notes.as_deref(),
+        notes_text,
+    };
+    let mut out = serde_json::to_string_pretty(&doc)?;
+    out.push('\n');
+    Ok(out)
+}
+
+#[derive(Serialize)]
+struct LookupJson<'a> {
+    version: u32,
+    name: &'a str,
+    store: &'a str,
+    scope: Option<&'a str>,
+    aliases: &'a [String],
+    aliases_draft: bool,
+    summary: Option<&'a str>,
+    summary_draft: bool,
+    local: Option<&'a Path>,
+    notes: Option<&'a Path>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    notes_text: Option<&'a str>,
+}
+
+/// A `kipi grep` result as pretty-printed JSON with a trailing newline (`docs/json.md`,
+/// "Grep"). Fails only on a path that is not valid UTF-8.
+pub fn grep(view: &View, found: &Search) -> serde_json::Result<String> {
+    let doc = GrepJson {
+        version: JSON_VERSION,
+        searched: &view.label,
+        hits: found
+            .hits
+            .iter()
+            .map(|h| HitJson {
+                path: &h.path,
+                line: h.line,
+                text: &h.text,
+                source: match &h.source {
+                    HitSource::Conventions { scope } => HitSourceJson::Conventions { scope },
+                    HitSource::Notes { repo } => HitSourceJson::Notes { repo },
+                    HitSource::Skill { store, name } => HitSourceJson::Skill { store, name },
+                    HitSource::Checkout { repo } => HitSourceJson::Checkout { repo },
+                },
+            })
+            .collect(),
+        truncated: found.truncated,
+    };
+    let mut out = serde_json::to_string_pretty(&doc)?;
+    out.push('\n');
+    Ok(out)
+}
+
+#[derive(Serialize)]
+struct GrepJson<'a> {
+    version: u32,
+    searched: &'a str,
+    hits: Vec<HitJson<'a>>,
+    truncated: bool,
+}
+
+#[derive(Serialize)]
+struct HitJson<'a> {
+    path: &'a Path,
+    line: usize,
+    text: &'a str,
+    source: HitSourceJson<'a>,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+enum HitSourceJson<'a> {
+    Conventions { scope: &'a str },
+    Notes { repo: &'a str },
+    Skill { store: &'a str, name: &'a str },
+    Checkout { repo: &'a str },
 }

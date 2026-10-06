@@ -3,8 +3,9 @@
 `kipi resolve --json` prints the resolved plan; `kipi resolve <repo> --json` and
 `kipi explain <repo> --json` print the same document restricted to one repo and the registry it
 renders; `kipi scan --json`, `kipi sync --json` and `kipi status --json` print their own reports
-([Scan](#scan), [Sync](#sync), [Status](#status)), as do `kipi stores --json` ([Stores](#stores))
-and the authoring commands ([Authoring](#authoring)); `kipi doctor --json` prints its findings
+([Scan](#scan), [Sync](#sync), [Status](#status)), as do `kipi stores --json` ([Stores](#stores)),
+the authoring commands ([Authoring](#authoring)), `kipi where --json` ([Where](#where)) and
+`kipi grep --json` ([Grep](#grep)); `kipi doctor --json` prints its findings
 (shape in [docs/doctor.md](doctor.md#json)). The shape is stable: fields
 are only ever added, and anything that renames, removes or changes the meaning of a field bumps
 `version`. Output is pretty-printed, deterministic (two runs
@@ -204,6 +205,40 @@ work tree), `share_skills` (bool), `scopes` ([string], file order), `repos` (num
 thing changed: `skills`, `related`, `exclude`, `aliases`, `scopes.<scope>.skills`, `store`,
 `config.toml stores`, `machine.toml`, ...), `value`, `note` (string \| null: why nothing changed,
 or what follows).
+
+## Where
+
+`kipi where <alias> --json`: the one repo entry the alias names (an ambiguous or unknown alias is an
+error on stderr, exit 1).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `version` | number | Schema version, currently `1` |
+| `name` | string | Entry name |
+| `store` | string | Store owning the entry |
+| `scope` | string \| null | Resolved scope; `null` when unscoped |
+| `aliases` | [string] | `aliases`, as written |
+| `aliases_draft` | bool | The alias list is still marked `# kipi:draft` |
+| `summary` | string \| null | `summary` |
+| `summary_draft` | bool | The summary is still marked `# kipi:draft` |
+| `local` | string \| null | Checkout on this machine; `null` when not cloned here |
+| `notes` | string \| null | `repos/<name>/notes.md` in the store, when it exists |
+| `notes_text` | string | The notes' contents; only with `--notes` |
+
+## Grep
+
+`kipi grep <pattern> --json`.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `version` | number | Schema version, currently `1` |
+| `searched` | string | What was searched: `the scope chain of acme-ml`, `the unscoped repos of store personal`, `every mounted store` |
+| `hits` | [Hit] | Matching lines: conventions, notes, skills, then checkouts (by repo name); files in path order |
+| `truncated` | bool | More lines matched than `--limit` allowed |
+
+**Hit**: `path` (absolute), `line` (1-based), `text` (the line, cut to 300 characters with `…`),
+`source`: `{"kind": "conventions", "scope"}`, `{"kind": "notes", "repo"}`,
+`{"kind": "skill", "store", "name"}` or `{"kind": "checkout", "repo"}`.
 
 ## Exit codes
 

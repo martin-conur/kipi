@@ -297,9 +297,9 @@ fn exit_1_on_unimplemented_commands() {
         "error: `kipi tree` is not implemented yet\n  hint: it lands in Stage 3 (roadmap §14); \
          `kipi resolve` and `kipi explain <repo>` work today\n"
     );
-    let (code, err) = failure_of(&home, home.kipi().args(["where", "x"]));
+    let (code, err) = failure_of(&home, home.kipi().args(["completions", "zsh"]));
     assert_eq!(code, 1);
-    assert!(err.starts_with("error: `kipi where` is not implemented yet"));
+    assert!(err.starts_with("error: `kipi completions` is not implemented yet"));
 }
 
 #[test]
@@ -1303,4 +1303,463 @@ fn init_mounts_an_existing_store_without_touching_it() {
     );
     assert_eq!(code, 1);
     assert!(err.contains("is named `personal`, not `work`"), "{err}");
+}
+
+// --- where / grep / edit (#11) ---
+
+#[test]
+fn where_resolves_an_alias_to_the_entry_and_its_paths() {
+    let home = Home::new();
+    let out = stdout_of(
+        &home,
+        home.kipi()
+            .arg("where")
+            .arg("billing")
+            .current_dir(home.path()),
+    );
+    insta::assert_snapshot!("where-billing", out);
+    assert!(
+        out.starts_with("billing-api — Invoicing and payment orchestration"),
+        "{out}"
+    );
+
+    let same = stdout_of(
+        &home,
+        home.kipi()
+            .args(["where", "  INVOICES "])
+            .current_dir(home.path()),
+    );
+    assert_eq!(same, out, "aliases fold case and whitespace");
+
+    let out = stdout_of(
+        &home,
+        home.kipi()
+            .args(["where", "feature-store"])
+            .current_dir(home.path()),
+    );
+    assert!(out.contains("local: (not cloned here)\n"), "{out}");
+    assert!(out.contains("notes: none\n"), "{out}");
+
+    let out = stdout_of(
+        &home,
+        home.kipi()
+            .args(["where", "events", "--notes"])
+            .current_dir(home.path()),
+    );
+    insta::assert_snapshot!("where-events-notes", out);
+
+    let out = stdout_of(
+        &home,
+        home.kipi()
+            .args(["where", "billing", "--notes", "--json"])
+            .current_dir(home.path()),
+    );
+    insta::assert_snapshot!("where-billing-json", out);
+    let doc: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(doc["name"], "billing-api");
+    assert_eq!(doc["summary_draft"], true);
+    assert!(
+        doc["notes_text"]
+            .as_str()
+            .unwrap()
+            .contains("Idempotency-Key")
+    );
+}
+
+#[test]
+fn where_fails_on_ambiguous_and_unknown_aliases() {
+    let home = Home::new();
+    edit_bindings(
+        &home,
+        ExampleStore::Acme,
+        "summary = \"Public REST gateway\"\n",
+        "summary = \"Public REST gateway\"\naliases = [\"billing\"]\n",
+    );
+    let (code, err) = failure_of(
+        &home,
+        home.kipi()
+            .args(["where", "billing"])
+            .current_dir(home.path()),
+    );
+    assert_eq!(code, 1);
+    assert_eq!(
+        err,
+        "error: `billing` is ambiguous: acme-api, billing-api\n  hint: pass an entry name \
+         (`kipi where acme-api`); `kipi doctor` reports the alias collision\n"
+    );
+    let (code, err) = failure_of(
+        &home,
+        home.kipi()
+            .args(["where", "billing-apu"])
+            .current_dir(home.path()),
+    );
+    assert_eq!(code, 1);
+    assert_eq!(
+        err,
+        "error: no repo named or aliased `billing-apu`\n  hint: did you mean `billing-api`?\n"
+    );
+    let (code, err) = failure_of(
+        &home,
+        home.kipi()
+            .args(["where", "web-dashboard", "--notes"])
+            .current_dir(home.path()),
+    );
+    assert_eq!(code, 1);
+    assert!(
+        err.contains("hint: drop `--notes`, or write some with `kipi edit notes:web-dashboard`"),
+        "{err}"
+    );
+}
+
+#[test]
+fn where_inside_a_repo_stays_in_its_scope_chain() {
+    let home = onboarded_home();
+    let side_tool = home.path().join("code/side-tool");
+    let (code, err) = failure_of(
+        &home,
+        home.bare()
+            .args(["where", "billing"])
+            .current_dir(side_tool.join("src").parent().unwrap()),
+    );
+    assert_eq!(code, 1);
+    assert_eq!(
+        err,
+        "error: no repo named or aliased `billing` in the scope chain of personal\n  hint: only \
+         the scope chain of personal is searched from here; `kipi where --any-scope billing` \
+         searches every mounted store\n"
+    );
+    let out = stdout_of(
+        &home,
+        home.bare()
+            .args(["where", "billing", "--any-scope"])
+            .current_dir(&side_tool),
+    );
+    assert!(out.starts_with("billing-api — "), "{out}");
+    // From a nested directory of events-pipeline (acme-ml), its ancestor scope is visible.
+    let nested = home.path().join("work/acme/ml/events-pipeline/src");
+    fs::create_dir_all(&nested).unwrap();
+    let out = stdout_of(
+        &home,
+        home.bare().args(["where", "billing"]).current_dir(&nested),
+    );
+    assert!(
+        out.contains("local: [HOME]/work/acme/billing-api\n"),
+        "{out}"
+    );
+    let (code, _) = failure_of(
+        &home,
+        home.bare()
+            .args(["where", "side-tool"])
+            .current_dir(&nested),
+    );
+    assert_eq!(code, 1, "personal repos are invisible from a work repo");
+}
+
+/// Write `text` to `rel` under the home directory.
+fn put(home: &Home, rel: &str, text: &[u8]) {
+    let path = home.path().join(rel);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, text).unwrap();
+}
+
+/// An onboarded home whose checkouts mention idempotency, in work and personal repos.
+fn grep_home() -> Home {
+    let home = onboarded_home();
+    put(
+        &home,
+        "work/acme/billing-api/src/idempotency.rs",
+        b"// Idempotency keys live 24 h.\npub fn idempotency_key() {}\n",
+    );
+    put(&home, "work/acme/billing-api/.gitignore", b"target/\n");
+    put(
+        &home,
+        "work/acme/billing-api/target/debug.log",
+        b"idempotency in a build artifact\n",
+    );
+    put(
+        &home,
+        "work/acme/billing-api/blob.bin",
+        b"idempotency\0binary\n",
+    );
+    put(
+        &home,
+        "code/api/src/main.ts",
+        b"// idempotency for the personal api\n",
+    );
+    put(
+        &home,
+        "code/side-tool/README.md",
+        b"no idempotency here either\n",
+    );
+    home
+}
+
+#[test]
+fn grep_repos_from_events_pipeline_finds_billing_api_and_never_personal_repos() {
+    let home = grep_home();
+    let dir = home.path().join("work/acme/ml/events-pipeline");
+    let out = stdout_of(
+        &home,
+        home.bare()
+            .args(["grep", "(?i)idempotency", "--repos"])
+            .current_dir(&dir),
+    );
+    insta::assert_snapshot!("grep-repos-events-pipeline", out);
+    assert!(
+        out.contains(
+            "[HOME]/work/acme/billing-api/src/idempotency.rs:2: pub fn idempotency_key() {}\n"
+        ),
+        "{out}"
+    );
+    assert!(
+        out.contains("[HOME]/stores/acme-store/repos/billing-api/notes.md:"),
+        "{out}"
+    );
+    assert!(!out.contains("[HOME]/code/"), "no personal checkout: {out}");
+    assert!(
+        !out.contains("personal-store/repos"),
+        "no personal notes: {out}"
+    );
+    assert!(!out.contains("target/"), "gitignored: {out}");
+    assert!(!out.contains("blob.bin"), "binary: {out}");
+
+    // Without --repos only the store is searched.
+    let out = stdout_of(
+        &home,
+        home.bare()
+            .args(["grep", "(?i)idempotency"])
+            .current_dir(&dir),
+    );
+    assert!(!out.contains("[HOME]/work/"), "{out}");
+    assert!(out.contains("notes.md"), "{out}");
+
+    // From a personal repo, nothing from the work store or work checkouts.
+    let out = stdout_of(
+        &home,
+        home.bare()
+            .args(["grep", "(?i)idempotency", "--repos"])
+            .current_dir(home.path().join("code/side-tool")),
+    );
+    assert!(out.contains("[HOME]/code/api/src/main.ts:1:"), "{out}");
+    assert!(!out.contains("acme"), "{out}");
+}
+
+#[test]
+fn grep_scope_json_and_truncation() {
+    let home = grep_home();
+    let out = stdout_of(
+        &home,
+        home.bare()
+            .args(["grep", "idempotency", "--repos", "--scope", "personal"])
+            .current_dir(home.path()),
+    );
+    assert_eq!(
+        out,
+        "[HOME]/code/api/src/main.ts:1: // idempotency for the personal api\n\
+         [HOME]/code/side-tool/README.md:1: no idempotency here either\n"
+    );
+    let out = stdout_of(
+        &home,
+        home.bare()
+            .args([
+                "grep",
+                "idempotency",
+                "--repos",
+                "--scope",
+                "personal",
+                "--json",
+            ])
+            .current_dir(home.path()),
+    );
+    insta::assert_snapshot!("grep-personal-json", out);
+
+    let assert = home
+        .bare()
+        .args([
+            "grep",
+            "idempotency",
+            "--repos",
+            "--scope",
+            "personal",
+            "--limit",
+            "1",
+        ])
+        .current_dir(home.path())
+        .assert()
+        .success();
+    let output = assert.get_output();
+    assert_eq!(
+        home.scrub(&output.stdout),
+        "[HOME]/code/api/src/main.ts:1: // idempotency for the personal api\n"
+    );
+    assert_eq!(
+        home.scrub(&output.stderr),
+        "note: stopped after 1 matching lines\n  hint: narrow the pattern, pass `--scope`, or raise `--limit`\n"
+    );
+
+    let assert = home
+        .bare()
+        .args(["grep", "idempotency", "-v"])
+        .current_dir(home.path())
+        .assert()
+        .success();
+    let err = home.scrub(&assert.get_output().stderr);
+    assert!(err.contains("searching every mounted store\n"), "{err}");
+    let assert = home
+        .bare()
+        .args(["grep", "no-such-text-anywhere", "-v", "--scope", "acme-ml"])
+        .current_dir(home.path())
+        .assert()
+        .success();
+    let err = home.scrub(&assert.get_output().stderr);
+    assert!(
+        err.contains("searching the scope chain of acme-ml\n"),
+        "{err}"
+    );
+    assert!(
+        err.contains("note: no match in the scope chain of acme-ml\n"),
+        "{err}"
+    );
+
+    let (code, err) = failure_of(&home, home.bare().args(["grep", "x", "--scope", "acme-m"]));
+    assert_eq!(code, 1);
+    assert_eq!(
+        err,
+        "error: no scope `acme-m` in the mounted stores\n  hint: did you mean `acme-ml`?\n"
+    );
+    let (code, err) = failure_of(&home, home.bare().args(["grep", "(unclosed"]));
+    assert_eq!(code, 1);
+    assert!(
+        err.starts_with("error: invalid pattern `(unclosed`: "),
+        "{err}"
+    );
+}
+
+/// A fake editor named `hx` (so kipi passes `file:line`): it records its argument in
+/// `editor-args`, then replaces `from` with `to` in the file.
+fn fake_hx(home: &Home, from: &str, to: &str) -> PathBuf {
+    let bin = home.path().join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let script = bin.join("hx");
+    let log = home.path().join("editor-args");
+    fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$1\" > '{}'\nf=\"${{1%:*}}\"\nsed 's|{from}|{to}|' \"$f\" > \"$f.tmp\" && mv \"$f.tmp\" \"$f\"\n",
+            log.display()
+        ),
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    script
+}
+
+#[test]
+fn editing_a_drafted_summary_marks_it_reviewed() {
+    let home = Home::new();
+    let hx = fake_hx(
+        &home,
+        "Invoicing and payment orchestration",
+        "Invoices, payments and refunds",
+    );
+    let out = stdout_of(
+        &home,
+        home.kipi().args(["edit", "billing-api"]).env("EDITOR", &hx),
+    );
+    insta::assert_snapshot!("edit-billing-api", out);
+    let args = fs::read_to_string(home.path().join("editor-args")).unwrap();
+    assert_eq!(
+        home.scrub(args.as_bytes()),
+        "[HOME]/stores/acme-store/bindings.toml:25\n",
+        "opened at the entry's line"
+    );
+    let bindings =
+        fs::read_to_string(home.store(ExampleStore::Acme).join("bindings.toml")).unwrap();
+    assert!(
+        bindings.contains(
+            "summary = \"Invoices, payments and refunds; OpenAPI in api/openapi.yaml\"\naliases"
+        ),
+        "{bindings}"
+    );
+    assert!(
+        bindings.contains("aliases = [\"feature\", \"store\"]  # kipi:draft"),
+        "other drafts stay: {bindings}"
+    );
+    let status = json_of(
+        &home,
+        home.kipi()
+            .args(["where", "billing-api", "--json"])
+            .current_dir(home.path()),
+    );
+    assert_eq!(status["summary_draft"], false);
+}
+
+#[test]
+fn edit_creates_notes_from_the_template_and_reports_invalid_edits() {
+    let home = Home::new();
+    let out = stdout_of(
+        &home,
+        home.kipi()
+            .args(["edit", "notes:ml-platform"])
+            .env("EDITOR", "true"),
+    );
+    let notes = home
+        .store(ExampleStore::Acme)
+        .join("repos/ml-platform/notes.md");
+    assert_eq!(
+        out,
+        "created [HOME]/stores/acme-store/repos/ml-platform/notes.md\n\
+         [HOME]/stores/acme-store/repos/ml-platform/notes.md: valid\n"
+    );
+    assert!(
+        fs::read_to_string(notes)
+            .unwrap()
+            .starts_with("# ml-platform notes\n")
+    );
+
+    let out = stdout_of(
+        &home,
+        home.kipi()
+            .args(["edit", "personal/commit-style"])
+            .env("EDITOR", "true"),
+    );
+    assert_eq!(
+        out,
+        "[HOME]/stores/personal-store/skills/commit-style/SKILL.md: valid\n"
+    );
+
+    let (code, err) = failure_of(
+        &home,
+        home.kipi()
+            .args(["edit", "biling-api"])
+            .env("EDITOR", "true"),
+    );
+    assert_eq!(code, 1);
+    assert!(err.starts_with("error: no repo entry or skill `biling-api` in the mounted stores\n  hint: did you mean `billing-api`?"), "{err}");
+    let (code, err) = failure_of(
+        &home,
+        home.kipi()
+            .args(["edit", "billing-api"])
+            .env("EDITOR", "")
+            .env_remove("EDITOR"),
+    );
+    assert_eq!(code, 1);
+    assert!(err.starts_with("error: no editor configured\n"), "{err}");
+
+    let hx = fake_hx(
+        &home,
+        "^summary = \"Shared training",
+        "summry = \"Shared training",
+    );
+    let (code, err) = failure_of(
+        &home,
+        home.kipi().args(["edit", "ml-platform"]).env("EDITOR", &hx),
+    );
+    assert_eq!(code, 1);
+    assert!(
+        err.contains("unknown key `summry` in [repos.ml-platform]"),
+        "{err}"
+    );
+    assert!(err.contains("hint: did you mean `summary`?"), "{err}");
 }

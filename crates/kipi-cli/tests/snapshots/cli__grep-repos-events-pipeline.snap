@@ -1,0 +1,8 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: out
+---
+[HOME]/stores/acme-store/repos/billing-api/notes.md:5: - Every mutating endpoint requires an `Idempotency-Key` header; keys live 24 h in the `idempotency_keys` table.
+[HOME]/stores/acme-store/repos/billing-api/notes.md:15: - `src/idempotency/`: key storage and replay.
+[HOME]/work/acme/billing-api/src/idempotency.rs:1: // Idempotency keys live 24 h.
+[HOME]/work/acme/billing-api/src/idempotency.rs:2: pub fn idempotency_key() {}

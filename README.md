@@ -15,8 +15,11 @@ entries into them (`--dry-run` shows the changes first), and `kipi status [repo]
 are synced, stale or missing. `kipi init` creates (or mounts) a store and `kipi stores` lists or
 unmounts them; `kipi add skill|repo`, `kipi bind` and `kipi unbind` edit `bindings.toml` while
 keeping your comments and layout, and refuse any edit that would break resolution (such as a
-relation crossing scopes). Every writer takes `--dry-run`. Try the read-only commands on the
-example stores:
+relation crossing scopes). Every writer takes `--dry-run`. For agents (and you): `kipi where <alias>` resolves an alias to a repo's summary, checkout and
+notes, `kipi grep <pattern> [--repos]` searches the conventions, notes and skills (and with
+`--repos` the checkouts) of the current repo's scope chain, and `kipi edit
+<repo|skill|notes:<repo>|conventions:<scope>>` opens the right file in `$EDITOR`, then validates it
+and marks edited drafts reviewed. Try the read-only commands on the example stores:
 
 ```bash
 KIPI_CONFIG_DIR=examples cargo run -p kipi-cli -- \

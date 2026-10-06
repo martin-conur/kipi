@@ -1,0 +1,20 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: out
+---
+{
+  "version": 1,
+  "name": "billing-api",
+  "store": "acme",
+  "scope": "acme",
+  "aliases": [
+    "billing",
+    "invoices"
+  ],
+  "aliases_draft": false,
+  "summary": "Invoicing and payment orchestration; OpenAPI in api/openapi.yaml",
+  "summary_draft": true,
+  "local": "/Volumes/work/acme/billing-api",
+  "notes": "[HOME]/stores/acme-store/repos/billing-api/notes.md",
+  "notes_text": "# billing-api notes\n\n## Invariants\n\n- Every mutating endpoint requires an `Idempotency-Key` header; keys live 24 h in the `idempotency_keys` table.\n- Invoice totals are recomputed from line items on read; never persist a total by hand.\n\n## Gotchas\n\n- `/v1/charges` is deprecated and kept only for one legacy client; never call v1 from new code.\n\n## Where to look\n\n- `api/openapi.yaml`: the contract.\n- `src/idempotency/`: key storage and replay.\n"
+}
