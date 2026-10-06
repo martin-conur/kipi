@@ -1,0 +1,4 @@
+{#- One registry line (roadmap §8 step 2): name, aliases, summary, local path, notes. -#}
+{% macro repo_line(e) -%}
+- {{ e.name }}{% if e.aliases %} ({{ e.aliases | join(", ") }}){% endif %}{% if e.summary %} — {{ e.summary }}{% endif %} · {{ e.local }}{% if e.notes %} · notes: {{ e.notes }}{% endif %}
+{%- endmacro %}

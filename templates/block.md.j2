@@ -1,0 +1,24 @@
+{%- from "macros.md.j2" import repo_line -%}
+{% for c in conventions %}
+## Conventions ({{ c.scope }})
+{{ c.text }}
+
+{% endfor %}
+{% if registry %}
+## Known repos ({{ registry.scope }})
+{% for e in registry.entries %}
+{{ repo_line(e) }}
+{% endfor %}
+
+{% endif %}
+## This repo
+Scope: {{ scope or "none (unscoped)" }}.
+{%- if related %} Related: {% if related_status %}{{ related | map(attribute="name") | join(", ") }} ({{ related_status }}){% else %}{% for r in related %}{{ r.name }} ({{ r.status }}){% if not loop.last %}, {% endif %}{% endfor %}{% endif %}.{% endif %}
+
+{% for e in unlisted %}
+{{ repo_line(e) }}
+{% endfor %}
+{% if registry or unlisted %}
+For any repo above, read its code at the listed path; check its notes first if listed.
+{% endif %}
+Lookup: `kipi where <alias>`, `kipi grep <term> --repos`.

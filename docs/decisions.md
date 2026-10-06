@@ -246,3 +246,51 @@ The spec wins wherever it is explicit.
 - **Provenance lines are table headers** (as decided in #3), e.g. `acme:bindings.toml:34` for every
   `repos.events-pipeline.*` key; built-in decisions print the rule only (`← built in`,
   `← grant: store \`acme\` dirs`).
+
+## Stage 2: rendering (#5)
+
+- **Rendering is pure; only the conventions are read.** `render::block::load_conventions` reads
+  a repo's `always` files up front (an I/O error names the `scopes.<s>.always` key to fix);
+  `render::registry::render`, `render::block::render` and `render::splice::splice` are text in,
+  text out. The home directory is a parameter, so `~/…` display never reads the environment.
+  `display_path` moved from the CLI into `kipi_core::render` and the CLI re-exports it.
+- **Templates are minijinja, embedded from `templates/`** (`block.md.j2`, `registry.md.j2`, and
+  `macros.md.j2` holding the one `repo_line` macro both share, so a registry line is identical in
+  the file and in the block). Strict undefined, no auto-escaping, `trim_blocks` + `lstrip_blocks`.
+  Templates are compiled into the binary, so a template failure is a kipi bug and panics, with
+  every branch covered by the snapshot tests.
+- **Registry line**: `- name (alias, …) — summary · path · notes: path`. Aliases are omitted
+  when empty, the summary when absent, the notes when there are none; a repo not cloned here shows
+  `(not cloned here)` in place of the path. A repo without a summary still lists its aliases:
+  they are lookup keys, and §6's "name only" is read as "no summary text". Draft markers are not
+  rendered; they are for `tree` and `doctor`, not the agent.
+- **Registry file** `generated/registry.<scope>.md` = a one-line generated-by comment naming the
+  store, `# Known repos (<scope>)`, a blank line, then the lines. The block's `## Known repos`
+  section is the same lines.
+- **Conventions**: one `## Conventions (<scope>)` heading per scope, top-most first; several
+  `always` files of one scope join under one heading with a blank line between them; trailing
+  whitespace is trimmed and a file that is empty after trimming adds nothing. A conventions file
+  containing a kipi marker line is an error (it would cut the block short).
+- **This repo section**: `Scope: <s>.` (`none (unscoped)` for an unscoped repo, which gets no
+  conventions and no registry), then `Related: …` with each repo's access: `read access granted`
+  (its path is in the grant), `not cloned here`, or `read access not granted` (e.g. `grant =
+  "none"`). When every related repo has the same status it is printed once after the list, as
+  in §8. A related repo the known-repos list does not show (no registry, or it lives in an ancestor
+  scope above the registry) gets its own line with path and notes, so the agent still finds it.
+  The "read its code at the listed path" hint appears only when some repo is listed.
+- **Markers**: the begin marker is any line starting with `<!-- kipi:begin` (the text after it is
+  free), the end marker a line that is `<!-- kipi:end -->` plus optional trailing whitespace. A
+  marker anywhere but the start of a line is ordinary text. The replaced region runs from the
+  begin marker's first byte to the end marker's last, so line endings (CRLF included) and anything
+  around the block stay byte-identical.
+- **Splicing**: no file or an empty file → the block plus a newline. No markers → the block
+  appended after exactly one blank line (nothing added when the text already ends in a blank line;
+  existing bytes are never rewritten). One begin before one end → replaced in place. Two begins,
+  two ends, a lone marker or an end before its begin → an error at the offending line asking for
+  exactly one pair.
+- **Token estimates** are checked with `tiktoken-rs` (`cl100k_base`, a dev-dependency until
+  `tokens.rs` lands in Stage 3) against §3 / §7: acme conventions ≤ 300, acme registry ≤ 350,
+  personal registry ≤ 210, events-pipeline block ≤ 700 (≈ 1.3k minus ~600 for skill descriptions).
+- **Snapshots use `examples/` as the home directory**, so store paths print as `~/acme-store/…`
+  on every machine while the example `machine.toml` checkouts (`/Volumes/…`, `/srv/…`) stay
+  absolute.

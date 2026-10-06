@@ -8,6 +8,7 @@ use std::io::{self, Write};
 use std::path::Path;
 
 use color::Painter;
+pub use kipi_core::render::display_path;
 
 /// How a command prints: format, colors and verbosity, from the global flags.
 #[derive(Debug, Clone)]
@@ -42,28 +43,5 @@ impl Output {
     /// `path` for humans: under the home directory it starts with `~/`.
     pub fn path(&self, path: &Path) -> String {
         display_path(path, self.home.as_deref())
-    }
-}
-
-/// `path` with a leading `home` replaced by `~`.
-pub fn display_path(path: &Path, home: Option<&Path>) -> String {
-    match home.and_then(|h| path.strip_prefix(h).ok()) {
-        Some(rest) if rest.as_os_str().is_empty() => "~".to_owned(),
-        Some(rest) => format!("~/{}", rest.display()),
-        None => path.display().to_string(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn home_paths_start_with_tilde() {
-        let home = Some(Path::new("/h/me"));
-        assert_eq!(display_path(Path::new("/h/me/work/a"), home), "~/work/a");
-        assert_eq!(display_path(Path::new("/h/me"), home), "~");
-        assert_eq!(display_path(Path::new("/h/meow"), home), "/h/meow");
-        assert_eq!(display_path(Path::new("/srv/x"), None), "/srv/x");
     }
 }

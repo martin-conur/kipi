@@ -25,7 +25,7 @@ crates/
   kipi-test-support/src/   # stores.rs (copy example stores), repos.rs (fake git repos),
                            # builders.rs (in-memory stores/machines for resolve tests),
                            # leak_guard.rs (scanner); tests/ holds the repo-wide leak test
-templates/                 # SKILL.md, notes.md, bindings.toml skeletons
+templates/                 # SKILL.md, notes.md, bindings.toml skeletons; block/registry minijinja templates
 examples/
   acme-store/              # work store: scopes acme + acme-ml, 6 repos, 4 skills
   personal-store/          # personal store: scope personal, 4 repos, 2 skills, share_skills = true
@@ -44,6 +44,7 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace                                     # all tests, incl. leak guard + example stores
 cargo test -p kipi-test-support --test leak_guard          # leak guard only
 cargo test -p kipi-core --test resolve --test resolve_props  # resolution unit + property tests
+cargo test -p kipi-core --test render --test splice_props    # rendering snapshots + splice properties
 cargo llvm-cov -p kipi-core --test resolve --test resolve_props  # resolve.rs coverage (cargo install cargo-llvm-cov)
 cargo deny check                                           # licenses + banned crates (cargo install cargo-deny)
 cargo run -p kipi-cli -- --help                            # run the CLI
