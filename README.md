@@ -1,10 +1,16 @@
 # kipi
 kipi is a single-binary Rust CLI that manages skills and cross-repo knowledge for LLM coding agents (Claude Code, Codex CLI, Kiro, Cursor and any agent that reads SKILL.md / AGENTS.md) across many local git repositories, without an MCP server or a database.
 
-Status: pre-release scaffold. The build spec is [`roadmap.md`](roadmap.md); example stores live in [`examples/`](examples/).
+Status: pre-release (0.1.0 is next). The build spec is [`roadmap.md`](roadmap.md); example stores
+live in [`examples/`](examples/). The documentation is an mdBook in [`docs/`](docs/SUMMARY.md)
+(`mdbook build docs`): [install](docs/install.md), [quickstart](docs/quickstart.md),
+[concepts](docs/concepts.md), [configuration reference](docs/config-reference.md) and
+[FAQ](docs/faq.md).
 
 ```bash
-cargo run -p kipi-cli -- --help
+brew install martin-conur/tap/kipi      # once 0.1.0 is released; see docs/install.md
+eval "$(kipi completions bash)"         # or zsh, fish, elvish: completes repo, skill and alias names
+cargo run -p kipi-cli -- --help         # from a checkout
 ```
 
 Working today: `kipi resolve [repo]` prints the resolved plan (`--json` is stable, see

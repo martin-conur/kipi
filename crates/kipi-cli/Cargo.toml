@@ -6,6 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 
 [[bin]]
 name = "kipi"
@@ -14,6 +15,8 @@ path = "src/main.rs"
 [dependencies]
 kipi-core.workspace = true
 clap.workspace = true
+# The dynamic engine completes repo, skill and alias names (docs/decisions.md, Stage 4).
+clap_complete = { workspace = true, features = ["unstable-dynamic"] }
 owo-colors.workspace = true
 regex.workspace = true
 serde.workspace = true
@@ -26,6 +29,10 @@ kipi-test-support.workspace = true
 predicates.workspace = true
 tempfile.workspace = true
 walkdir.workspace = true
+
+# The Homebrew formula is `kipi`, not the package name (dist-workspace.toml).
+[package.metadata.dist]
+formula = "kipi"
 
 [lints]
 workspace = true

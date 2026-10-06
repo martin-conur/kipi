@@ -849,3 +849,60 @@ The spec wins wherever it is explicit.
 - **CLI doctor tests run on an onboarded home** (checkouts laid out and scanned). The example
   `machine.toml` points at `/Volumes/...` and `/srv/...`, which do not exist in a test home, so
   every line would now be K017; the example file itself is unchanged and still valid.
+
+## Stage 4: release engineering, docs and completions (#18)
+
+- **cargo-dist config lives in `dist-workspace.toml`**, dist 0.32's default location, with
+  `[profile.dist]` (release + thin LTO) in the root `Cargo.toml`. Targets: `x86_64`/`aarch64`
+  `unknown-linux-musl` and `x86_64`/`aarch64` `apple-darwin`, each built natively on its own
+  runner. Installers: `shell` and `homebrew`; checksums `sha256`; the shell installer writes to
+  `~/.cargo/bin` and installs no updater (kipi has no network code and should not grow a
+  self-updater by way of its installer). The formula is named `kipi`
+  (`[package.metadata.dist] formula`), not after the `kipi-cli` package; archives keep the
+  package name (`kipi-cli-<target>.tar.xz`). The tap is `tap = "martin-conur/homebrew-tap"` in
+  `dist-workspace.toml`, so changing it is a one-line edit plus `dist generate`; the push uses the
+  `HOMEBREW_TAP_TOKEN` secret. Maintainer setup: `docs/release.md`.
+- **The PR dry run uploads every artifact and runs only for release-config PRs.**
+  `pr-run-mode = "upload"` builds all four targets plus installers on a pull request and attaches
+  them to the workflow run, publishing nothing. dist has no option to limit that to some paths, so
+  `release.yml` carries one hand edit, a `paths` filter on `pull_request`
+  (`dist-workspace.toml`, root and kipi-cli `Cargo.toml`, `rust-toolchain.toml`, `release.yml`),
+  and `allow-dirty = ["ci"]` keeps `dist` from rejecting or overwriting it. The cost: regenerating
+  is a manual three-step (documented in `docs/release.md`). Running on every PR was the
+  alternative; four release builds per PR for a config that rarely changes was not worth it.
+- **Fresh-machine E2E is a POSIX script, not a Rust test** (`scripts/fresh-machine-e2e.sh`), so it
+  runs where no toolchain exists. CI builds the release binary for `x86_64-unknown-linux-musl`
+  and `aarch64-apple-darwin` (`e2e-build`), then installs it into an empty `HOME` in a clean
+  `debian:stable-slim` container (only `git` added) and on a fresh `macos-latest` runner that did
+  not build it. The script creates two fake repos with remotes, writes a scope into the store the
+  way a user would (there is no `add scope` command), and runs `init`, `scan`, `add skill`, `bind`,
+  `sync --all` twice (the second must change nothing), `status`, `doctor` (must exit 0; drafted
+  summaries are info) and `where`. It takes a binary or a dist `.tar.xz`, so it also checks a
+  release archive locally.
+- **Completions use clap_complete's dynamic engine** (`unstable-dynamic` feature of the §12
+  `clap_complete`; no new crate, though it pulls in `clap_lex`, `shlex` and `is_executable`).
+  Static scripts cannot complete names that live in the stores; the dynamic engine calls back into
+  `kipi`, so repo names, aliases, skills (and `<store>/<skill>` for sharing stores), scopes, store
+  names and `kipi edit`'s `notes:`/`conventions:` targets complete in bash, zsh, fish, elvish and
+  powershell. `kipi completions <shell>` prints the registration script; the completion request
+  itself is `KIPI_COMPLETE=<shell> kipi -- <words>` (the `KIPI_` prefix, not clap's default
+  `COMPLETE`), handled first thing in `main`. The feature is unstable upstream, so the
+  registration script must be loaded at shell startup (`eval "$(kipi completions bash)"`), never
+  saved to a file: it then always matches the installed binary. Candidates load the configured
+  stores only (no `resolve`, no `machine.toml`), are silent on any error, and ignore a `--store`
+  typed on the same line (the engine gives candidate functions no access to parsed flags).
+- **The book's source is `docs/` itself** (`src = "."`, output in `target/book`), so existing
+  links to `docs/adapters.md`, `docs/doctor.md`, `docs/json.md` and `docs/decisions.md` stay valid.
+  CI builds it with mdBook 0.5.4 (`create-missing = false`, so a broken `SUMMARY.md` entry fails).
+- **Config-reference completeness reads the serde model.** `config::schema::keys(file)` asks each
+  `Raw*` struct's derived `Deserialize` for its field list (a tiny introspecting deserializer that
+  records `deserialize_struct`'s `fields` and stops); each loader composes the dotted paths
+  (`scopes.<scope>.extends`). `tests/config_reference.rs` then requires the key column of each
+  `## <file>` table in `docs/config-reference.md` to equal that set, both ways: a new field fails
+  until documented, and a row for a removed key fails too.
+- **Codex rows in `docs/adapters.md`:** `.agents/skills` (and symlinked skill folders) verified
+  against the current skills page; the "reads outside the workspace" behaviour is not stated in
+  OpenAI's docs and is marked unverified there, with what the docs do say.
+- **Leak guard allows `/home/linuxbrew`.** The generated `release.yml` puts Homebrew's Linux
+  prefix on `PATH` in the formula job. It is a fixed system account, not a person, so it joins
+  the placeholder names (`PLACEHOLDER_USERS`) instead of a hand edit to generated code.

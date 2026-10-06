@@ -74,6 +74,7 @@ impl Home {
             .env_remove("KIPI_CONFIG_DIR")
             .env_remove("KIPI_CACHE_DIR")
             .env_remove("KIPI_STORE")
+            .env_remove("KIPI_COMPLETE")
             .env_remove("NO_COLOR");
         cmd
     }
@@ -289,14 +290,101 @@ fn exit_1_on_usage_errors() {
 }
 
 #[test]
-fn exit_1_on_unimplemented_commands() {
+fn completions_print_a_registration_script_for_every_shell() {
     let home = Home::new();
-    let (code, err) = failure_of(&home, home.kipi().args(["completions", "zsh"]));
+    for shell in ["bash", "elvish", "fish", "powershell", "zsh"] {
+        let script = stdout_of(&home, home.bare().args(["completions", shell]));
+        assert!(script.contains("KIPI_COMPLETE"), "{shell}: {script}");
+        assert!(script.contains("kipi"), "{shell}: {script}");
+    }
+    insta::assert_snapshot!(stdout_of(&home, home.bare().args(["completions", "bash"])));
+    let (code, err) = failure_of(&home, home.bare().args(["completions", "tcsh"]));
     assert_eq!(code, 1);
-    assert_eq!(
-        err,
-        "error: `kipi completions` is not implemented yet\n  hint: it lands in Stage 4 \
-         (roadmap §14); `kipi resolve` and `kipi explain <repo>` work today\n"
+    assert!(
+        err.contains("possible values: bash, elvish, fish, powershell, zsh"),
+        "{err}"
+    );
+}
+
+/// What the shell gets back for `words` (the last one is being completed), as fish
+/// asks for it: one `value\thelp` line per candidate.
+fn completions_for(home: &Home, words: &[&str]) -> Vec<String> {
+    let personal = home.store(ExampleStore::Personal);
+    let acme = home.store(ExampleStore::Acme);
+    let out = home
+        .bare()
+        .env(
+            "KIPI_STORE",
+            std::env::join_paths([&personal, &acme]).unwrap(),
+        )
+        .env("KIPI_COMPLETE", "fish")
+        .arg("--")
+        .arg("kipi")
+        .args(words)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    String::from_utf8(out)
+        .unwrap()
+        .lines()
+        .map(|l| l.split('\t').next().unwrap().to_owned())
+        .collect()
+}
+
+#[test]
+fn completions_offer_repo_skill_alias_scope_and_store_names() {
+    let home = Home::new();
+    let has = |words: &[&str], want: &[&str]| {
+        let got = completions_for(&home, words);
+        for w in want {
+            assert!(got.iter().any(|g| g == w), "{words:?}: no `{w}` in {got:?}");
+        }
+        got
+    };
+    let subcommands = has(&[""], &["sync", "explain", "completions"]);
+    assert!(!subcommands.iter().any(|c| c == "billing-api"));
+    has(
+        &["explain", ""],
+        &["billing-api", "events-pipeline", "side-tool"],
+    );
+    let billing = has(&["explain", "bil"], &["billing-api"]);
+    assert!(!billing.iter().any(|c| c == "side-tool"), "{billing:?}");
+    has(&["sync", "billing-api", ""], &["events-pipeline"]);
+    has(&["where", ""], &["billing", "events", "billing-api"]);
+    has(
+        &["bind", "billing-api", "--skill", ""],
+        &["code-review", "personal/commit-style"],
+    );
+    has(&["tree", "--store", ""], &["acme", "personal"]);
+    has(
+        &["grep", "x", "--scope", ""],
+        &["acme", "acme-ml", "personal"],
+    );
+    has(
+        &["edit", ""],
+        &["billing-api", "notes:billing-api", "conventions:acme"],
+    );
+    has(&["completions", ""], &["bash", "zsh", "fish", "elvish"]);
+}
+
+#[test]
+fn completions_stay_silent_without_stores() {
+    let home = Home::empty();
+    let out = home
+        .bare()
+        .env("KIPI_COMPLETE", "fish")
+        .args(["--", "kipi", "explain", ""])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    assert!(out.stderr.is_empty(), "{out:?}");
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        stdout.lines().all(|l| l.starts_with('-')),
+        "only flags: {stdout}"
     );
 }
 

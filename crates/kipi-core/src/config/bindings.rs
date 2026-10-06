@@ -14,6 +14,21 @@ use crate::model::{
     Store, check_name,
 };
 
+/// Every key `bindings.toml` accepts (see [`super::schema`]).
+pub(super) fn schema_keys() -> Vec<String> {
+    use super::schema::{fields, under};
+    fields::<RawBindings>()
+        .iter()
+        .flat_map(|&table| match table {
+            "store" => under::<RawStore>(table),
+            "defaults" => under::<RawDefaults>(table),
+            "scopes" => under::<RawScope>("scopes.<scope>"),
+            "repos" => under::<RawRepo>("repos.<repo>"),
+            other => vec![other.to_owned()],
+        })
+        .collect()
+}
+
 const TYPE_HINT: &str = "change the value to the expected type";
 
 #[derive(Deserialize)]

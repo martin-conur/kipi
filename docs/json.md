@@ -53,11 +53,11 @@ Lines point at the `[scopes.<name>]` / `[repos.<name>]` table header that holds 
 | `skills` | [Skill] | Effective skills: the chain top-down, then the repo's own, minus `exclude` |
 | `excluded` | [Skill] | The repo's `exclude` entries |
 | `always` | [AlwaysOn] | Always-on content in render order |
-| `registry` | Decided<string> \| null | Scope whose registry the repo renders |
+| `registry` | `Decided<string>` \| null | Scope whose registry the repo renders |
 | `related` | [Related] | `related` repos, in declared order |
 | `grant` | Grant | The read grant |
 | `agents` | Decided<[string]> | Adapters to render (`claude`, `generic`) |
-| `budget_tokens` | Decided<number> | Always-on token budget |
+| `budget_tokens` | `Decided<number>` | Always-on token budget |
 
 **Skill**: `name` (directory name), `store` (store holding it), `reference` (as rendered:
 `personal/commit-style` for a shared skill), `dir` (absolute), `inherited_from` (the scope whose

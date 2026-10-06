@@ -1,0 +1,29 @@
+# cargo-dist release configuration (roadmap §13). `dist generate` writes
+# .github/workflows/release.yml from this file; maintainer setup lives in
+# docs/release.md. Change a value here, then run `dist generate`.
+[workspace]
+members = ["cargo:."]
+
+[dist]
+cargo-dist-version = "0.32.0"
+ci = "github"
+# Static binaries: musl on Linux; macOS links only the system libraries.
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "aarch64-unknown-linux-musl",
+  "x86_64-unknown-linux-musl",
+]
+installers = ["shell", "homebrew"]
+checksum = "sha256"
+install-path = "CARGO_HOME"
+install-updater = false
+# The Homebrew tap the formula is pushed to (`<owner>/homebrew-<name>`). Change it here
+# to publish elsewhere; the push needs the HOMEBREW_TAP_TOKEN secret (docs/release.md).
+tap = "martin-conur/homebrew-tap"
+publish-jobs = ["homebrew"]
+# On a pull request, build and upload every artifact without releasing anything.
+pr-run-mode = "upload"
+# release.yml carries one hand edit: its pull_request trigger is limited to PRs that
+# touch release config (docs/decisions.md, "Stage 4: release").
+allow-dirty = ["ci"]

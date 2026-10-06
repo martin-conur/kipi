@@ -20,6 +20,18 @@ struct RawMachine {
     repos: Entries<String>,
 }
 
+/// Every key `machine.toml` accepts (see [`super::schema`]).
+pub(super) fn schema_keys() -> Vec<String> {
+    super::schema::fields::<RawMachine>()
+        .iter()
+        .map(|&key| match key {
+            "roots" => "roots.<scope>".to_owned(),
+            "repos" => "repos.<repo>".to_owned(),
+            other => other.to_owned(),
+        })
+        .collect()
+}
+
 /// Load `machine.toml` from the config dir; an absent file is an empty [`Machine`].
 pub fn load_machine(env: &Env) -> Result<Machine> {
     match Source::read_optional(&env.machine_file())? {

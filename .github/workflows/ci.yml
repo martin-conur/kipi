@@ -48,6 +48,98 @@ jobs:
       - name: cargo deny
         run: cargo deny check
 
+  docs:
+    # The mdBook in docs/ (roadmap §12). Its config-reference page is checked against the
+    # serde model by `cargo test` (crates/kipi-core/tests/config_reference.rs).
+    name: docs (mdBook)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Install mdBook
+        uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+        with:
+          tool: mdbook@0.5.4
+
+      - name: Build the book
+        run: mdbook build docs
+
+  e2e-build:
+    # The binary the fresh-machine E2E installs: a static musl build on Linux, the
+    # native build on macOS (the same targets cargo-dist releases).
+    name: e2e build (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - os: macos-latest
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Install toolchain and target
+        run: rustup toolchain install && rustup target add ${{ matrix.target }}
+
+      - name: Install musl-tools
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: e2e-${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked -p kipi-cli --target ${{ matrix.target }}
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: kipi-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/kipi
+          if-no-files-found: error
+
+  e2e-linux:
+    # A clean container: no Rust, no kipi config, only git installed.
+    name: fresh-machine e2e (linux container)
+    needs: e2e-build
+    runs-on: ubuntu-latest
+    container: debian:stable-slim
+    steps:
+      - name: Install git
+        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: scripts
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: kipi-x86_64-unknown-linux-musl
+          path: dist-bin
+
+      - name: init, scan, sync --all, doctor
+        run: sh scripts/fresh-machine-e2e.sh dist-bin/kipi
+
+  e2e-macos:
+    # A fresh macOS runner that did not build the binary; the script uses an empty HOME.
+    name: fresh-machine e2e (macos)
+    needs: e2e-build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: scripts
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: kipi-aarch64-apple-darwin
+          path: dist-bin
+
+      - name: init, scan, sync --all, doctor
+        run: sh scripts/fresh-machine-e2e.sh dist-bin/kipi
+
   coverage:
     # Report-only: branch coverage of the pure resolver (roadmap §13 targets 100%).
     # Branch coverage needs nightly, so this job never gates a merge.
