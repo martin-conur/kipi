@@ -294,3 +294,74 @@ The spec wins wherever it is explicit.
 - **Snapshots use `examples/` as the home directory**, so store paths print as `~/acme-store/…`
   on every machine while the example `machine.toml` checkouts (`/Volumes/…`, `/srv/…`) stay
   absolute.
+
+## Stage 2: `kipi scan` (#22)
+
+- **What is walked.** The scope roots of every mounted store (a `machine.toml [roots]` line
+  replaces a scope's own roots), or only the paths given on the command line. Each root is walked
+  on its own, so a root nested inside another root (or inside a checkout) is still reached; found
+  checkouts are deduplicated by path. A checkout is a directory holding a `.git` *directory*; a
+  `.git` file (a worktree or submodule) is neither reported nor descended into. Found checkouts are
+  not descended into, and hidden directories, `node_modules`, `target` and `.venv` are skipped.
+  Symlinks are not followed; paths are kept as walked (not canonicalized), like the roots.
+- **Identity.** A path already recorded in `machine.toml [repos]` belongs to that entry. Otherwise
+  the shared `match_checkout` decides (remote, then directory name for entries without `remote`,
+  then origin basename), with one restriction: **a basename match only counts for entries without
+  a `remote`.** An entry with a different `remote` is a different repository that shares the name,
+  which is exactly the case the issue names as `<owner>-<name>` (the personal `api` vs a work
+  `api`). Matching it would record a work checkout against a personal entry. So "a checkout whose
+  remote differs from its entry's" is reported only for a checkout recorded by path. Several
+  candidates under one rule are reported (`ambiguous-match`) and nothing is written for them.
+- **A recorded checkout of an unmounted store's entry** is left alone, never added to whichever
+  mounted store's root happens to contain it.
+- **Machine.toml writes.** A new line per identified checkout. A recorded path that no longer
+  exists is replaced by the checkout found now (reported as moved); otherwise a vanished path is
+  reported and kept (scan removes nothing). Several checkouts of one entry are reported; the
+  recorded one is kept if it still exists, else nothing is written.
+- **New entries.** The scope is the deepest root containing the checkout across every mounted
+  store; the entry goes to that scope's store, with no `scope =`. A checkout outside every root, or
+  under two scopes' roots at the same depth, is reported (with a `kipi scan <path> --store
+  <s> --scope <scope>` hint built from `remote_patterns` when they match) unless `--scope` is given:
+  then it goes to that scope's store with `scope = "<scope>"` written. `--store` only checks that
+  it owns `--scope` (scope names are unique across stores). Two clones of one new repo are
+  reported and not added.
+- **Entry names**: the directory name (else the remote's basename); if another entry has it,
+  `<owner>-<name>` with the remote's owner (second-to-last path segment); otherwise reported. New
+  checkouts are processed in path order, so the same layout names the same entries on every
+  machine. Aliases of a `<owner>-<name>` entry are drafted from `<name>`.
+- **`remote_patterns` conflicts** are warned for every identified or added checkout: its remote
+  matches a scope's pattern (longest wins; a tie decides nothing) but its entry resolves to a scope
+  that is neither that scope nor one extending it (so an `acme-ml` repo matching `acme`'s pattern
+  is fine), or lives in another store. The hint is the `scope =` line, or the store to move to.
+- **Drafting** (§9): manifest description first (`Cargo.toml` `package.description`, then
+  `pyproject.toml` `project.description` / `tool.poetry.description`, `package.json`, the `//`
+  comment block right above `go.mod`'s `module`); a non-string value such as
+  `description.workspace = true` is skipped. Else the first README paragraph (`README.md`,
+  `README.markdown`, `README`, `README.txt`, case-insensitive) that is prose after removing
+  headings (ATX and setext), code fences, HTML comments and HTML headings, images (badges), lists,
+  tables and reference definitions, keeping link and code text and dropping bare URLs; it needs two
+  words. Whitespace is collapsed, a single trailing period dropped, and text over 140 chars is cut
+  at the last word boundary before it with `…`. Key-file hints are appended with `; `: `OpenAPI in
+  <path>` (`openapi.{yaml,yml,json}` at the root or in `api/`) and `dbt project`
+  (`dbt_project.yml`), unless the summary already mentions OpenAPI / dbt. No language hint: a
+  manifest already says what language the repo is, and the hint would fight the example summaries.
+- **Aliases**: the name split on `-`, `_` and `.`, lowercased; generic words (`api`, `service`,
+  `lib`, `cli`, `app`, `web`, `tool`, ... see `GENERIC_WORDS`), one-letter, numeric and `v2`-style
+  parts dropped, and any key (name or alias, case-folded) another entry already has. A one-part name
+  gets no aliases (the name already resolves). An empty result writes no `aliases` key, since an
+  empty list is invalid.
+- **Draft markers** are written as `  # kipi:draft` trailing comments. `--refresh-drafts` replaces
+  a still-marked value and keeps its decor (so the marker stays); it never removes a value, and an
+  empty re-draft leaves the old one. `remote` is factual and gets no marker. A filled `remote` is
+  appended to the end of the entry's table rather than moved to the top, so comments attached to
+  the first key stay where they are.
+- **Example store**: `feature-store`'s drafted aliases are now `["feature", "store"]`, what scan
+  drafts, so every `# kipi:draft` value in the examples is reproducible (tested by scanning the
+  example checkouts with `--refresh-drafts` and expecting no change).
+- **Writes** are computed in full first, then written atomically per file (temp file + rename);
+  a file is only written when its text changes, which is what makes a second run a no-op.
+  `--dry-run` prints a unified diff per file (`output/diff.rs`, LCS over lines, 2 lines of
+  context); no diff crate is added.
+- **Output**: the report goes to stdout (warnings included, as `warning:` / `hint:` pairs, since
+  they are the command's result); `--json` prints the report documented in `docs/json.md`
+  ("Scan"). Warnings do not change the exit code (0); doctor owns exit 2.

@@ -1,0 +1,47 @@
+---
+source: crates/kipi-core/tests/scan.rs
+expression: out
+---
+[cargo-manifest]
+summary = Some("Parses invoices into ledger entries")
+aliases = ["cargo", "manifest"]
+
+[cargo-workspace-readme]
+summary = Some("Small CLI that renames photos by EXIF date")
+aliases = ["cargo", "workspace", "readme"]
+
+[dbt-models]
+summary = Some("dbt project")
+aliases = ["dbt", "models"]
+
+[go-module]
+summary = Some("Command-line client for the events pipeline. Reads from the replay topic")
+aliases = ["module"]
+
+[no-readme]
+summary = None
+aliases = ["no", "readme"]
+
+[openapi-service]
+summary = Some("Public REST gateway in front of the internal services; OpenAPI in api/openapi.yaml")
+aliases = []
+
+[package-json]
+summary = Some("Dashboard UI for usage metrics")
+aliases = ["package", "json"]
+
+[pyproject-poetry]
+summary = Some("Feature engineering helpers for training jobs")
+aliases = ["pyproject", "poetry"]
+
+[readme-badges-only]
+summary = None
+aliases = ["readme", "badges", "only"]
+
+[readme-html]
+summary = Some("Schedules nightly report exports & uploads them")
+aliases = ["readme", "html"]
+
+[readme-long]
+summary = Some("This repository holds the reconciliation service that compares settlement files from every payment provider against the internal ledger…")
+aliases = ["readme", "long"]

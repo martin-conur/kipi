@@ -1512,7 +1512,8 @@ expression: out
         {
           "name": "feature-store",
           "aliases": [
-            "features"
+            "feature",
+            "store"
           ],
           "aliases_draft": true,
           "summary": "Online and offline feature serving; dbt models in models/",
@@ -1522,7 +1523,8 @@ expression: out
           "notes": null,
           "keys": [
             "feature-store",
-            "features"
+            "feature",
+            "store"
           ],
           "source": {
             "rule": "repos.feature-store",

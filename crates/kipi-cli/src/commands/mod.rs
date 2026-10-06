@@ -3,6 +3,7 @@
 
 mod explain;
 mod resolve;
+mod scan;
 
 use std::path::PathBuf;
 
@@ -21,7 +22,7 @@ pub struct Loaded {
     /// The mounted stores.
     pub stores: StoreSet,
     /// `machine.toml`.
-    #[allow(dead_code)] // read by `status`, `scan` and `doctor` in later stages.
+    #[allow(dead_code)] // read by `status` and `doctor` in later stages.
     pub machine: Machine,
     /// The resolved plan.
     pub plan: Plan,
@@ -87,6 +88,24 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
     match command {
         Command::Resolve { repo } => resolve::run(&load()?, repo.as_deref(), out),
         Command::Explain { repo } => explain::run(&load()?, repo, out),
+        Command::Scan {
+            paths,
+            refresh_drafts,
+            store,
+            scope,
+            dry_run,
+        } => scan::run(
+            &Env::from_process()?,
+            &global.stores,
+            &scan::Args {
+                paths,
+                refresh_drafts: *refresh_drafts,
+                store: store.as_deref(),
+                scope: scope.as_deref(),
+                dry_run: dry_run.dry_run,
+            },
+            out,
+        ),
         other => Err(not_implemented(other)),
     }
 }

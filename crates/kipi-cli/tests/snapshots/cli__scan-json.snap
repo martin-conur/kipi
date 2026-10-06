@@ -1,0 +1,104 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: out
+---
+{
+  "version": 1,
+  "dry_run": true,
+  "roots": [
+    "[HOME]/code",
+    "[HOME]/work/acme",
+    "[HOME]/work/acme/ml"
+  ],
+  "missing_roots": [],
+  "checkouts": [
+    "[HOME]/code/api",
+    "[HOME]/code/blog",
+    "[HOME]/code/dotfiles",
+    "[HOME]/code/side-tool",
+    "[HOME]/work/acme/api",
+    "[HOME]/work/acme/billing-api",
+    "[HOME]/work/acme/ml/events-pipeline",
+    "[HOME]/work/acme/ml/feature-store",
+    "[HOME]/work/acme/ml/ml-platform",
+    "[HOME]/work/acme/web-dashboard"
+  ],
+  "added": [
+    {
+      "name": "dotfiles",
+      "store": "personal",
+      "scope": "personal",
+      "explicit_scope": false,
+      "path": "[HOME]/code/dotfiles",
+      "remote": "github.com/example-user/dotfiles",
+      "summary": null,
+      "aliases": []
+    }
+  ],
+  "recorded": [
+    {
+      "entry": "acme-api",
+      "path": "[HOME]/work/acme/api",
+      "previous": null
+    },
+    {
+      "entry": "api",
+      "path": "[HOME]/code/api",
+      "previous": null
+    },
+    {
+      "entry": "billing-api",
+      "path": "[HOME]/work/acme/billing-api",
+      "previous": null
+    },
+    {
+      "entry": "blog",
+      "path": "[HOME]/code/blog",
+      "previous": null
+    },
+    {
+      "entry": "events-pipeline",
+      "path": "[HOME]/work/acme/ml/events-pipeline",
+      "previous": null
+    },
+    {
+      "entry": "feature-store",
+      "path": "[HOME]/work/acme/ml/feature-store",
+      "previous": null
+    },
+    {
+      "entry": "ml-platform",
+      "path": "[HOME]/work/acme/ml/ml-platform",
+      "previous": null
+    },
+    {
+      "entry": "side-tool",
+      "path": "[HOME]/code/side-tool",
+      "previous": null
+    },
+    {
+      "entry": "web-dashboard",
+      "path": "[HOME]/work/acme/web-dashboard",
+      "previous": null
+    },
+    {
+      "entry": "dotfiles",
+      "path": "[HOME]/code/dotfiles",
+      "previous": null
+    }
+  ],
+  "remotes_filled": [
+    {
+      "entry": "blog",
+      "store": "personal",
+      "remote": "github.com/example-user/blog"
+    }
+  ],
+  "refreshed": [],
+  "warnings": [],
+  "not_found": [],
+  "files": [
+    "[HOME]/stores/personal-store/bindings.toml",
+    "[HOME]/.config/kipi/machine.toml"
+  ]
+}

@@ -1,0 +1,15 @@
+---
+source: crates/kipi-core/tests/scan.rs
+expression: m.machine_toml()
+---
+[repos]
+api = "[HOME]/code/api"
+blog = "[HOME]/code/blog"
+dotfiles = "[HOME]/code/dotfiles"
+side-tool = "[HOME]/code/side-tool"
+acme-org-api = "[HOME]/work/acme/api"
+billing-api = "[HOME]/work/acme/billing-api"
+events-pipeline = "[HOME]/work/acme/ml/events-pipeline"
+feature-store = "[HOME]/work/acme/ml/feature-store"
+ml-platform = "[HOME]/work/acme/ml/ml-platform"
+web-dashboard = "[HOME]/work/acme/web-dashboard"

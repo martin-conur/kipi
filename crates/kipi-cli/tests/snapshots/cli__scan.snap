@@ -1,0 +1,27 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: out
+---
+Scanned 3 directories: 10 checkouts.
+
+Added 1 entry:
+  + dotfiles  store personal, scope personal  ~/code/dotfiles
+      remote:  github.com/example-user/dotfiles
+
+Recorded in machine.toml:
+  acme-api  ~/work/acme/api
+  api  ~/code/api
+  billing-api  ~/work/acme/billing-api
+  blog  ~/code/blog
+  events-pipeline  ~/work/acme/ml/events-pipeline
+  feature-store  ~/work/acme/ml/feature-store
+  ml-platform  ~/work/acme/ml/ml-platform
+  side-tool  ~/code/side-tool
+  web-dashboard  ~/work/acme/web-dashboard
+  dotfiles  ~/code/dotfiles
+
+Filled remote:
+  blog  github.com/example-user/blog  personal
+
+Wrote ~/stores/personal-store/bindings.toml
+Wrote ~/.config/kipi/machine.toml

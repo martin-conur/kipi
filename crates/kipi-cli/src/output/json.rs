@@ -4,7 +4,7 @@
 //! kipi-core's types, so the internal model can change without changing the output.
 //! Field order is declaration order; lists keep the plan's deterministic order.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use kipi_core::model::StoreSet;
 use kipi_core::plan::{
@@ -289,4 +289,133 @@ fn registry<'a>(set: &StoreSet, r: &'a Registry) -> RegistryJson<'a> {
             .collect(),
         source: source(set, &r.source),
     }
+}
+
+/// A `kipi scan` report as pretty-printed JSON with a trailing newline (`docs/json.md`,
+/// "Scan"). Fails only on a path that is not valid UTF-8.
+pub fn scan(scan: &kipi_core::scan::Scan, dry_run: bool) -> serde_json::Result<String> {
+    let doc = ScanJson {
+        version: JSON_VERSION,
+        dry_run,
+        roots: scan.roots.iter().map(PathBuf::as_path).collect(),
+        missing_roots: scan.missing_roots.iter().map(PathBuf::as_path).collect(),
+        checkouts: scan.checkouts.iter().map(PathBuf::as_path).collect(),
+        added: scan
+            .added
+            .iter()
+            .map(|a| AddedJson {
+                name: &a.name,
+                store: &a.store,
+                scope: &a.scope,
+                explicit_scope: a.explicit_scope,
+                path: &a.path,
+                remote: a.remote.as_ref().map(|r| r.as_str()),
+                summary: a.summary.as_deref(),
+                aliases: &a.aliases,
+            })
+            .collect(),
+        recorded: scan
+            .recorded
+            .iter()
+            .map(|r| RecordedJson {
+                entry: &r.entry,
+                path: &r.path,
+                previous: r.previous.as_deref(),
+            })
+            .collect(),
+        remotes_filled: scan
+            .remotes_filled
+            .iter()
+            .map(|r| RemoteFilledJson {
+                entry: &r.entry,
+                store: &r.store,
+                remote: r.remote.as_str(),
+            })
+            .collect(),
+        refreshed: scan
+            .refreshed
+            .iter()
+            .map(|r| RefreshedJson {
+                entry: &r.entry,
+                store: &r.store,
+                field: r.field,
+                value: &r.value,
+            })
+            .collect(),
+        warnings: scan
+            .warnings
+            .iter()
+            .map(|w| WarningJson {
+                code: w.code(),
+                entry: w.entry(),
+                path: w.path(),
+                message: w.message(|p| p.display().to_string()),
+                hint: w.hint(),
+            })
+            .collect(),
+        not_found: &scan.not_found,
+        files: scan.writes.iter().map(|w| w.path.as_path()).collect(),
+    };
+    let mut out = serde_json::to_string_pretty(&doc)?;
+    out.push('\n');
+    Ok(out)
+}
+
+#[derive(Serialize)]
+struct ScanJson<'a> {
+    version: u32,
+    dry_run: bool,
+    roots: Vec<&'a Path>,
+    missing_roots: Vec<&'a Path>,
+    checkouts: Vec<&'a Path>,
+    added: Vec<AddedJson<'a>>,
+    recorded: Vec<RecordedJson<'a>>,
+    remotes_filled: Vec<RemoteFilledJson<'a>>,
+    refreshed: Vec<RefreshedJson<'a>>,
+    warnings: Vec<WarningJson<'a>>,
+    not_found: &'a [String],
+    files: Vec<&'a Path>,
+}
+
+#[derive(Serialize)]
+struct AddedJson<'a> {
+    name: &'a str,
+    store: &'a str,
+    scope: &'a str,
+    explicit_scope: bool,
+    path: &'a Path,
+    remote: Option<&'a str>,
+    summary: Option<&'a str>,
+    aliases: &'a [String],
+}
+
+#[derive(Serialize)]
+struct RecordedJson<'a> {
+    entry: &'a str,
+    path: &'a Path,
+    previous: Option<&'a Path>,
+}
+
+#[derive(Serialize)]
+struct RemoteFilledJson<'a> {
+    entry: &'a str,
+    store: &'a str,
+    remote: &'a str,
+}
+
+#[derive(Serialize)]
+struct RefreshedJson<'a> {
+    entry: &'a str,
+    store: &'a str,
+    field: &'a str,
+    value: &'a str,
+}
+
+#[derive(Serialize)]
+struct WarningJson<'a> {
+    code: &'a str,
+    entry: Option<&'a str>,
+    path: &'a Path,
+    message: String,
+    hint: String,
 }

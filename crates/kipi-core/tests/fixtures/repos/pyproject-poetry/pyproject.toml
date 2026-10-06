@@ -1,0 +1,4 @@
+[tool.poetry]
+name = "pyproject-poetry"
+version = "0.1.0"
+description = "Feature  engineering\n helpers for training jobs"

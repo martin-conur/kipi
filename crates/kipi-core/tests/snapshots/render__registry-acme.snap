@@ -8,6 +8,6 @@ expression: "registry::render(reg, Some(&home()))"
 - acme-api — Public REST gateway · /Volumes/work/acme/api
 - billing-api (billing, invoices) — Invoicing and payment orchestration; OpenAPI in api/openapi.yaml · /Volumes/work/acme/billing-api · notes: ~/acme-store/repos/billing-api/notes.md
 - events-pipeline (events, pipeline) — Kafka consumers that turn raw events into billing and ML features · /Volumes/work/acme/ml/events-pipeline · notes: ~/acme-store/repos/events-pipeline/notes.md
-- feature-store (features) — Online and offline feature serving; dbt models in models/ · (not cloned here)
+- feature-store (feature, store) — Online and offline feature serving; dbt models in models/ · (not cloned here)
 - ml-platform (ml) — Shared training and feature tooling · /Volumes/work/acme/ml/ml-platform
 - web-dashboard · /Volumes/work/acme/web-dashboard

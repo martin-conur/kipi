@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use assert_cmd::Command;
+use kipi_test_support::repos::{FakeRepo, ManifestKind, example_repos, lay_out};
 use kipi_test_support::stores::{ExampleStore, copy_example_store_to};
 use kipi_test_support::workspace_root;
 use predicates::prelude::*;
@@ -370,4 +371,130 @@ fn piped_output_has_no_color_codes() {
         .assert()
         .success()
         .stdout(predicate::str::contains("\u{1b}[").not());
+}
+
+/// A home with the example stores and every example repo checked out under it, but no
+/// `machine.toml` yet; the personal store lacks `[repos.dotfiles]` and blog's `remote`.
+fn scan_home() -> Home {
+    let home = Home::new();
+    fs::remove_file(home.path().join(".config/kipi/machine.toml")).unwrap();
+    lay_out(home.path(), &example_repos(&ExampleStore::ALL).unwrap()).unwrap();
+    let file = home.store(ExampleStore::Personal).join("bindings.toml");
+    let text = fs::read_to_string(&file).unwrap();
+    let text = text
+        .replace("remote = \"github.com/example-user/blog\"\n", "")
+        .replace(
+            "\n[repos.dotfiles]                   # no summary yet\n\
+             remote = \"github.com/example-user/dotfiles\"\n",
+            "",
+        );
+    fs::write(&file, text).unwrap();
+    home
+}
+
+#[test]
+fn scan_dry_run_prints_the_diff_and_writes_nothing() {
+    let home = scan_home();
+    let bindings = home.store(ExampleStore::Personal).join("bindings.toml");
+    let before = fs::read_to_string(&bindings).unwrap();
+    let out = stdout_of(&home, home.kipi().args(["scan", "--dry-run"]));
+    insta::assert_snapshot!("scan-dry-run", out);
+    assert_eq!(fs::read_to_string(&bindings).unwrap(), before);
+    assert!(!home.path().join(".config/kipi/machine.toml").exists());
+}
+
+#[test]
+fn scan_writes_then_is_a_no_op() {
+    let home = scan_home();
+    let out = stdout_of(&home, home.kipi().arg("scan"));
+    insta::assert_snapshot!("scan", out);
+    let machine = fs::read_to_string(home.path().join(".config/kipi/machine.toml")).unwrap();
+    assert!(machine.contains("dotfiles = "), "{machine}");
+    // The stores still load and resolve with the new entries.
+    let explain = stdout_of(&home, home.kipi().args(["explain", "dotfiles"]));
+    assert!(explain.contains("~/code/dotfiles"), "{explain}");
+
+    let again = stdout_of(&home, home.kipi().arg("scan"));
+    assert!(again.ends_with("\nNothing to write.\n"), "{again}");
+    assert!(
+        !again.contains("Added") && !again.contains("Recorded"),
+        "{again}"
+    );
+}
+
+#[test]
+fn scan_json_reports_everything() {
+    let home = scan_home();
+    let out = stdout_of(&home, home.kipi().args(["scan", "--json", "--dry-run"]));
+    let doc: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    assert_eq!(doc["version"], 1);
+    assert_eq!(doc["dry_run"], true);
+    assert_eq!(doc["checkouts"].as_array().unwrap().len(), 10);
+    assert_eq!(doc["added"][0]["name"], "dotfiles");
+    assert_eq!(doc["added"][0]["store"], "personal");
+    assert_eq!(doc["remotes_filled"][0]["entry"], "blog");
+    assert_eq!(doc["recorded"].as_array().unwrap().len(), 10);
+    assert_eq!(doc["files"].as_array().unwrap().len(), 2);
+    insta::assert_snapshot!("scan-json", out);
+}
+
+#[test]
+fn scan_reports_checkouts_outside_every_root() {
+    let home = scan_home();
+    let repo = FakeRepo {
+        entry: String::new(),
+        dir: "src/scratch".into(),
+        origin_url: Some("https://git.example.com/me/scratch".into()),
+        readme: Some("Throwaway experiments.\n".into()),
+        manifest: ManifestKind::None,
+        description: None,
+    };
+    let path = repo.create_under(home.path()).unwrap();
+    let out = stdout_of(&home, home.kipi().arg("scan").arg(&path));
+    assert!(
+        out.contains(
+            "warning: ~/src/scratch: lies outside every scope root\n  hint: add it with \
+             `kipi scan [HOME]/src/scratch --store <name> --scope <scope>`"
+        ),
+        "{out}"
+    );
+    let out = stdout_of(
+        &home,
+        home.kipi()
+            .arg("scan")
+            .arg(&path)
+            .args(["--store", "personal", "--scope", "personal"]),
+    );
+    assert!(
+        out.contains("+ scratch  store personal, scope = \"personal\""),
+        "{out}"
+    );
+    let text = fs::read_to_string(home.store(ExampleStore::Personal).join("bindings.toml"));
+    assert!(text.unwrap().contains(
+        "[repos.scratch]\nremote = \"git.example.com/me/scratch\"\nscope = \"personal\"\n"
+    ));
+}
+
+#[test]
+fn scan_checks_store_and_scope() {
+    let home = scan_home();
+    let (code, err) = failure_of(&home, home.kipi().args(["scan", "--scope", "acme-m"]));
+    assert_eq!(code, 1);
+    assert_eq!(
+        err,
+        "error: no scope `acme-m` in the mounted stores\n  hint: did you mean `acme-ml`?\n"
+    );
+    let (code, err) = failure_of(
+        &home,
+        home.kipi()
+            .args(["scan", "--store", "acme", "--scope", "personal"]),
+    );
+    assert_eq!(code, 1);
+    assert_eq!(
+        err,
+        "error: scope `personal` belongs to store `personal`, not `acme`\n  hint: pass \
+         `--store personal`, or a scope of store `acme`\n"
+    );
+    let (code, _) = failure_of(&home, home.kipi().args(["scan", "--store", "acme"]));
+    assert_eq!(code, 1, "--store needs --scope");
 }
