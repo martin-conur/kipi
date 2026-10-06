@@ -572,10 +572,42 @@ fn two_roots_at_the_same_depth_are_ambiguous() {
     let e = err(&set, &machine);
     assert!(
         e.to_string()
-            .contains("under roots of scopes `a` and `b` at the same depth"),
+            .contains("under roots of scopes `a`, `b` at the same depth"),
         "{e}"
     );
     assert!(e.hint().contains("[repos.x]"));
+}
+
+#[test]
+fn every_scope_tied_at_the_deepest_root_is_named() {
+    let set = store_set(vec![
+        StoreBuilder::new("s", "/st")
+            .scope("c", |s| s.roots = vec!["/w".into()])
+            .scope("shallow", |s| s.roots = vec!["/".into()])
+            .scope("a", |s| s.roots = vec!["/w".into()])
+            .scope("b", |s| s.roots = vec!["/w".into()])
+            .repo("x", |_| {})
+            .build(),
+    ]);
+    let machine = MachineBuilder::new().repo("x", "/w/x").build();
+    let e = err(&set, &machine);
+    assert!(
+        e.to_string()
+            .contains("under roots of scopes `a`, `b`, `c` at the same depth"),
+        "{e}"
+    );
+
+    // A deeper root clears an earlier tie.
+    let set = store_set(vec![
+        StoreBuilder::new("s", "/st")
+            .scope("a", |s| s.roots = vec!["/w".into()])
+            .scope("b", |s| s.roots = vec!["/w".into()])
+            .scope("deep", |s| s.roots = vec!["/w/x".into()])
+            .repo("x", |_| {})
+            .build(),
+    ]);
+    let machine = MachineBuilder::new().repo("x", "/w/x/y").build();
+    assert_eq!(scope(ok(&set, &machine).repo("x").unwrap()), Some("deep"));
 }
 
 // ---------------------------------------------------------------------------------

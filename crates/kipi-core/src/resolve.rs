@@ -217,7 +217,7 @@ impl<'a> StoreCtx<'a> {
         path: &Path,
     ) -> Result<Option<Decided<Option<String>>>> {
         let mut best: Option<(usize, &Scope, Source)> = None;
-        let mut tied: Option<&Scope> = None;
+        let mut tied: Vec<&Scope> = Vec::new();
         for scope in &self.store.scopes {
             let (roots, source) = match self.machine.roots_for(&scope.name) {
                 Some(r) => (
@@ -239,28 +239,33 @@ impl<'a> StoreCtx<'a> {
             };
             match &best {
                 Some((d, _, _)) if *d > depth => {}
-                Some((d, _, _)) if *d == depth => tied = Some(scope),
+                Some((d, _, _)) if *d == depth => tied.push(scope),
                 _ => {
                     best = Some((depth, scope, source));
-                    tied = None;
+                    tied.clear();
                 }
             }
         }
         let Some((_, scope, source)) = best else {
             return Ok(None);
         };
-        if let Some(other) = tied {
+        if !tied.is_empty() {
+            let mut all: Vec<&str> = std::iter::once(scope)
+                .chain(tied)
+                .map(|s| s.name.as_str())
+                .collect();
+            all.sort_unstable();
+            let all: Vec<String> = all.iter().map(|s| format!("`{s}`")).collect();
             return Err(Error::invalid(
                 repo.at.clone(),
                 format!(
-                    "the checkout of `{}` at {} lies under roots of scopes `{}` and `{}` at the same depth",
+                    "the checkout of `{}` at {} lies under roots of scopes {} at the same depth",
                     repo.name,
                     path.display(),
-                    scope.name,
-                    other.name
+                    all.join(", ")
                 ),
                 format!(
-                    "set `scope = \"…\"` in [repos.{}], or give the two scopes different roots",
+                    "set `scope = \"…\"` in [repos.{}], or give the scopes different roots",
                     repo.name
                 ),
             ));
