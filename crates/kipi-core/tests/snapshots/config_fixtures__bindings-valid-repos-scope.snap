@@ -28,6 +28,9 @@ scopes: [
             line: Some(
                 5,
             ),
+            store: Some(
+                "fx",
+            ),
         },
     },
 ]
@@ -56,6 +59,9 @@ repos: [
             file: "<dir>/bindings.toml",
             line: Some(
                 7,
+            ),
+            store: Some(
+                "fx",
             ),
         },
     },

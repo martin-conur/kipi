@@ -10,8 +10,8 @@ use super::source::{Entries, Source};
 use super::{BINDINGS_FILE, NAME_HINT};
 use crate::error::{Error, Location, Result};
 use crate::model::{
-    AgentId, Defaults, Drafted, GrantMode, RepoEntry, STORE_VERSION, Scope, SkillRef, Store,
-    check_name,
+    AgentId, Defaults, Drafted, GrantMode, RemoteUrl, RepoEntry, STORE_VERSION, Scope, SkillRef,
+    Store, check_name,
 };
 
 const TYPE_HINT: &str = "change the value to the expected type";
@@ -96,6 +96,7 @@ pub fn load_store(root: &Path, env: &Env) -> Result<Store> {
     })?;
     let mut store = parse_store(root, src, &env.home)?;
     store.skills = load_skills(root)?;
+    store.tag_locations();
     Ok(store)
 }
 
@@ -156,9 +157,11 @@ fn parse_store(root: &Path, src: Source, home: &Path) -> Result<Store> {
     for (name, r) in raw.repos.0 {
         let k = |key: &'static str| ["repos", name.as_str(), key];
         v.name(&["repos", &name], &name, "repo")?;
-        if let Some(remote) = &r.remote {
-            v.remote(&k("remote"), remote)?;
-        }
+        let remote = r
+            .remote
+            .as_deref()
+            .map(|remote| v.remote(&k("remote"), remote))
+            .transpose()?;
         if let Some(summary) = &r.summary {
             v.summary(&k("summary"), summary)?;
         }
@@ -187,7 +190,7 @@ fn parse_store(root: &Path, src: Source, home: &Path) -> Result<Store> {
             notes: notes.is_file().then_some(notes),
             at: src.at(&["repos", &name]),
             name,
-            remote: r.remote,
+            remote,
             related: r.related,
             scope: r.scope,
             agents: r.agents,
@@ -196,6 +199,7 @@ fn parse_store(root: &Path, src: Source, home: &Path) -> Result<Store> {
     }
 
     Ok(Store {
+        name_at: src.at(&["store", "name"]),
         name: raw.store.name,
         version: raw.store.version,
         share_skills: raw.store.share_skills,
@@ -317,26 +321,26 @@ impl Validator<'_> {
         Ok(path)
     }
 
-    /// `remote` must already be normalized: `host/owner/name`.
-    fn remote(&self, keys: &[&str], raw: &str) -> Result<()> {
-        let normalized = !raw.contains("://")
-            && !raw.contains('@')
-            && !raw.contains(':')
-            && !raw.ends_with(".git")
-            && !raw.ends_with('/')
-            && raw.split('/').count() >= 2
-            && raw
-                .split('/')
-                .all(|p| !p.is_empty() && !p.contains(char::is_whitespace));
-        if !normalized {
-            return Err(Error::invalid(
-                self.src.at(keys),
-                format!("remote `{raw}` is not a normalized origin URL"),
-                "write it as `host/owner/name` (no scheme, user, port or `.git`), e.g. \
-                 `github.com/acme-org/billing-api`; `kipi scan` fills it in",
-            ));
+    /// `remote` must already be normalized: `host/owner/name`. A raw origin URL is
+    /// rejected with its normalized form as the hint.
+    fn remote(&self, keys: &[&str], raw: &str) -> Result<RemoteUrl> {
+        // The normalized form is exactly what `https://<form>` normalizes back to.
+        let as_https = RemoteUrl::parse(&format!("https://{raw}"));
+        match as_https {
+            Ok(url) if url.as_str() == raw => return Ok(url),
+            _ => {}
         }
-        Ok(())
+        let hint = match RemoteUrl::parse(raw).or(as_https) {
+            Ok(url) => format!("write it normalized: `remote = \"{url}\"`"),
+            Err(_) => "write it as `host/owner/name` (no scheme, user, port or `.git`), e.g. \
+                       `github.com/acme-org/billing-api`; `kipi scan` fills it in"
+                .to_owned(),
+        };
+        Err(Error::invalid(
+            self.src.at(keys),
+            format!("remote `{raw}` is not a normalized origin URL"),
+            hint,
+        ))
     }
 
     fn summary(&self, keys: &[&str], raw: &str) -> Result<()> {

@@ -391,6 +391,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "toml_edit",
+ "walkdir",
  "yaml-rust2",
 ]
 

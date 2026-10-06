@@ -16,7 +16,9 @@ repos: [
     RepoEntry {
         name: "one",
         remote: Some(
-            "gitlab.example.com/group/sub/one",
+            RemoteUrl(
+                "gitlab.example.com/group/sub/one",
+            ),
         ),
         summary: None,
         aliases: Drafted {
@@ -37,6 +39,9 @@ repos: [
             file: "<dir>/bindings.toml",
             line: Some(
                 5,
+            ),
+            store: Some(
+                "fx",
             ),
         },
     },

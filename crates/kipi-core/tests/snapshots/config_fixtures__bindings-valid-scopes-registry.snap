@@ -28,6 +28,9 @@ scopes: [
             line: Some(
                 5,
             ),
+            store: Some(
+                "fx",
+            ),
         },
     },
 ]

@@ -14,7 +14,7 @@ use crate::model::Config;
 pub const ENV_CONFIG_DIR: &str = "KIPI_CONFIG_DIR";
 /// Overrides `~/.cache/kipi`.
 pub const ENV_CACHE_DIR: &str = "KIPI_CACHE_DIR";
-/// Overrides the configured store list.
+/// Overrides the configured store list: one path, or several separated by `:` like `PATH`.
 pub const ENV_STORE: &str = "KIPI_STORE";
 
 /// The default store, relative to the home directory.
@@ -29,8 +29,8 @@ pub struct Env {
     pub config_dir: PathBuf,
     /// `$KIPI_CACHE_DIR`, else `~/.cache/kipi`.
     pub cache_dir: PathBuf,
-    /// `$KIPI_STORE`, if set.
-    pub store: Option<PathBuf>,
+    /// `$KIPI_STORE`, split on `:` (empty when unset).
+    pub stores: Vec<PathBuf>,
 }
 
 impl Env {
@@ -45,15 +45,20 @@ impl Env {
         home: Option<PathBuf>,
     ) -> Result<Self> {
         let home = home.filter(|h| h.is_absolute()).ok_or(Error::NoHome)?;
-        let var = |k: &str| {
-            var(k)
-                .filter(|v| !v.is_empty())
-                .map(|v| expand_tilde(&v.to_string_lossy(), &home))
-        };
+        let expand = |v: &std::ffi::OsStr| expand_tilde(&v.to_string_lossy(), &home);
+        let dir = |k: &str| var(k).filter(|v| !v.is_empty()).map(|v| expand(&v));
+        let stores = var(ENV_STORE)
+            .map(|v| {
+                std::env::split_paths(&v)
+                    .filter(|p| !p.as_os_str().is_empty())
+                    .map(|p| expand(p.as_os_str()))
+                    .collect()
+            })
+            .unwrap_or_default();
         Ok(Env {
-            config_dir: var(ENV_CONFIG_DIR).unwrap_or_else(|| home.join(".config/kipi")),
-            cache_dir: var(ENV_CACHE_DIR).unwrap_or_else(|| home.join(".cache/kipi")),
-            store: var(ENV_STORE),
+            config_dir: dir(ENV_CONFIG_DIR).unwrap_or_else(|| home.join(".config/kipi")),
+            cache_dir: dir(ENV_CACHE_DIR).unwrap_or_else(|| home.join(".cache/kipi")),
+            stores,
             home,
         })
     }
@@ -92,14 +97,14 @@ pub(crate) fn absolute_path(raw: &str, home: &Path) -> Result<PathBuf, String> {
 pub(crate) const ABSOLUTE_PATH_HINT: &str = "write an absolute path or one starting with `~/`";
 
 /// The stores to mount, by precedence: `--store` flags > `$KIPI_STORE` > `config.toml`
-/// `stores` > `~/.agents/store`.
+/// `stores` > `~/.agents/store`. Each source replaces the ones below it as a whole.
 pub fn store_paths(flags: &[PathBuf], env: &Env, config: &Config) -> Vec<PathBuf> {
     if !flags.is_empty() {
         let expand = |p: &PathBuf| expand_tilde(&p.to_string_lossy(), &env.home);
         return flags.iter().map(expand).collect();
     }
-    if let Some(store) = &env.store {
-        return vec![store.clone()];
+    if !env.stores.is_empty() {
+        return env.stores.clone();
     }
     if !config.stores.is_empty() {
         return config.stores.clone();
@@ -139,7 +144,7 @@ mod tests {
         let e = env(&[]);
         assert_eq!(e.config_dir, PathBuf::from("/h/.config/kipi"));
         assert_eq!(e.cache_dir, PathBuf::from("/h/.cache/kipi"));
-        assert_eq!(e.store, None);
+        assert!(e.stores.is_empty());
         assert_eq!(
             e.machine_file(),
             PathBuf::from("/h/.config/kipi/machine.toml")
@@ -151,7 +156,16 @@ mod tests {
         ]);
         assert_eq!(e.config_dir, PathBuf::from("/t/cfg"));
         assert_eq!(e.cache_dir, PathBuf::from("/h/c"));
-        assert_eq!(e.store, None, "empty means unset");
+        assert!(e.stores.is_empty(), "empty means unset");
+        let e = env(&[(ENV_STORE, "~/.agents/store::/w/.kipi-acme:")]);
+        assert_eq!(
+            e.stores,
+            [
+                PathBuf::from("/h/.agents/store"),
+                PathBuf::from("/w/.kipi-acme")
+            ],
+            "split like PATH; empty segments skipped"
+        );
     }
 
     #[test]
@@ -171,15 +185,15 @@ mod tests {
             ..Config::default()
         };
         let none = Config::default();
-        let flag = [PathBuf::from("~/flag")];
-        let with_env = env(&[(ENV_STORE, "/env/s")]);
+        let flag = [PathBuf::from("~/flag"), PathBuf::from("/flag2")];
+        let with_env = env(&[(ENV_STORE, "/env/s:/env/t")]);
         assert_eq!(
             store_paths(&flag, &with_env, &config),
-            [PathBuf::from("/h/flag")]
+            [PathBuf::from("/h/flag"), PathBuf::from("/flag2")]
         );
         assert_eq!(
             store_paths(&[], &with_env, &config),
-            [PathBuf::from("/env/s")]
+            [PathBuf::from("/env/s"), PathBuf::from("/env/t")]
         );
         assert_eq!(store_paths(&[], &env(&[]), &config), config.stores);
         assert_eq!(

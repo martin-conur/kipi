@@ -3,7 +3,7 @@
 [store]
 name = "personal"
 version = 1
-share_skills = true                # acme's scope uses "personal/commit-style"
+share_skills = true                # other mounted stores may use "personal/commit-style"
 
 [defaults]
 budget_tokens = 4000
@@ -23,7 +23,7 @@ summary = "Small CLI that renames photos by EXIF date; Rust, entry point src/mai
 aliases = ["photos", "renamer"]
 related = ["api"]
 
-[repos.api]                        # same dir name as acme's `api` checkout; distinct remote
+[repos.api]                        # a common dir name; `remote` tells it apart from other `api` checkouts
 remote = "github.com/example-user/api"
 summary = "Personal JSON API behind the blog and side-tool uploads"  # kipi:draft
 aliases = ["personal-api"]

@@ -19,6 +19,9 @@ defaults: Defaults {
             line: Some(
                 5,
             ),
+            store: Some(
+                "fx",
+            ),
         },
     ),
 }

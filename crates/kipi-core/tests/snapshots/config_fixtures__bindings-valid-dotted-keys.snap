@@ -41,6 +41,9 @@ repos: [
             line: Some(
                 1,
             ),
+            store: Some(
+                "fx",
+            ),
         },
     },
 ]

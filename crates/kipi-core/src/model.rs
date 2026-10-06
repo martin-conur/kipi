@@ -5,8 +5,14 @@
 //! write back comment-preserving, and every scope, repo and skill records the
 //! [`Location`] it was declared at for `explain` / `doctor` provenance.
 //!
-//! `StoreSet` (several mounted stores) and `RemoteUrl` (remote normalization) build on
-//! these in the multi-store stage.
+//! [`StoreSet`] is every mounted store, validated as a set (roadmap §6, Multiple
+//! stores); [`RemoteUrl`] and [`match_checkout`] identify a checkout by its remote.
+
+mod remote;
+mod store_set;
+
+pub use remote::{Checkout, MatchedBy, RemoteUrl, RepoMatch, match_checkout};
+pub use store_set::StoreSet;
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -167,6 +173,8 @@ impl fmt::Debug for TomlDoc {
 pub struct Store {
     /// `[store] name`, unique among mounted stores.
     pub name: String,
+    /// The `[store] name` line.
+    pub name_at: Location,
     /// `[store] version` (always [`STORE_VERSION`] once loaded).
     pub version: i64,
     /// `[store] share_skills`: other stores may use `<name>/<skill>`.
@@ -199,6 +207,19 @@ impl Store {
     /// The skill in `skills/<name>/`.
     pub fn skill(&self, name: &str) -> Option<&Skill> {
         self.skills.iter().find(|s| s.name == name)
+    }
+
+    /// Tag every location in this store with its name, for `store:file:line` provenance.
+    pub(crate) fn tag_locations(&mut self) {
+        let name: std::sync::Arc<str> = self.name.as_str().into();
+        let tag = |at: &mut Location| at.store = Some(name.clone());
+        tag(&mut self.name_at);
+        if let Some(at) = &mut self.defaults.at {
+            tag(at);
+        }
+        self.scopes.iter_mut().for_each(|s| tag(&mut s.at));
+        self.repos.iter_mut().for_each(|r| tag(&mut r.at));
+        self.skills.iter_mut().for_each(|s| tag(&mut s.at));
     }
 }
 
@@ -265,7 +286,7 @@ pub struct RepoEntry {
     /// The entry name, unique across mounted stores.
     pub name: String,
     /// `remote`: normalized origin URL (`host/owner/name`).
-    pub remote: Option<String>,
+    pub remote: Option<RemoteUrl>,
     /// `summary`, with its draft flag.
     pub summary: Option<Drafted<String>>,
     /// `aliases`, with its draft flag (empty and not a draft when unset).
