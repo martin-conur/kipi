@@ -263,6 +263,17 @@ pub fn write_atomic(path: &Path, text: &str) -> Result<()> {
     })
 }
 
+/// Remove the symlink `link` if it still points at `target`, never following it (doctor's
+/// fix for a broken link kipi did not create). `false` when something else stands there
+/// now, or nothing: then nothing is touched.
+pub fn remove_link(link: &Path, target: &Path) -> Result<bool> {
+    if kind(link)? != Some(Kind::Symlink) || fs::read_link(link).ok().as_deref() != Some(target) {
+        return Ok(false);
+    }
+    fs::remove_file(link).map_err(|e| Error::io(link, e, "check the permissions of the path"))?;
+    Ok(true)
+}
+
 fn tmp_path(path: &Path) -> PathBuf {
     let mut name = path.file_name().unwrap_or_default().to_os_string();
     name.push(TMP_SUFFIX);
@@ -1293,6 +1304,22 @@ fn exclude_section(text: &str) -> std::result::Result<Option<(usize, usize)>, St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remove_link_only_removes_the_link_it_was_told_about() {
+        let dir = tempfile::tempdir().unwrap();
+        let link = dir.path().join("l");
+        let (gone, other) = (dir.path().join("gone"), dir.path().join("other"));
+        std::os::unix::fs::symlink(&gone, &link).unwrap();
+        assert!(!remove_link(&link, &other).unwrap(), "another target: kept");
+        assert!(link.is_symlink());
+        assert!(remove_link(&link, &gone).unwrap());
+        assert!(!link.is_symlink());
+        assert!(!remove_link(&link, &gone).unwrap(), "nothing there");
+        fs::write(&link, "file").unwrap();
+        assert!(!remove_link(&link, &gone).unwrap(), "a regular file: kept");
+        assert!(link.is_file());
+    }
 
     #[test]
     fn exclude_section_is_appended_replaced_and_removed() {

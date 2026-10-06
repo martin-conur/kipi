@@ -802,3 +802,45 @@ The spec wins wherever it is explicit.
     first build of the dependencies.
   - **`git::status` (shared with `kipi stores`) answers a directory with no `.git` in it or any
     ancestor without starting `git`** (−5 ms per store that is not under git).
+
+## Stage 3: doctor filesystem/budget checks and `--fix` (#13)
+
+- **Codes K016–K022**, in the issue's order: budget, checkout-gone, stray-link, stale-grant,
+  foreign-link, missing-exclude, tracked-block. Levels as in §10. The #12 note that `--fix` is
+  a user error is superseded.
+- **The filesystem checks look only at synced checkouts** (cloned here, with a
+  `.kipi/manifest.toml` that loads). A never-synced checkout is `kipi status`'s `missing`, not a
+  doctor problem; a malformed manifest is left to `sync`, which reports it with its hint.
+  Orphaned checkouts (entries no mounted store has) are left to `sync --all`, which cleans them.
+- **Symlinks are looked for in the adapters' skill directories only** (`.claude/skills/`,
+  `.agents/skills/`), the only place kipi links. Walking a whole checkout would flag the user's
+  own symlinks (build outputs, vendored trees) that kipi has no opinion on.
+- **One finding per link.** kipi's own link (in the manifest) that is broken or points outside
+  every mounted store is K018 with a re-sync fix. A link kipi did not create is K018 when broken
+  (fix: remove it, a broken link holds nothing) or outside every store (no fix: "anything on disk
+  that kipi did not write is never touched", §8, outranks §10's "remove" for a working link), and
+  K020 otherwise. Store containment is checked on the path as written and resolved, since temp
+  and home directories are often reached through a symlink (`/var` → `/private/var` on macOS).
+- **K019 skips store directories the plan still grants.** A store's `repos/` holds notes only;
+  git keeps no empty directories, so a store without notes usually has no `repos/`, and warning
+  about it would never go away. Reported are entries the plan no longer grants (fix: re-sync)
+  and checkouts that are gone (fix: K017's removal, then re-sync).
+- **K021 compares against the manifest's `[exclude]` patterns**, what the last sync put there, not
+  a fresh plan: a plan that changed since (another adapter) is a stale sync (`status`), not a
+  missing exclude, and recomputing would misjudge repos synced with `--allow-tracked`. A pattern
+  anywhere in the file counts, inside kipi's section or not.
+- **K016's contributors** are each conventions file, the registry (rendered as a registry file),
+  the rest of the block ("this-repo section": headings, related repos, lookup lines) and each
+  skill description; the three largest are named. They are estimates like the total.
+- **`--fix` order**: config edits (K015 `remote`, K017 `machine.toml` lines, comment-preserving),
+  broken-link removal (`apply::remove_link`, only while the link still points where doctor saw
+  it), then a re-sync of the named repos through `sync::run` on a plan resolved after the edits,
+  so a deleted checkout's grant is dropped in the same run. The whole run holds the sync lock.
+  Re-syncing uses doctor's prepared plan, so references reported as errors stay out of it (the
+  same plan doctor checked). Doctor then runs again; the output lists `fixed: …` lines, then the
+  remaining findings, and exits 2 if errors remain. `--fix --dry-run` prints `would …` lines and
+  writes nothing; `--json` adds a `fixed` array. Plain `doctor --dry-run` stays accepted and
+  writes nothing, as before.
+- **CLI doctor tests run on an onboarded home** (checkouts laid out and scanned). The example
+  `machine.toml` points at `/Volumes/...` and `/srv/...`, which do not exist in a test home, so
+  every line would now be K017; the example file itself is unchanged and still valid.

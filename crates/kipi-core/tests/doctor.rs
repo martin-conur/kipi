@@ -4,12 +4,18 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use kipi_core::cache::Caches;
 use kipi_core::config::{self, Env};
+use kipi_core::doctor::fix::Repairs;
 use kipi_core::doctor::{
     self, CheckoutInfo, Checkouts, Code, Finding, Fix, Inputs, Level, diagnose,
 };
-use kipi_core::model::{Machine, Store};
+use kipi_core::git::TrackedCache;
+use kipi_core::manifest::Manifest;
+use kipi_core::model::{Machine, Store, StoreSet};
 use kipi_core::plan::{GrantDir, GrantKind, Source};
+use kipi_core::resolve::resolve;
+use kipi_core::sync::{self, Selection};
 use kipi_core::tokens::{Counter, Tokenizer};
 use kipi_test_support::builders::{
     MachineBuilder, StoreBuilder, draft, remote, reviewed, skill_refs,
@@ -19,9 +25,9 @@ use kipi_test_support::stores::ExampleStore;
 use kipi_test_support::workspace_root;
 use tempfile::TempDir;
 
-/// A token counter with no cache file.
-fn counter() -> Counter {
-    Counter::in_memory(Tokenizer::default())
+/// Caches with no cache file.
+fn caches() -> Caches {
+    Caches::in_memory(Tokenizer::default())
 }
 
 const HOME: &str = "/HOME";
@@ -84,16 +90,9 @@ fn machine() -> MachineBuilder {
 }
 
 fn run(stores: Vec<Store>, machine: &Machine, checkouts: &Checkouts) -> Vec<Finding> {
-    diagnose(
-        stores,
-        machine,
-        checkouts,
-        Path::new(HOME),
-        None,
-        &counter(),
-    )
-    .unwrap_or_else(|e| panic!("{}", e.report()))
-    .findings
+    diagnose(stores, machine, checkouts, Path::new(HOME), None, &caches())
+        .unwrap_or_else(|e| panic!("{}", e.report()))
+        .findings
 }
 
 /// The only finding, which must be of `code`, at its level, with a hint.
@@ -126,6 +125,7 @@ fn checkouts(list: &[(&str, &str, Option<&str>)]) -> Checkouts {
                 ((*entry).to_owned(), info)
             })
             .collect(),
+        ..Checkouts::default()
     }
 }
 
@@ -143,7 +143,7 @@ fn the_base_fixture_is_clean() {
 #[test]
 fn codes_are_stable_and_unique() {
     let codes: Vec<&str> = Code::ALL.iter().map(|c| c.as_str()).collect();
-    let want: Vec<String> = (1..=15).map(|n| format!("K{n:03}")).collect();
+    let want: Vec<String> = (1..=22).map(|n| format!("K{n:03}")).collect();
     assert_eq!(codes, want);
     let docs = fs::read_to_string(workspace_root().join("docs/doctor.md")).unwrap();
     for code in Code::ALL {
@@ -259,7 +259,7 @@ fn k003_related_repo_in_an_unrelated_scope() {
         &Checkouts::default(),
         Path::new(HOME),
         None,
-        &counter(),
+        &caches(),
     )
     .unwrap_or_else(|e| panic!("{}", e.report()));
     let f = exactly_one(diagnosis.findings, Code::ScopeCrossing);
@@ -281,7 +281,7 @@ fn k003_grant_crossing_scopes_in_a_plan() {
         &checkouts,
         Path::new(HOME),
         None,
-        &counter(),
+        &caches(),
     )
     .unwrap();
     assert_eq!(diagnosis.findings, vec![]);
@@ -300,7 +300,8 @@ fn k003_grant_crossing_scopes_in_a_plan() {
         checkouts: &checkouts,
         home: Path::new(HOME),
         only: None,
-        tokens: &counter(),
+        tokens: &Counter::in_memory(Tokenizer::default()),
+        tracked: &TrackedCache::default(),
     };
     let f = exactly_one(doctor::check(&inputs).unwrap(), Code::ScopeCrossing);
     assert!(f.message.contains("repo `y` (scope `b`)"), "{}", f.message);
@@ -580,7 +581,7 @@ fn k012_reference_into_another_store() {
         &Checkouts::default(),
         Path::new(HOME),
         None,
-        &counter(),
+        &caches(),
     )
     .unwrap_or_else(|e| panic!("{}", e.report()));
     let f = exactly_one(diagnosis.findings, Code::CrossStore);
@@ -714,6 +715,289 @@ fn k015_entry_without_remote_whose_checkout_has_one() {
 }
 
 #[test]
+fn k016_always_on_over_budget_names_the_largest_parts() {
+    let fx = Fx::new();
+    let store = fx.work().defaults(|d| d.budget_tokens = Some(10)).build();
+    let f = exactly_one(
+        run(vec![store], &machine().build(), &Checkouts::default()),
+        Code::Budget,
+    );
+    assert_eq!(f.repo.as_deref(), Some("api"));
+    assert!(f.message.contains("over the budget of 10"), "{}", f.message);
+    assert!(f.message.contains("largest: "), "{}", f.message);
+    assert!(
+        f.message.contains("registry `work` (1 repos)"),
+        "{}",
+        f.message
+    );
+    assert!(
+        f.message.contains("skill `review` description"),
+        "{}",
+        f.message
+    );
+    assert_eq!(f.fix, None);
+}
+
+#[test]
+fn k017_checkout_path_no_longer_exists() {
+    let fx = Fx::new();
+    let found = Checkouts {
+        missing: [("api".to_owned(), PathBuf::from("/w/api"))].into(),
+        ..Checkouts::default()
+    };
+    let f = exactly_one(
+        run(vec![fx.work().build()], &machine().build(), &found),
+        Code::CheckoutGone,
+    );
+    assert!(f.message.contains("/w/api"), "{}", f.message);
+    assert!(f.at.is_some(), "points at the machine.toml line");
+    assert_eq!(
+        f.fix,
+        Some(Fix::RemoveCheckout {
+            entry: "api".into(),
+            path: "/w/api".into(),
+        })
+    );
+}
+
+/// Store `work` (skill `review` on disk) with repos `api` and `web` (related to `api`),
+/// both cloned under `<tmp>/w` and synced. Doctor finds nothing in it.
+struct Synced {
+    fx: Fx,
+    store: Store,
+    machine: Machine,
+}
+
+impl Synced {
+    fn new() -> Self {
+        let fx = Fx::new();
+        let w = fx.dir.path().join("w");
+        let root = fx.root("work");
+        let skill = root.join("skills/review");
+        fs::create_dir_all(&skill).unwrap();
+        fs::write(
+            skill.join("SKILL.md"),
+            "---\nname: review\ndescription: Use when testing review.\n---\n",
+        )
+        .unwrap();
+        let store = fx
+            .work()
+            .repo("web", |r| {
+                summarized(r);
+                r.remote = Some(remote("git.example.com/work/web"));
+                r.related = vec!["api".into()];
+            })
+            .build();
+        for name in ["api", "web"] {
+            let repo = FakeRepo {
+                entry: name.into(),
+                dir: name.into(),
+                origin_url: Some(format!("git@git.example.com:work/{name}.git")),
+                readme: None,
+                manifest: ManifestKind::None,
+                description: None,
+            };
+            create_fake_repo(&w.join(name), &repo).unwrap();
+        }
+        let machine = MachineBuilder::new()
+            .roots("work", &[w.to_str().unwrap()])
+            .repo("api", w.join("api"))
+            .repo("web", w.join("web"))
+            .build();
+        let synced = Synced { fx, store, machine };
+        synced.sync();
+        synced
+    }
+
+    fn checkout(&self, name: &str) -> PathBuf {
+        self.fx.dir.path().join("w").join(name)
+    }
+
+    fn sync(&self) {
+        let set = StoreSet::new(vec![self.store.clone()]).unwrap();
+        let plan = resolve(&set, &self.machine).unwrap();
+        let opts = sync::Options::default();
+        sync::run(
+            &set,
+            &self.machine,
+            &plan,
+            &Selection::All,
+            &opts,
+            &caches(),
+        )
+        .unwrap();
+    }
+
+    fn diagnose(&self) -> Vec<Finding> {
+        run(
+            vec![self.store.clone()],
+            &self.machine,
+            &Checkouts::read(&self.machine),
+        )
+    }
+
+    /// The findings of `code`, each checked for a hint.
+    fn of(&self, code: Code) -> Vec<Finding> {
+        let all = self.diagnose();
+        let found: Vec<Finding> = all.iter().filter(|f| f.code == code).cloned().collect();
+        for f in &found {
+            assert_eq!(f.level, code.level());
+            assert!(!f.hint.trim().is_empty(), "{f:#?}");
+        }
+        found
+    }
+}
+
+#[test]
+fn a_synced_checkout_is_clean() {
+    let s = Synced::new();
+    assert!(s.checkout("api").join(".claude/skills/review").is_symlink());
+    // The store has no `repos/`: a granted store dir that does not exist yet is not stale.
+    assert!(!s.fx.dir.path().join("work/repos").exists());
+    assert_eq!(s.diagnose(), vec![]);
+}
+
+#[test]
+fn k018_kipis_link_to_a_missing_skill_is_resynced() {
+    let s = Synced::new();
+    fs::remove_dir_all(s.fx.dir.path().join("work/skills/review")).unwrap();
+    let found = s.of(Code::StrayLink);
+    // One per adapter's skills dir, in each of the two repos.
+    assert_eq!(found.len(), 4, "{found:#?}");
+    let f = &found[0];
+    assert!(
+        f.message
+            .starts_with("kipi's link .claude/skills/review points at ")
+    );
+    assert!(f.message.ends_with("which does not exist"), "{}", f.message);
+    assert_eq!(f.fix, Some(Fix::Resync { repo: "api".into() }));
+}
+
+#[test]
+fn k018_foreign_links_broken_or_outside_every_store() {
+    let s = Synced::new();
+    let skills = s.checkout("api").join(".claude/skills");
+    let gone = s.fx.dir.path().join("nowhere");
+    std::os::unix::fs::symlink(&gone, skills.join("broken")).unwrap();
+    let outside = s.fx.dir.path().join("elsewhere/tool");
+    fs::create_dir_all(&outside).unwrap();
+    std::os::unix::fs::symlink(&outside, skills.join("tool")).unwrap();
+    let found = s.of(Code::StrayLink);
+    assert_eq!(found.len(), 2, "{found:#?}");
+    assert!(found[0].message.ends_with("which does not exist"));
+    assert_eq!(
+        found[0].fix,
+        Some(Fix::RemoveLink {
+            link: skills.join("broken"),
+            target: gone,
+        })
+    );
+    assert!(found[1].message.ends_with("outside every mounted store"));
+    assert_eq!(
+        found[1].fix, None,
+        "a working link of the user's is left alone"
+    );
+}
+
+#[test]
+fn k019_grant_to_a_checkout_that_is_gone() {
+    let s = Synced::new();
+    fs::remove_dir_all(s.checkout("api")).unwrap();
+    let f = s.of(Code::StaleGrant);
+    assert_eq!(f.len(), 1, "{f:#?}");
+    assert_eq!(f[0].repo.as_deref(), Some("web"));
+    assert!(
+        f[0].message
+            .starts_with(".claude/settings.local.json grants read access to ")
+    );
+    assert_eq!(f[0].fix, Some(Fix::Resync { repo: "web".into() }));
+    assert_eq!(s.of(Code::CheckoutGone).len(), 1);
+}
+
+#[test]
+fn k019_grant_dropped_from_the_plan() {
+    let s = Synced::new();
+    // A grant entry an earlier sync wrote for a directory since deleted and unplanned.
+    let path = s.checkout("api").join(".kipi/manifest.toml");
+    let mut manifest = Manifest::load(&path).unwrap();
+    let gone = s.fx.dir.path().join("old/dir");
+    manifest.grants[0].entries.push(gone.clone());
+    fs::write(&path, manifest.to_toml()).unwrap();
+    let f = exactly_one(s.diagnose(), Code::StaleGrant);
+    assert!(f.message.contains(gone.to_str().unwrap()), "{}", f.message);
+    assert_eq!(f.fix, Some(Fix::Resync { repo: "api".into() }));
+}
+
+#[test]
+fn k020_foreign_link_into_a_store() {
+    let s = Synced::new();
+    let skills = s.checkout("api").join(".claude/skills");
+    let target = s.fx.dir.path().join("work/skills/review");
+    std::os::unix::fs::symlink(&target, skills.join("mine")).unwrap();
+    let f = exactly_one(s.diagnose(), Code::ForeignLink);
+    assert!(f.message.contains(".claude/skills/mine"), "{}", f.message);
+    assert_eq!(f.fix, None);
+}
+
+#[test]
+fn k021_exclude_section_lost() {
+    let s = Synced::new();
+    let exclude = s.checkout("api").join(".git/info/exclude");
+    let text = fs::read_to_string(&exclude).unwrap();
+    fs::write(&exclude, text.replace(".kipi/\n", "")).unwrap();
+    let f = exactly_one(s.diagnose(), Code::MissingExclude);
+    assert!(f.message.contains("`.kipi/`"), "{}", f.message);
+    assert_eq!(f.fix, Some(Fix::Resync { repo: "api".into() }));
+}
+
+#[test]
+fn k022_generated_block_in_a_tracked_file() {
+    let s = Synced::new();
+    let api = s.checkout("api");
+    let status = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&api)
+        .args(["add", "CLAUDE.md"])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let f = exactly_one(s.diagnose(), Code::TrackedBlock);
+    assert!(
+        f.message
+            .starts_with("CLAUDE.md holds kipi's generated block")
+    );
+}
+
+#[test]
+fn repairs_collect_each_fix_once_in_order() {
+    let s = Synced::new();
+    fs::remove_dir_all(s.checkout("api")).unwrap();
+    let exclude = s.checkout("web").join(".git/info/exclude");
+    fs::write(&exclude, "").unwrap();
+    let findings = s.diagnose();
+    let machine_file = s.fx.dir.path().join("machine.toml");
+    let repairs = Repairs::plan(
+        &findings,
+        std::slice::from_ref(&s.store),
+        &s.machine,
+        &machine_file,
+    );
+    assert_eq!(repairs.resync, vec!["web".to_owned()]);
+    assert_eq!(
+        repairs
+            .fixes
+            .iter()
+            .filter(|f| matches!(f, Fix::Resync { .. }))
+            .count(),
+        1
+    );
+    assert!(repairs.fixes.contains(&Fix::RemoveCheckout {
+        entry: "api".into(),
+        path: s.checkout("api"),
+    }));
+}
+
+#[test]
 fn only_keeps_one_repos_findings() {
     let fx = Fx::new();
     let store = fx
@@ -733,7 +1017,7 @@ fn only_keeps_one_repos_findings() {
             &Checkouts::default(),
             Path::new(HOME),
             Some(name),
-            &counter(),
+            &caches(),
         )
         .unwrap()
         .findings
@@ -792,7 +1076,7 @@ fn unrelated_resolution_errors_still_fail() {
         &Checkouts::default(),
         Path::new(HOME),
         None,
-        &counter(),
+        &caches(),
     )
     .expect_err("an unknown scope has no check of its own");
     assert!(err.to_string().contains("no such scope"), "{err}");
@@ -834,6 +1118,8 @@ fn checkouts_are_read_from_git() {
             ("ssh", Some("git.example.com/work/api"))
         ]
     );
+    let missing: Vec<&str> = found.missing.keys().map(String::as_str).collect();
+    assert_eq!(missing, vec!["gone"]);
 }
 
 #[test]
@@ -851,7 +1137,7 @@ fn example_stores_have_no_errors() {
         &Checkouts::default(),
         Path::new(HOME),
         None,
-        &counter(),
+        &caches(),
     )
     .unwrap_or_else(|e| panic!("{}", e.report()));
     assert!(!diagnosis.has_errors(), "{:#?}", diagnosis.findings);

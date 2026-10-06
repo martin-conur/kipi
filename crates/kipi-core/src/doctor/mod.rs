@@ -7,12 +7,22 @@
 //! the scope chain), removing each one so the rest still resolves; then [`check`] runs
 //! every other check over the resolved [`Plan`]. Anything else that stops resolution (a
 //! cycle in `extends`, an unknown scope) has no check of its own and is returned as the
-//! error it always was. Codes are stable and documented in `docs/doctor.md`.
+//! error it always was. The filesystem checks (K016–K022) look at each synced checkout's
+//! manifest and disk. Codes are stable and documented in `docs/doctor.md`.
+//!
+//! [`fix`] turns the safe fixes of a set of findings into [`fix::Repairs`] for
+//! `doctor --fix`.
 
 mod aliases;
+mod budget;
 mod checkouts;
 mod cross_store;
+mod exclude;
+pub mod fix;
+mod gone;
+mod grants;
 mod home_paths;
+mod links;
 mod missing_skills;
 mod notes_size;
 mod prepare;
@@ -22,6 +32,7 @@ mod root;
 mod scope_crossing;
 mod skill_description;
 mod summary;
+mod tracked_block;
 mod unscoped;
 mod wrong_store;
 
@@ -29,10 +40,14 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use crate::apply::Target;
+use crate::cache::Caches;
 use crate::error::{Location, Result};
-use crate::git;
+use crate::git::{self, TrackedCache};
+use crate::manifest::Manifest;
 use crate::model::{Machine, RemoteUrl, Store, StoreSet};
 use crate::plan::{Plan, RepoPlan};
+use crate::render::display_path;
 use crate::tokens::Counter;
 
 pub use prepare::prepare;
@@ -99,11 +114,25 @@ pub enum Code {
     CheckoutMismatch,
     /// K015: an entry without `remote` whose checkout has one.
     MissingRemote,
+    /// K016: always-on text over `budget_tokens`.
+    Budget,
+    /// K017: a `machine.toml [repos]` path that no longer exists.
+    CheckoutGone,
+    /// K018: a skill link pointing outside every mounted store or at nothing.
+    StrayLink,
+    /// K019: a read-grant entry kipi wrote that points at a missing path.
+    StaleGrant,
+    /// K020: a link beside kipi's that the manifest does not list.
+    ForeignLink,
+    /// K021: kipi's `.git/info/exclude` patterns missing.
+    MissingExclude,
+    /// K022: a generated block in a file git tracks.
+    TrackedBlock,
 }
 
 impl Code {
     /// Every check, in code order.
-    pub const ALL: [Code; 15] = [
+    pub const ALL: [Code; 22] = [
         Code::RemoteScopeMismatch,
         Code::RootNotAncestor,
         Code::ScopeCrossing,
@@ -119,9 +148,16 @@ impl Code {
         Code::WrongStore,
         Code::CheckoutMismatch,
         Code::MissingRemote,
+        Code::Budget,
+        Code::CheckoutGone,
+        Code::StrayLink,
+        Code::StaleGrant,
+        Code::ForeignLink,
+        Code::MissingExclude,
+        Code::TrackedBlock,
     ];
 
-    /// The stable code, `K001` to `K015`.
+    /// The stable code, `K001` to `K022`.
     pub fn as_str(self) -> &'static str {
         self.info().0
     }
@@ -153,6 +189,13 @@ impl Code {
             Code::WrongStore => ("K013", "wrong-store", Level::Error),
             Code::CheckoutMismatch => ("K014", "checkout-mismatch", Level::Warn),
             Code::MissingRemote => ("K015", "missing-remote", Level::Info),
+            Code::Budget => ("K016", "budget", Level::Warn),
+            Code::CheckoutGone => ("K017", "checkout-gone", Level::Warn),
+            Code::StrayLink => ("K018", "stray-link", Level::Warn),
+            Code::StaleGrant => ("K019", "stale-grant", Level::Warn),
+            Code::ForeignLink => ("K020", "foreign-link", Level::Info),
+            Code::MissingExclude => ("K021", "missing-exclude", Level::Warn),
+            Code::TrackedBlock => ("K022", "tracked-block", Level::Info),
         }
     }
 }
@@ -209,7 +252,7 @@ impl Finding {
     }
 }
 
-/// A safe fix. `--fix` (applying them) lands with the filesystem checks (#13).
+/// A safe fix, applied by `doctor --fix` ([`fix::Repairs`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Fix {
     /// Write `remote = "<remote>"` into `[repos.<repo>]` of store `store`.
@@ -221,6 +264,46 @@ pub enum Fix {
         /// The checkout's normalized origin.
         remote: RemoteUrl,
     },
+    /// Remove `"<entry>" = "<path>"` from `machine.toml [repos]`.
+    RemoveCheckout {
+        /// The entry name.
+        entry: String,
+        /// The path that no longer exists.
+        path: PathBuf,
+    },
+    /// Remove the broken symlink `link` (still pointing at `target`); kipi did not create it.
+    RemoveLink {
+        /// The link (absolute).
+        link: PathBuf,
+        /// What it points at.
+        target: PathBuf,
+    },
+    /// Re-sync the repo entry through the apply engine (`kipi sync <repo>`).
+    Resync {
+        /// The entry.
+        repo: String,
+    },
+}
+
+impl Fix {
+    /// One line saying what the fix does; `home` is shown as `~`.
+    pub fn describe(&self, home: Option<&Path>) -> String {
+        match self {
+            Fix::FillRemote {
+                store,
+                repo,
+                remote,
+            } => format!("fill `remote = \"{remote}\"` in [repos.{repo}] of store `{store}`"),
+            Fix::RemoveCheckout { entry, path } => format!(
+                "remove `{entry}` ({}) from machine.toml [repos]",
+                display_path(path, home)
+            ),
+            Fix::RemoveLink { link, .. } => {
+                format!("remove the broken link {}", display_path(link, home))
+            }
+            Fix::Resync { repo } => format!("re-sync `{repo}`"),
+        }
+    }
 }
 
 /// What doctor knows about one `machine.toml [repos]` checkout.
@@ -232,18 +315,26 @@ pub struct CheckoutInfo {
     pub origin: Option<RemoteUrl>,
 }
 
-/// The checkouts on this machine that exist, by entry name.
+/// The `machine.toml [repos]` checkouts on this machine, by entry name.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Checkouts {
-    /// Entry name → checkout.
+    /// Entry name → checkout, for the checkouts that are directories.
     pub by_entry: BTreeMap<String, CheckoutInfo>,
+    /// Entry name → recorded path, for the ones that are not (K017).
+    pub missing: BTreeMap<String, PathBuf>,
 }
 
 impl Checkouts {
-    /// Read the origin of every `machine.toml [repos]` checkout that is a directory.
-    /// A missing directory is skipped (a filesystem check, #13); a directory git cannot
-    /// read, or an origin that is a local path, counts as having no origin.
+    /// Read the origin of every `machine.toml [repos]` checkout that is a directory, and
+    /// note the ones that are not. A directory git cannot read, or an origin that is a
+    /// local path, counts as having no origin.
     pub fn read(machine: &Machine) -> Self {
+        let missing = machine
+            .repos
+            .iter()
+            .filter(|r| !r.path.is_dir())
+            .map(|r| (r.entry.clone(), r.path.clone()))
+            .collect();
         let by_entry = machine
             .repos
             .iter()
@@ -260,7 +351,7 @@ impl Checkouts {
                 (r.entry.clone(), info)
             })
             .collect();
-        Checkouts { by_entry }
+        Checkouts { by_entry, missing }
     }
 
     /// The checkout of entry `name`.
@@ -286,6 +377,15 @@ pub struct Inputs<'a> {
     pub only: Option<&'a str>,
     /// Counts tokens for the size checks.
     pub tokens: &'a Counter,
+    /// Which files git tracks, for K022.
+    pub tracked: &'a TrackedCache,
+}
+
+/// A repo cloned here that kipi has synced: its plan, checkout and manifest.
+pub(crate) struct Synced<'a> {
+    pub repo: &'a RepoPlan,
+    pub dir: &'a Path,
+    pub manifest: Manifest,
 }
 
 impl Inputs<'_> {
@@ -300,6 +400,43 @@ impl Inputs<'_> {
     /// Whether store-level findings (about a skill or a file, not a repo) are wanted.
     fn store_level(&self) -> bool {
         self.only.is_none()
+    }
+
+    /// The repos the filesystem checks look at: cloned here, with a manifest. A manifest
+    /// that does not load is skipped; `kipi sync` reports it with its own hint.
+    fn synced(&self) -> Vec<Synced<'_>> {
+        self.repos()
+            .filter_map(|repo| {
+                let dir = self.checkouts.get(&repo.name)?.path.as_path();
+                let path = Target::repo(dir).manifest;
+                if !path.is_file() {
+                    return None;
+                }
+                let manifest = Manifest::load(&path).ok()?;
+                Some(Synced {
+                    repo,
+                    dir,
+                    manifest,
+                })
+            })
+            .collect()
+    }
+
+    /// Whether `path` lies inside a mounted store (compared as written, then resolved).
+    fn in_store(&self, path: &Path) -> bool {
+        let real = std::fs::canonicalize(path).ok();
+        self.stores.stores().iter().any(|s| {
+            let root = std::fs::canonicalize(&s.root).ok();
+            [Some(&s.root), root.as_ref()]
+                .into_iter()
+                .flatten()
+                .any(|r| path.starts_with(r) || real.as_ref().is_some_and(|p| p.starts_with(r)))
+        })
+    }
+
+    /// `path` as shown in messages, with the home directory as `~`.
+    fn shown(&self, path: &Path) -> String {
+        display_path(path, Some(self.home))
     }
 
     /// The remote that identifies `repo`: its checkout's origin when it has one, else
@@ -343,7 +480,7 @@ pub fn diagnose(
     checkouts: &Checkouts,
     home: &Path,
     only: Option<&str>,
-    tokens: &Counter,
+    caches: &Caches,
 ) -> Result<Diagnosis> {
     let prepared = prepare(stores, machine)?;
     let inputs = Inputs {
@@ -353,7 +490,8 @@ pub fn diagnose(
         checkouts,
         home,
         only,
-        tokens,
+        tokens: &caches.tokens,
+        tracked: &caches.tracked,
     };
     let mut findings: Vec<Finding> = prepared
         .findings
@@ -384,6 +522,12 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>> {
     registry_size::check(inputs, &mut out);
     wrong_store::check(inputs, &mut out);
     checkouts::check(inputs, &mut out);
+    budget::check(inputs, &mut out);
+    gone::check(inputs, &mut out);
+    links::check(inputs, &mut out);
+    grants::check(inputs, &mut out);
+    exclude::check(inputs, &mut out);
+    tracked_block::check(inputs, &mut out);
     Ok(out)
 }
 

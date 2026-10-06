@@ -475,10 +475,15 @@ pub fn sync(outcome: &Outcome, dry_run: bool) -> serde_json::Result<String> {
 
 /// `kipi doctor`'s findings as pretty-printed JSON with a trailing newline
 /// (`docs/doctor.md`, "JSON").
-pub fn doctor(set: &StoreSet, findings: &[Finding]) -> serde_json::Result<String> {
+pub fn doctor(
+    set: &StoreSet,
+    findings: &[Finding],
+    fixed: Option<&[Fix]>,
+) -> serde_json::Result<String> {
     let count = |level| findings.iter().filter(|f| f.level == level).count();
     let doc = DoctorJson {
         version: JSON_VERSION,
+        fixed: fixed.map(|f| f.iter().map(fix_json).collect()),
         findings: findings
             .iter()
             .map(|f| FindingJson {
@@ -489,17 +494,7 @@ pub fn doctor(set: &StoreSet, findings: &[Finding]) -> serde_json::Result<String
                 at: f.at.as_ref().map(|at| set.provenance(at)),
                 message: &f.message,
                 hint: &f.hint,
-                fix: f.fix.as_ref().map(|fix| match fix {
-                    Fix::FillRemote {
-                        store,
-                        repo,
-                        remote,
-                    } => FixJson::FillRemote {
-                        store,
-                        repo,
-                        remote: remote.as_str(),
-                    },
-                }),
+                fix: f.fix.as_ref().map(fix_json),
             })
             .collect(),
         summary: DoctorSummaryJson {
@@ -513,9 +508,29 @@ pub fn doctor(set: &StoreSet, findings: &[Finding]) -> serde_json::Result<String
     Ok(out)
 }
 
+fn fix_json(fix: &Fix) -> FixJson<'_> {
+    match fix {
+        Fix::FillRemote {
+            store,
+            repo,
+            remote,
+        } => FixJson::FillRemote {
+            store,
+            repo,
+            remote: remote.as_str(),
+        },
+        Fix::RemoveCheckout { entry, path } => FixJson::RemoveCheckout { entry, path },
+        Fix::RemoveLink { link, target } => FixJson::RemoveLink { link, target },
+        Fix::Resync { repo } => FixJson::Resync { repo },
+    }
+}
+
 #[derive(Serialize)]
 struct DoctorJson<'a> {
     version: u32,
+    /// The fixes `--fix` applied (absent without `--fix`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fixed: Option<Vec<FixJson<'a>>>,
     findings: Vec<FindingJson<'a>>,
     summary: DoctorSummaryJson,
 }
@@ -539,6 +554,17 @@ enum FixJson<'a> {
         store: &'a str,
         repo: &'a str,
         remote: &'a str,
+    },
+    RemoveCheckout {
+        entry: &'a str,
+        path: &'a Path,
+    },
+    RemoveLink {
+        link: &'a Path,
+        target: &'a Path,
+    },
+    Resync {
+        repo: &'a str,
     },
 }
 

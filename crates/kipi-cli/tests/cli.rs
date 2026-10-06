@@ -952,27 +952,27 @@ fn a_renamed_entry_keeps_its_checkout_synced_not_cleaned_up() {
 
 #[test]
 fn doctor_on_the_example_stores_exits_0() {
-    let home = Home::new();
-    let out = stdout_of(&home, home.kipi().arg("doctor"));
+    let home = onboarded_home();
+    let out = stdout_of(&home, home.bare().arg("doctor"));
     insta::assert_snapshot!("doctor", out);
     assert!(out.ends_with("0 errors, 0 warnings, 5 info\n"), "{out}");
-    let json = stdout_of(&home, home.kipi().args(["doctor", "--json"]));
+    let json = stdout_of(&home, home.bare().args(["doctor", "--json"]));
     insta::assert_snapshot!("doctor-json", json);
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
     assert_eq!(parsed["summary"]["error"], 0);
-    let one = stdout_of(&home, home.kipi().args(["doctor", "dotfiles"]));
+    let one = stdout_of(&home, home.bare().args(["doctor", "dotfiles"]));
     assert!(
         one.starts_with("info[K008] dotfiles: repo `dotfiles` has no summary"),
         "{one}"
     );
     assert!(one.ends_with("0 errors, 0 warnings, 1 info\n"), "{one}");
-    let clean = stdout_of(&home, home.kipi().args(["doctor", "side-tool"]));
+    let clean = stdout_of(&home, home.bare().args(["doctor", "side-tool"]));
     assert_eq!(clean, "no problems found\n");
 }
 
 #[test]
 fn doctor_exits_2_on_an_error_and_still_prints_every_finding() {
-    let home = Home::new();
+    let home = onboarded_home();
     let bindings = home.store(ExampleStore::Acme).join("bindings.toml");
     let text = fs::read_to_string(&bindings)
         .unwrap()
@@ -1017,14 +1017,14 @@ fn doctor_exits_2_on_an_error_and_still_prints_every_finding() {
 
 #[test]
 fn doctor_reports_a_cross_store_reference_instead_of_failing() {
-    let home = Home::new();
+    let home = onboarded_home();
     let bindings = home.store(ExampleStore::Personal).join("bindings.toml");
     let text = fs::read_to_string(&bindings)
         .unwrap()
         .replace("share_skills = true", "share_skills = false");
     fs::write(&bindings, text).unwrap();
     // Everything else refuses to load these stores...
-    let (code, _) = failure_of(&home, home.kipi().arg("resolve"));
+    let (code, _) = failure_of(&home, home.bare().arg("resolve"));
     assert_eq!(code, 1);
     // ...doctor names the problem and checks the rest.
     let out = home
@@ -1050,16 +1050,61 @@ fn doctor_reports_a_cross_store_reference_instead_of_failing() {
 
 #[test]
 fn doctor_user_errors_exit_1() {
-    let home = Home::new();
-    let (code, err) = failure_of(&home, home.kipi().args(["doctor", "billing-apu"]));
+    let home = onboarded_home();
+    let (code, err) = failure_of(&home, home.bare().args(["doctor", "billing-apu"]));
     assert_eq!(code, 1);
     assert!(err.contains("did you mean `billing-api`?"), "{err}");
-    let (code, err) = failure_of(&home, home.kipi().args(["doctor", "--fix"]));
-    assert_eq!(code, 1);
+}
+
+#[test]
+fn doctor_fix_repairs_a_dangling_link_a_stale_grant_and_a_missing_exclude() {
+    let home = synced_home();
+    let side_tool = home.path().join("code/side-tool");
+    // A broken link kipi did not create.
+    let broken = side_tool.join(".claude/skills/old-skill");
+    std::os::unix::fs::symlink(home.path().join("nowhere"), &broken).unwrap();
+    // side-tool's related checkout is deleted: its machine.toml line and grant are stale.
+    fs::remove_dir_all(home.path().join("code/api")).unwrap();
+    // kipi's exclude section is lost.
+    let exclude = home.path().join("work/acme/billing-api/.git/info/exclude");
+    fs::write(&exclude, "# mine\n").unwrap();
+
+    let found = stdout_of(&home, home.bare().arg("doctor"));
+    for code in ["K017", "K018", "K019", "K021"] {
+        assert!(found.contains(&format!("[{code}]")), "{code} in {found}");
+    }
+    let before = files_under(home.path());
+    let dry = stdout_of(&home, home.bare().args(["doctor", "--fix", "--dry-run"]));
+    insta::assert_snapshot!("doctor-fix-dry-run", dry);
+    assert_eq!(files_under(home.path()), before, "a dry run writes nothing");
+
+    let fixed = stdout_of(&home, home.bare().args(["doctor", "--fix"]));
+    insta::assert_snapshot!("doctor-fix", fixed);
+    assert!(!broken.is_symlink());
+    let settings = fs::read_to_string(side_tool.join(".claude/settings.local.json")).unwrap();
+    assert!(!settings.contains("code/api"), "{settings}");
+    let text = fs::read_to_string(&exclude).unwrap();
     assert!(
-        err.starts_with("error: `kipi doctor --fix` is not implemented yet"),
-        "{err}"
+        text.starts_with("# mine\n") && text.contains("\n.kipi/\n"),
+        "{text}"
     );
+    let machine = fs::read_to_string(home.path().join(".config/kipi/machine.toml")).unwrap();
+    assert!(!machine.contains("code/api"), "{machine}");
+    for code in ["K017", "K018", "K019", "K021"] {
+        assert!(
+            !fixed.contains(&format!("[{code}]")),
+            "{code} left in {fixed}"
+        );
+    }
+
+    // Idempotent: nothing left to fix, nothing written.
+    let after = files_under(home.path());
+    let again = stdout_of(&home, home.bare().args(["doctor", "--fix"]));
+    assert!(again.starts_with("nothing to fix\n\n"), "{again}");
+    assert_eq!(files_under(home.path()), after);
+    let doc = json_of(&home, home.bare().args(["doctor", "--fix", "--json"]));
+    assert_eq!(doc["fixed"], serde_json::json!([]));
+    assert_eq!(files_under(home.path()), after);
 }
 
 /// A skill directory as a user keeps it under `~/.claude/skills/<name>`.
