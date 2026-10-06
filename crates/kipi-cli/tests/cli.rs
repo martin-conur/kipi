@@ -1240,6 +1240,8 @@ fn add_repo_registers_an_entry_and_its_checkout() {
                 "add",
                 "repo",
                 "notes-app",
+                "--scope",
+                "personal",
                 "--summary",
                 "Notes, synced",
                 "--path",
