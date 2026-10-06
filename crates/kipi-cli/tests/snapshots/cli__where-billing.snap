@@ -1,0 +1,9 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: out
+---
+billing-api — Invoicing and payment orchestration; OpenAPI in api/openapi.yaml (draft)
+aliases: billing, invoices
+scope: acme (store acme)
+local: /Volumes/work/acme/billing-api
+notes: [HOME]/stores/acme-store/repos/billing-api/notes.md

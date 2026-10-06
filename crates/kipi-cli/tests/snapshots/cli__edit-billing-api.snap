@@ -1,0 +1,6 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: out
+---
+reviewed repos.billing-api.summary (draft marker removed)
+[HOME]/stores/acme-store/bindings.toml: valid

@@ -680,3 +680,49 @@ The spec wins wherever it is explicit.
   did for `acme` and `acme-ml`. Without it doctor rightly warned (K002) that the four personal
   checkouts sit outside `~/code`. The resolve test now exercises the fallback by dropping that
   override.
+
+## Stage 3: agent-facing lookup — `where`, `grep`, `edit` (#11)
+
+- **What a repo may see is its scope chain: its scope, the scope's ancestors and its
+  descendants** (`search::View`), the same rule `related` obeys (§6), within the repo's own store.
+  An unscoped repo sees the unscoped repos of its store (resolution counts those as one chain).
+  Shared skills the chain binds are searched like any other bound skill; nothing else of the
+  sharing store is. Sibling scopes are out of view even when a common ancestor's registry lists
+  them, so `where`/`grep` never widen what `related` may reach.
+- **The view comes from the working directory.** The repo whose checkout holds the cwd (deepest
+  match, symlinks resolved) sets it; outside every checkout both commands see every mounted store
+  (a human at a shell). `where --any-scope` and `grep --scope <s>` override. A not-found `where`
+  suggests near names only from inside the view, so a miss never names a repo outside it.
+- **`where` matching**: an exact entry name wins; otherwise aliases (case-folded, whitespace
+  normalized, §6). Several alias matches are an error listing the entries (exit 1); `doctor` reports
+  the collision (K004). Output is one fact per line with absolute paths and no colors; `--notes`
+  appends the notes, and is a user error when the repo has none (hint: `kipi edit notes:<repo>`).
+- **`grep`** searches, in order, the chain's `always` files, the notes of its repos, its skill
+  directories, and with `--repos` the checkouts cloned here. Walks use `ignore` like ripgrep:
+  `.gitignore`, `.git/info/exclude` (so kipi's own skill links in a checkout are not searched
+  twice) and hidden files are skipped, symlinks are not followed, files over 1 MiB and files with
+  a NUL byte in their first 8 KiB are skipped, unreadable files are skipped silently. Patterns are
+  Rust `regex`, case-sensitive (`(?i)` to ignore case). `--limit` (default 100) caps the lines;
+  when it cuts, a `note:`/`hint:` goes to stderr so stdout stays pure `path:line: text`. No match
+  exits 0 with a note on stderr (exit 1 is reserved for user errors). Long lines are cut to 300
+  characters.
+- **`edit` targets**: `notes:<repo>`, `conventions:<scope>`, `repo:<name>`, `skill:<name>` (or
+  `store/skill`), or a bare name that is a repo entry or a skill (both is an error asking for a
+  prefix). A repo opens its store's `bindings.toml` at the `[repos.<name>]` line; a skill its
+  `SKILL.md`. Missing notes are created from `templates/notes.md`; a missing conventions file is
+  created empty, at the scope's first `always` entry under `conventions/` or else
+  `conventions/<scope>.md`, with a note when no `always` lists it.
+- **Editor**: `$EDITOR`, else `config.toml` `editor`, else a user error. The command may carry
+  arguments (`code -w`). Line syntax by program name: `file:line` for `hx`/`helix`, `subl`, `zed`,
+  `micro`; `+line file` for vi-likes, `nano`, `emacs`, `kak`; `--goto file:line` for VS Code-likes;
+  any other editor gets the file alone. A non-zero editor exit is an error and nothing is changed.
+- **Supervision after the editor exits** (`edit::review_changed_drafts`): every `[repos.*]` value
+  still carrying `# kipi:draft` whose value differs from before the edit (as data: quoting, spacing
+  and comments do not count) loses its marker. This runs whatever the target, so hand-editing
+  `bindings.toml` through `kipi edit` of any entry reviews what changed. Then every store is loaded
+  and resolved again; a failure is reported as the usual `error:`/`hint:` with exit 1, and the
+  edited file is kept as written.
+- **`edit` needs the stores to load first** (it resolves the target through them). Fixing a store
+  that no longer loads is done in the editor directly; the error already names `file:line`.
+- **`ignore` and `regex`** come from the §12 list (`ignore` added to kipi-core, `regex` to
+  kipi-cli to compile the pattern).

@@ -3,18 +3,21 @@
 
 mod authoring;
 mod doctor;
+mod edit;
 mod explain;
+mod grep;
 mod resolve;
 mod scan;
 mod status;
 pub mod stores;
 mod sync;
+mod where_;
 
 use std::path::PathBuf;
 
 use kipi_core::config::{self, Env};
 use kipi_core::error::closest;
-use kipi_core::model::{Machine, StoreSet};
+use kipi_core::model::{Config, Machine, StoreSet};
 use kipi_core::plan::{Plan, RepoPlan};
 use kipi_core::resolve::resolve as resolve_plan;
 
@@ -24,6 +27,8 @@ use crate::output::Output;
 
 /// Everything a read-only command needs: the mounted stores, this machine and the plan.
 pub struct Loaded {
+    /// `config.toml`.
+    pub config: Config,
     /// The mounted stores.
     pub stores: StoreSet,
     /// `machine.toml`.
@@ -48,6 +53,7 @@ impl Loaded {
         let machine = config::load_machine(env)?;
         let plan = resolve_plan(&stores, &machine)?;
         Ok(Loaded {
+            config: cfg,
             stores,
             machine,
             plan,
@@ -134,6 +140,29 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
             },
             out,
         ),
+        Command::Where {
+            alias,
+            notes,
+            any_scope,
+        } => where_::run(&load(&env()?)?, alias, *notes, *any_scope, out),
+        Command::Grep {
+            pattern,
+            scope,
+            repos,
+            limit,
+        } => {
+            let args = grep::Args {
+                pattern,
+                scope: scope.as_deref(),
+                repos: *repos,
+                limit: *limit,
+            };
+            grep::run(&load(&env()?)?, &args, out)
+        }
+        Command::Edit { target } => {
+            let env = env()?;
+            edit::run(&env, &global.stores, &load(&env)?, target, out)
+        }
         Command::Doctor { repo, fix, .. } => {
             doctor::run(&env()?, &global.stores, repo.as_deref(), *fix, out)
         }
@@ -212,14 +241,17 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
     }
 }
 
+/// The repo entry whose checkout holds the working directory, if any.
+pub fn cwd_repo(loaded: &Loaded) -> Option<&RepoPlan> {
+    let cwd = std::env::current_dir().ok()?;
+    kipi_core::search::repo_at(&loaded.plan, &cwd)
+}
+
 /// The error for a declared but unimplemented subcommand.
 fn not_implemented(command: &Command) -> Failure {
     let name = command.name();
     let stage = match command {
-        Command::Tree { .. }
-        | Command::Where { .. }
-        | Command::Grep { .. }
-        | Command::Edit { .. } => "Stage 3",
+        Command::Tree { .. } => "Stage 3",
         _ => "Stage 4",
     };
     Failure::user(

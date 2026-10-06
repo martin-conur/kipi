@@ -490,6 +490,7 @@ dependencies = [
  "kipi-test-support",
  "owo-colors",
  "predicates",
+ "regex",
  "serde",
  "serde_json",
  "tempfile",
@@ -501,6 +502,7 @@ name = "kipi-core"
 version = "0.1.0"
 dependencies = [
  "dirs",
+ "ignore",
  "insta",
  "kipi-test-support",
  "minijinja",

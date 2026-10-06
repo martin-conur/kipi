@@ -152,6 +152,9 @@ pub enum Command {
         /// Print the repo's notes.
         #[arg(long)]
         notes: bool,
+        /// Look in every mounted store, not just the current repo's scope chain.
+        #[arg(long)]
+        any_scope: bool,
     },
     /// Search skills, notes and conventions (and checkouts with --repos).
     Grep {
@@ -163,6 +166,9 @@ pub enum Command {
         /// Also search the checkouts of every repo in the scope chain.
         #[arg(long)]
         repos: bool,
+        /// Print at most this many matching lines.
+        #[arg(long, value_name = "N", default_value_t = kipi_core::search::DEFAULT_LIMIT)]
+        limit: usize,
     },
     /// Open a repo entry, skill, notes:<repo> or conventions:<scope> in $EDITOR.
     Edit {

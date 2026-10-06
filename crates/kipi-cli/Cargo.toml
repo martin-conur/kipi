@@ -15,6 +15,7 @@ path = "src/main.rs"
 kipi-core.workspace = true
 clap.workspace = true
 owo-colors.workspace = true
+regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 dirs.workspace = true
+ignore.workspace = true
 minijinja.workspace = true
 regex.workspace = true
 serde.workspace = true
