@@ -1,0 +1,23 @@
+[package]
+name = "kipi-cli"
+description = "kipi: a scoped map of your local repos and shared skills for LLM coding agents."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "kipi"
+path = "src/main.rs"
+
+[dependencies]
+kipi-core.workspace = true
+clap.workspace = true
+
+[dev-dependencies]
+assert_cmd.workspace = true
+predicates.workspace = true
+
+[lints]
+workspace = true

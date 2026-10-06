@@ -1,0 +1,20 @@
+[package]
+name = "kipi-test-support"
+description = "Test fixtures for kipi: example stores, fake git repos, leak guard."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+ignore.workspace = true
+regex.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+toml_edit.workspace = true
+walkdir.workspace = true
+
+[lints]
+workspace = true

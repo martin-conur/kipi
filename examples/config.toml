@@ -1,0 +1,5 @@
+# Example ~/.config/kipi/config.toml (roadmap §5.5).
+
+stores = ["~/.agents/store", "~/work/.kipi-acme"]   # mounted stores; a personal machine lists only the first
+editor = "hx"                      # fallback $EDITOR
+tokenizer = "cl100k_base"          # estimate only; Claude's tokenizer is not public

@@ -1,0 +1,2 @@
+- Prefer small, boring dependencies; justify each new one in the commit body.
+- Every repo has a `README.md` with a one-paragraph summary and a "Run it" section.

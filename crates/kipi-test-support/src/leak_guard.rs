@@ -1,0 +1,322 @@
+//! Leak guard: scan files for denylisted patterns and absolute home paths.
+//!
+//! The denylist is one regex per line (blank lines and `#` comments ignored) from:
+//! - `.leak-denylist` at the repo root (committed; generic patterns only),
+//! - `$KIPI_LEAK_DENYLIST`: extra patterns, newline-separated, same syntax,
+//! - `$KIPI_LEAK_DENYLIST_FILE`: path to a file in the same format.
+//!
+//! The environment sources are for private additions (an employer's name, internal
+//! hostnames) that must never be committed, not even to the denylist itself.
+//!
+//! Independently of the denylist, any absolute home path (`/Users/<name>`,
+//! `/home/<name>`, `C:\Users\<name>`) is a hit unless `<name>` is an obvious
+//! placeholder (see [`PLACEHOLDER_USERS`]). Docs should write `~` instead.
+
+use std::fmt;
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
+
+use regex::Regex;
+
+/// Name of the committed denylist file at the repo root.
+pub const DENYLIST_FILE: &str = ".leak-denylist";
+/// Env var holding extra newline-separated patterns.
+pub const ENV_PATTERNS: &str = "KIPI_LEAK_DENYLIST";
+/// Env var holding the path of an extra denylist file.
+pub const ENV_FILE: &str = "KIPI_LEAK_DENYLIST_FILE";
+
+/// User names that are clearly placeholders and allowed after `/Users/` or `/home/`.
+pub const PLACEHOLDER_USERS: &[&str] =
+    &["user", "username", "you", "yourname", "example", "shared"];
+
+static HOME_PATH: LazyLock<Regex> = LazyLock::new(|| {
+    // The leading group stands in for a lookbehind: the path must not continue a
+    // word, a relative path (`./`, `~/`) or a URL host (`example.com/home/...`).
+    Regex::new(r"(?:^|[^A-Za-z0-9._~-])(/(?:Users|home)/([A-Za-z0-9._-]+)|[A-Za-z]:\\Users\\([A-Za-z0-9._-]+))")
+        .expect("home path regex is valid")
+});
+
+/// A compiled set of denylist patterns.
+#[derive(Debug, Default)]
+pub struct Denylist {
+    patterns: Vec<Regex>,
+}
+
+impl Denylist {
+    /// Parse denylist text; `origin` names the source in error messages.
+    pub fn parse(text: &str, origin: &str) -> Result<Self, String> {
+        let mut list = Denylist::default();
+        list.extend(text, origin)?;
+        Ok(list)
+    }
+
+    /// Add the patterns in `text` (one per line, `#` comments, blanks skipped).
+    pub fn extend(&mut self, text: &str, origin: &str) -> Result<(), String> {
+        for (i, line) in text.lines().enumerate() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let re = Regex::new(line)
+                .map_err(|e| format!("{origin}:{}: invalid regex `{line}`: {e}", i + 1))?;
+            self.patterns.push(re);
+        }
+        Ok(())
+    }
+
+    /// Load `<root>/.leak-denylist` (if present) plus the env sources, read through `env`
+    /// so tests can inject values.
+    pub fn load(root: &Path, env: impl Fn(&str) -> Option<String>) -> Result<Self, String> {
+        let mut list = Denylist::default();
+        let committed = root.join(DENYLIST_FILE);
+        if committed.is_file() {
+            let text =
+                fs::read_to_string(&committed).map_err(|e| format!("{DENYLIST_FILE}: {e}"))?;
+            list.extend(&text, DENYLIST_FILE)?;
+        }
+        if let Some(text) = env(ENV_PATTERNS) {
+            list.extend(&text, ENV_PATTERNS)?;
+        }
+        if let Some(path) = env(ENV_FILE).filter(|p| !p.is_empty()) {
+            let text = fs::read_to_string(&path).map_err(|e| format!("{ENV_FILE}={path}: {e}"))?;
+            list.extend(&text, ENV_FILE)?;
+        }
+        Ok(list)
+    }
+
+    /// Number of patterns loaded.
+    pub fn len(&self) -> usize {
+        self.patterns.len()
+    }
+
+    /// True when no patterns are loaded (home paths are still checked).
+    pub fn is_empty(&self) -> bool {
+        self.patterns.is_empty()
+    }
+}
+
+/// Why a line was flagged.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HitKind {
+    /// Matched a denylist pattern (the pattern's source text).
+    Denylisted(String),
+    /// Contains an absolute home path.
+    HomePath,
+}
+
+/// One flagged occurrence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hit {
+    /// Path relative to the scanned root.
+    pub path: PathBuf,
+    /// 1-based line number.
+    pub line: usize,
+    /// What matched.
+    pub kind: HitKind,
+    /// The matched text.
+    pub matched: String,
+}
+
+impl fmt::Display for Hit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let why = match &self.kind {
+            HitKind::Denylisted(p) => format!("denylisted pattern `{p}`"),
+            HitKind::HomePath => "absolute home path (use `~` or a placeholder)".to_owned(),
+        };
+        write!(
+            f,
+            "{}:{}: {why}: {}",
+            self.path.display(),
+            self.line,
+            self.matched
+        )
+    }
+}
+
+/// Scan `text` (the contents of `path`) for hits.
+pub fn scan_text(path: &Path, text: &str, denylist: &Denylist) -> Vec<Hit> {
+    let mut hits = Vec::new();
+    for (i, line) in text.lines().enumerate() {
+        let mut push = |kind, matched: &str| {
+            hits.push(Hit {
+                path: path.to_path_buf(),
+                line: i + 1,
+                kind,
+                matched: matched.to_owned(),
+            })
+        };
+        for re in &denylist.patterns {
+            for m in re.find_iter(line) {
+                push(HitKind::Denylisted(re.as_str().to_owned()), m.as_str());
+            }
+        }
+        for caps in HOME_PATH.captures_iter(line) {
+            let user = caps
+                .get(2)
+                .or_else(|| caps.get(3))
+                .map_or("", |m| m.as_str());
+            if !PLACEHOLDER_USERS
+                .iter()
+                .any(|p| p.eq_ignore_ascii_case(user))
+            {
+                push(HitKind::HomePath, &caps[1]);
+            }
+        }
+    }
+    hits
+}
+
+/// Walk `root` and scan every text file, honoring `.gitignore` / `.git/info/exclude`
+/// (so build output is skipped) but not the user's global gitignore, so local and CI
+/// runs see the same files. Hidden files are scanned; `.git` and the committed
+/// denylist itself are not. Non-UTF-8 files are skipped as binary.
+pub fn scan_tree(root: &Path, denylist: &Denylist) -> io::Result<Vec<Hit>> {
+    let walker = ignore::WalkBuilder::new(root)
+        .hidden(false)
+        .git_global(false)
+        .require_git(false)
+        .sort_by_file_name(|a, b| a.cmp(b))
+        .filter_entry(|e| e.file_name() != ".git")
+        .build();
+    let mut hits = Vec::new();
+    for entry in walker {
+        let entry = entry.map_err(io::Error::other)?;
+        if !entry.file_type().is_some_and(|t| t.is_file()) {
+            continue;
+        }
+        let rel = entry.path().strip_prefix(root).unwrap_or(entry.path());
+        if rel == Path::new(DENYLIST_FILE) {
+            continue;
+        }
+        let Ok(text) = String::from_utf8(fs::read(entry.path())?) else {
+            continue;
+        };
+        hits.extend(scan_text(rel, &text, denylist));
+    }
+    Ok(hits)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Home paths are assembled at runtime so this file never trips the repo-wide scan.
+    fn home(prefix: &str, user: &str) -> String {
+        format!("/{prefix}/{user}")
+    }
+
+    fn scan(text: &str, list: &Denylist) -> Vec<Hit> {
+        scan_text(Path::new("f.md"), text, list)
+    }
+
+    #[test]
+    fn denylisted_word_is_caught_with_line_number() {
+        let list = Denylist::parse("# org names\n(?i)\\bfrobnicorp\\b\n", "test").unwrap();
+        let hits = scan("fine\nWe ship Frobnicorp things\n", &list);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].line, 2);
+        assert_eq!(hits[0].matched, "Frobnicorp");
+        assert_eq!(
+            hits[0].kind,
+            HitKind::Denylisted("(?i)\\bfrobnicorp\\b".into())
+        );
+    }
+
+    #[test]
+    fn denylist_ignores_comments_and_blanks() {
+        let list = Denylist::parse("\n  # comment\n\nfoo\n", "test").unwrap();
+        assert_eq!(list.len(), 1);
+    }
+
+    #[test]
+    fn invalid_pattern_names_origin_and_line() {
+        let err = Denylist::parse("ok\n(unclosed\n", "extra").unwrap_err();
+        assert!(
+            err.starts_with("extra:2: invalid regex `(unclosed`"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn home_paths_are_caught() {
+        let list = Denylist::default();
+        for path in [
+            home("Users", "alice"),
+            home("home", "bob"),
+            format!("{}/code/x", home("Users", "carol.d")),
+            format!("cd {}", home("home", "dave")),
+            format!("\"{}\"", home("Users", "erin")),
+            format!("file://{}", home("Users", "frank")),
+            ["C:", "Users", "gina"].join("\\"),
+        ] {
+            let hits = scan(&path, &list);
+            assert_eq!(hits.len(), 1, "expected a hit in {path:?}");
+            assert_eq!(hits[0].kind, HitKind::HomePath);
+        }
+    }
+
+    #[test]
+    fn placeholders_and_non_home_paths_are_allowed() {
+        let list = Denylist::default();
+        for text in [
+            "~/code/side-tool",
+            "~/work/acme/billing-api",
+            &home("Users", "<name>"),
+            &home("home", "user"),
+            &home("Users", "Shared"),
+            "/Volumes/work/acme",
+            "src/home/mod.rs",
+            "https://example.com/home/page",
+            "./home/x",
+        ] {
+            assert!(scan(text, &list).is_empty(), "unexpected hit in {text:?}");
+        }
+    }
+
+    #[test]
+    fn load_merges_committed_file_and_env_sources() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join(DENYLIST_FILE), "alpha\n").unwrap();
+        let extra = dir.path().join("private.txt");
+        fs::write(&extra, "gamma\n").unwrap();
+        let extra_path = extra.to_str().unwrap().to_owned();
+        let list = Denylist::load(dir.path(), |k| match k {
+            ENV_PATTERNS => Some("beta\n# c\ndelta".into()),
+            ENV_FILE => Some(extra_path.clone()),
+            _ => None,
+        })
+        .unwrap();
+        assert_eq!(list.len(), 4);
+        let hits = scan("alpha beta gamma delta", &list);
+        assert_eq!(hits.len(), 4);
+    }
+
+    #[test]
+    fn scan_tree_respects_gitignore_and_skips_git_and_denylist() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join(DENYLIST_FILE), "secretco\n").unwrap();
+        fs::write(root.join(".gitignore"), "target/\n").unwrap();
+        fs::create_dir_all(root.join("target")).unwrap();
+        fs::write(root.join("target/out.txt"), "secretco").unwrap();
+        fs::write(root.join(".git"), format!("gitdir: {}", home("Users", "x"))).unwrap();
+        fs::create_dir_all(root.join(".github")).unwrap();
+        fs::write(root.join(".github/ci.yml"), "name: secretco\n").unwrap();
+        fs::write(root.join("bin.dat"), [0xff, 0xfe, 0x00]).unwrap();
+        fs::write(
+            root.join("notes.md"),
+            format!("ok\nsee {}\n", home("home", "zed")),
+        )
+        .unwrap();
+
+        let list = Denylist::load(root, |_| None).unwrap();
+        let hits = scan_tree(root, &list).unwrap();
+        let summary: Vec<String> = hits
+            .iter()
+            .map(|h| format!("{}:{}", h.path.display(), h.line))
+            .collect();
+        assert_eq!(summary, [".github/ci.yml:1", "notes.md:2"]);
+    }
+}
