@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc add6a2435cf77def22546bda770bc783aca4ced03702fdc2d58831caa1209099 # shrinks to world = World { work: StoreSpec { scopes: [ScopeSpec { parent: None, registry: true, skills: [], grant: None }, ScopeSpec { parent: Some(0), registry: false, skills: [], grant: None }], skill_scopes: [None, None, None], repos: [RepoSpec { place: Explicit(0), skills: [], exclude: [], related: [], grant: None }] }, home: StoreSpec { scopes: [ScopeSpec { parent: None, registry: false, skills: [], grant: None }], skill_scopes: [None, None, None], repos: [RepoSpec { place: Explicit(0), skills: [], exclude: [], related: [], grant: None }] } }, seed = 10154359726214026905
