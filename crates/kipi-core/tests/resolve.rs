@@ -197,7 +197,15 @@ fn example_scopes_come_from_roots_patterns_and_the_personal_fallback() {
         rule("feature-store"),
         "scopes.acme.remote_patterns (not cloned here)"
     );
-    assert_eq!(rule("side-tool"), "fallback: scope `personal`");
+    assert_eq!(rule("side-tool"), "machine.toml [roots] personal");
+
+    // Without that override no root holds `/srv/code/side-tool`: rule 3 places it.
+    let mut machine = machine;
+    machine.roots.retain(|r| r.scope != "personal");
+    let plan = ok(&set, &machine);
+    let side_tool = &plan.repo("side-tool").unwrap().scope;
+    assert_eq!(side_tool.value.as_deref(), Some("personal"));
+    assert_eq!(side_tool.source.rule, "fallback: scope `personal`");
 }
 
 #[test]

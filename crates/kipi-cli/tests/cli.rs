@@ -931,3 +931,115 @@ fn a_renamed_entry_keeps_its_checkout_synced_not_cleaned_up() {
     assert!(dir.join("CLAUDE.md").is_file());
     assert!(dir.join(".claude/skills/rust-style").is_symlink());
 }
+
+#[test]
+fn doctor_on_the_example_stores_exits_0() {
+    let home = Home::new();
+    let out = stdout_of(&home, home.kipi().arg("doctor"));
+    insta::assert_snapshot!("doctor", out);
+    assert!(out.ends_with("0 errors, 0 warnings, 5 info\n"), "{out}");
+    let json = stdout_of(&home, home.kipi().args(["doctor", "--json"]));
+    insta::assert_snapshot!("doctor-json", json);
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed["summary"]["error"], 0);
+    let one = stdout_of(&home, home.kipi().args(["doctor", "dotfiles"]));
+    assert!(
+        one.starts_with("info[K008] dotfiles: repo `dotfiles` has no summary"),
+        "{one}"
+    );
+    assert!(one.ends_with("0 errors, 0 warnings, 1 info\n"), "{one}");
+    let clean = stdout_of(&home, home.kipi().args(["doctor", "side-tool"]));
+    assert_eq!(clean, "no problems found\n");
+}
+
+#[test]
+fn doctor_exits_2_on_an_error_and_still_prints_every_finding() {
+    let home = Home::new();
+    let bindings = home.store(ExampleStore::Acme).join("bindings.toml");
+    let text = fs::read_to_string(&bindings)
+        .unwrap()
+        .replace("aliases = [\"ml\"]", "aliases = [\"ml\", \"Billing\"]");
+    fs::write(&bindings, text).unwrap();
+    let out = home
+        .kipi()
+        .arg("doctor")
+        .assert()
+        .code(2)
+        .get_output()
+        .clone();
+    let stdout = home.scrub(&out.stdout);
+    assert!(
+        stdout.starts_with(
+            "error[K004] billing-api: alias `billing` is claimed by `billing-api` and \
+             `ml-platform` in registry `acme`\n  --> acme:bindings.toml:25\n"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.ends_with("1 error, 0 warnings, 5 info\n"),
+        "{stdout}"
+    );
+    assert_eq!(
+        home.scrub(&out.stderr),
+        "error: doctor found 1 error-level problem\n  hint: fix each as its hint says, then run \
+         `kipi doctor` again\n"
+    );
+    let out = home
+        .kipi()
+        .args(["doctor", "--json"])
+        .assert()
+        .code(2)
+        .get_output()
+        .clone();
+    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(parsed["findings"][0]["code"], "K004");
+    assert_eq!(parsed["findings"][0]["check"], "alias-collision");
+    assert_eq!(parsed["summary"]["error"], 1);
+}
+
+#[test]
+fn doctor_reports_a_cross_store_reference_instead_of_failing() {
+    let home = Home::new();
+    let bindings = home.store(ExampleStore::Personal).join("bindings.toml");
+    let text = fs::read_to_string(&bindings)
+        .unwrap()
+        .replace("share_skills = true", "share_skills = false");
+    fs::write(&bindings, text).unwrap();
+    // Everything else refuses to load these stores...
+    let (code, _) = failure_of(&home, home.kipi().arg("resolve"));
+    assert_eq!(code, 1);
+    // ...doctor names the problem and checks the rest.
+    let out = home
+        .kipi()
+        .arg("doctor")
+        .assert()
+        .code(2)
+        .get_output()
+        .clone();
+    let stdout = home.scrub(&out.stdout);
+    assert!(
+        stdout.starts_with(
+            "error[K012] skill `personal/commit-style` is in store `personal`, which does not \
+             share its skills\n"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.ends_with("1 error, 0 warnings, 5 info\n"),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn doctor_user_errors_exit_1() {
+    let home = Home::new();
+    let (code, err) = failure_of(&home, home.kipi().args(["doctor", "billing-apu"]));
+    assert_eq!(code, 1);
+    assert!(err.contains("did you mean `billing-api`?"), "{err}");
+    let (code, err) = failure_of(&home, home.kipi().args(["doctor", "--fix"]));
+    assert_eq!(code, 1);
+    assert!(
+        err.starts_with("error: `kipi doctor --fix` is not implemented yet"),
+        "{err}"
+    );
+}

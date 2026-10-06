@@ -1,0 +1,21 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: out
+---
+info[K008] api: the summary of repo `api` is still a draft
+  --> personal:bindings.toml:26
+  hint: review it, then remove its `# kipi:draft` marker
+info[K008] billing-api: the summary of repo `billing-api` is still a draft
+  --> acme:bindings.toml:25
+  hint: review it, then remove its `# kipi:draft` marker
+info[K008] dotfiles: repo `dotfiles` has no summary; the registry lists it by name only
+  --> personal:bindings.toml:36
+  hint: add `summary = "…"` to [repos.dotfiles] (one line: what it is, where to look)
+info[K008] feature-store: the summary of repo `feature-store` is still a draft
+  --> acme:bindings.toml:50
+  hint: review it, then remove its `# kipi:draft` marker
+info[K008] web-dashboard: repo `web-dashboard` has no summary; the registry lists it by name only
+  --> acme:bindings.toml:55
+  hint: add `summary = "…"` to [repos.web-dashboard] (one line: what it is, where to look)
+
+0 errors, 0 warnings, 5 info

@@ -12,7 +12,7 @@ mod remote;
 mod store_set;
 
 pub use remote::{Checkout, MatchedBy, RemoteUrl, RepoMatch, match_checkout};
-pub use store_set::StoreSet;
+pub use store_set::{RefKind, RefProblem, RefSite, StoreSet};
 
 use std::fmt;
 use std::path::{Path, PathBuf};

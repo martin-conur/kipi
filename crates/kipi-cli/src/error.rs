@@ -12,7 +12,6 @@ pub const EXIT_OK: u8 = 0;
 /// Something the user can fix: bad arguments, an invalid store, an unknown repo.
 pub const EXIT_USER: u8 = 1;
 /// `doctor` found an error-level problem.
-#[allow(dead_code)] // `doctor` lands in Stage 3.
 pub const EXIT_FINDINGS: u8 = 2;
 /// Reading or writing the filesystem failed.
 pub const EXIT_IO: u8 = 3;
@@ -31,6 +30,8 @@ pub enum Failure {
     },
     /// Writing output failed.
     Output(std::io::Error),
+    /// `doctor` printed this many error-level findings.
+    Findings(usize),
 }
 
 impl Failure {
@@ -59,6 +60,7 @@ impl Failure {
             },
             Failure::User { .. } => EXIT_USER,
             Failure::Output(_) => EXIT_IO,
+            Failure::Findings(_) => EXIT_FINDINGS,
         }
     }
 
@@ -70,6 +72,13 @@ impl Failure {
             Failure::Output(e) => (
                 format!("cannot write output: {e}"),
                 "check that stdout is still open (a closed pipe stops kipi)".to_owned(),
+            ),
+            Failure::Findings(n) => (
+                format!(
+                    "doctor found {n} error-level problem{}",
+                    if *n == 1 { "" } else { "s" }
+                ),
+                "fix each as its hint says, then run `kipi doctor` again".to_owned(),
             ),
         };
         format!(

@@ -1,0 +1,64 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: json
+---
+{
+  "version": 1,
+  "findings": [
+    {
+      "level": "info",
+      "code": "K008",
+      "check": "summary",
+      "repo": "api",
+      "at": "personal:bindings.toml:26",
+      "message": "the summary of repo `api` is still a draft",
+      "hint": "review it, then remove its `# kipi:draft` marker",
+      "fix": null
+    },
+    {
+      "level": "info",
+      "code": "K008",
+      "check": "summary",
+      "repo": "billing-api",
+      "at": "acme:bindings.toml:25",
+      "message": "the summary of repo `billing-api` is still a draft",
+      "hint": "review it, then remove its `# kipi:draft` marker",
+      "fix": null
+    },
+    {
+      "level": "info",
+      "code": "K008",
+      "check": "summary",
+      "repo": "dotfiles",
+      "at": "personal:bindings.toml:36",
+      "message": "repo `dotfiles` has no summary; the registry lists it by name only",
+      "hint": "add `summary = \"…\"` to [repos.dotfiles] (one line: what it is, where to look)",
+      "fix": null
+    },
+    {
+      "level": "info",
+      "code": "K008",
+      "check": "summary",
+      "repo": "feature-store",
+      "at": "acme:bindings.toml:50",
+      "message": "the summary of repo `feature-store` is still a draft",
+      "hint": "review it, then remove its `# kipi:draft` marker",
+      "fix": null
+    },
+    {
+      "level": "info",
+      "code": "K008",
+      "check": "summary",
+      "repo": "web-dashboard",
+      "at": "acme:bindings.toml:55",
+      "message": "repo `web-dashboard` has no summary; the registry lists it by name only",
+      "hint": "add `summary = \"…\"` to [repos.web-dashboard] (one line: what it is, where to look)",
+      "fix": null
+    }
+  ],
+  "summary": {
+    "error": 0,
+    "warn": 0,
+    "info": 5
+  }
+}

@@ -153,8 +153,8 @@ expression: out
       "scope": {
         "value": "personal",
         "source": {
-          "rule": "fallback: scope `personal`",
-          "at": "personal:bindings.toml:13"
+          "rule": "machine.toml [roots] personal",
+          "at": "[HOME]/.config/kipi/machine.toml:9"
         }
       },
       "chain": [
@@ -412,8 +412,8 @@ expression: out
       "scope": {
         "value": "personal",
         "source": {
-          "rule": "fallback: scope `personal`",
-          "at": "personal:bindings.toml:13"
+          "rule": "machine.toml [roots] personal",
+          "at": "[HOME]/.config/kipi/machine.toml:9"
         }
       },
       "chain": [
@@ -531,8 +531,8 @@ expression: out
       "scope": {
         "value": "personal",
         "source": {
-          "rule": "fallback: scope `personal`",
-          "at": "personal:bindings.toml:13"
+          "rule": "machine.toml [roots] personal",
+          "at": "[HOME]/.config/kipi/machine.toml:9"
         }
       },
       "chain": [
@@ -1166,8 +1166,8 @@ expression: out
       "scope": {
         "value": "personal",
         "source": {
-          "rule": "fallback: scope `personal`",
-          "at": "personal:bindings.toml:13"
+          "rule": "machine.toml [roots] personal",
+          "at": "[HOME]/.config/kipi/machine.toml:9"
         }
       },
       "chain": [

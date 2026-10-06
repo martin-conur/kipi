@@ -208,6 +208,15 @@ impl Error {
         }
     }
 
+    /// What is wrong, without the location prefix [`Display`](fmt::Display) adds.
+    pub fn message(&self) -> String {
+        match self {
+            Error::Invalid { message, .. } | Error::Conflict { message, .. } => message.clone(),
+            Error::UnknownKey { key, table, .. } => format!("unknown key `{key}` in {table}"),
+            Error::Io { .. } | Error::NoHome => self.to_string(),
+        }
+    }
+
     /// The file (and line) this error points at, if any.
     pub fn location(&self) -> Option<&Location> {
         match self {

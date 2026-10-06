@@ -1,0 +1,9 @@
+---
+source: crates/kipi-core/tests/doctor.rs
+expression: "summary.join(\"\\n\")"
+---
+info K008 api the summary of repo `api` is still a draft
+info K008 billing-api the summary of repo `billing-api` is still a draft
+info K008 dotfiles repo `dotfiles` has no summary; the registry lists it by name only
+info K008 feature-store the summary of repo `feature-store` is still a draft
+info K008 web-dashboard repo `web-dashboard` has no summary; the registry lists it by name only

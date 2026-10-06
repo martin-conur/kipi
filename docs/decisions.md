@@ -557,3 +557,62 @@ The spec wins wherever it is explicit.
   also list every change and print the settings-file JSON diff.
 - **Onboarding E2E** mounts the stores by writing `config.toml`, which is what `kipi init --store
   <existing store>` does; it switches to the real command when the authoring issue (#9) lands.
+
+## Stage 3: doctor framework and config/resolution checks (#12)
+
+- **Doctor reports what would stop loading, instead of stopping.** A reference into another
+  store, a missing skill or a `related` repo outside the scope chain makes `StoreSet::new` or
+  `resolve` fail on the first one. Doctor loads each store on its own, collects every bad
+  reference (`StoreSet::checked` returns them all; `new` still returns the first, so every
+  other command's errors are unchanged), reports each as a finding and removes it
+  (`RefSite::remove_from`), then resolves what is left and runs the plan-based checks. The
+  order is fixed: cross-store references and qualified skills (K012 / K005), then skills
+  missing from their own store (K005), then `related` across scopes (K003, judged on a plan
+  resolved with every `related` list emptied, since relations never decide a scope).
+- **What has no check stays an error.** Store/scope/entry name collisions, malformed files, a
+  cycle or unknown parent in `extends`, an unknown explicit `scope`, `x-kipi.scope` misuse, a
+  `related` name that is unknown or the repo itself: doctor prints the usual `error:` /
+  `hint:` and exits 1, as every other command does.
+- **`Finding::fix` is a doctor `Fix`, not a plan `Action`.** §12 sketches `fix: Option<Action>`,
+  but the only safe fix in this ticket (K015, fill `remote`) edits `bindings.toml`, which no
+  `Action` expresses. `Fix::FillRemote { store, repo, remote }` is the first variant; #13 adds
+  the filesystem ones (and may wrap `Action`). `--fix` is a user error ("not implemented yet")
+  until then.
+- **Stable codes K001–K015**, one per §10 row this ticket covers, in the issue's order (Rev 2.1
+  rows last). A code's level is fixed by the code. Documented in `docs/doctor.md`; a test keeps
+  the doc and `Code::ALL` in step. #13's checks continue from K016.
+- **Two §10 rows share K014** ("two checkouts matching one entry, or a checkout whose remote
+  differs"), as the table does. "Matching" uses `scan`'s rules (`match_checkout`) over every
+  `machine.toml [repos]` checkout that exists; only a unique match counts.
+- **Remotes.** K001 and K013 identify a repo by its checkout's origin when it is cloned here
+  (that is what §10 says: "the repo's `remote.origin.url`"), else by the entry's `remote`.
+  Origins are read with `git config --get remote.origin.url`; a missing checkout is skipped
+  (it is #13's "path no longer exists"), and a directory git cannot read or a local-path origin
+  counts as no origin. K001 accepts a matching pattern on any scope of the repo's chain (a
+  repo in `acme-ml` with an `acme` remote is fine) and suggests the longest matching pattern's
+  scope. K013 fires only when no scope of the repo's own store matches.
+- **K002 is the `personal` fallback catching a stray checkout.** A cloned repo can only land in
+  a scope without a containing root through rule 3 (a cloned repo is never placed by pattern),
+  so the check is: cloned, no explicit `scope`, and no root of its scope (after
+  `machine.toml [roots]`) holds the checkout. An explicit `scope` silences it.
+- **K003 also checks the plan's grants**, although resolution never grants across scopes or
+  stores: a repo dir outside the chain, another store's `repos/`, or the `skills/` of a store
+  none of whose skills the repo uses. The hint calls such a finding a bug.
+- **K006** matches `/Users/<name>` and `/home/<name>` (as the leak guard does, without its
+  placeholder allowlist: any home path in a store is wrong) and this machine's home directory
+  as a whole path component, in `bindings.toml`, `conventions/*.md`, every scope's `always`
+  file and every `repos/<name>/notes.md`. One finding per file, at its first such line.
+- **`kipi doctor <repo>`** keeps only findings whose `repo` is that entry; an alias collision
+  is reported against the named repo when it is one of the claimants. Store-level findings (a
+  scope's missing skill, home paths outside notes, skill descriptions, registry size) are left
+  out. An unknown name is a user error with the usual did-you-mean hint.
+- **Output.** Findings are sorted by level, code, then repo (store-level first). Text prints
+  `level[code] repo: message`, `--> store:file:line` and `hint:`, then a count line; `--json`
+  prints `{ version, findings, summary }`. With an error-level finding the report is still
+  printed in full on stdout, and stderr gets one `error:` / `hint:` line, exit 2.
+- **Notes size** uses the character estimate (`tokens::estimate`) until the tokenizer lands
+  (#10); 1,500 tokens is 6,000 characters for now.
+- **The example `machine.toml` overrides `personal`'s roots** (`/srv/code`), like it already
+  did for `acme` and `acme-ml`. Without it doctor rightly warned (K002) that the four personal
+  checkouts sit outside `~/code`. The resolve test now exercises the fallback by dropping that
+  override.

@@ -6,6 +6,7 @@ hostname = "laptop-a"
 [roots]                            # override a scope's roots on this machine
 "acme" = ["/Volumes/work/acme"]
 "acme-ml" = ["/Volumes/work/acme/ml"]
+"personal" = ["/srv/code"]
 
 [repos]                            # where each repo is cloned here; absent = not on this machine
 "billing-api"     = "/Volumes/work/acme/billing-api"
