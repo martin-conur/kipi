@@ -87,7 +87,7 @@ fn list(dir: &Path) -> Result<Vec<PathBuf>> {
 
 /// The 1-based line and text of the first absolute home path in `text`: a
 /// `/Users/<name>` or `/home/<name>` path, or this machine's home directory.
-pub fn first_home_path(text: &str, home: &Path) -> Option<(usize, String)> {
+fn first_home_path(text: &str, home: &Path) -> Option<(usize, String)> {
     let home = home
         .to_str()
         .filter(|h| h.len() > 1)

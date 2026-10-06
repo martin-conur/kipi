@@ -74,8 +74,10 @@ pub(super) fn check_grants(inputs: &Inputs<'_>, out: &mut Vec<Finding>) {
         for dir in &repo.grant.dirs {
             let why = match &dir.kind {
                 GrantKind::StoreRepos => {
-                    let own = inputs.stores.store(&repo.store);
-                    (own.is_none_or(|s| dir.path != s.root.join("repos")))
+                    // The plan was resolved from these stores, so its owner is mounted.
+                    let own = (inputs.stores.store(&repo.store))
+                        .expect("a planned repo's store is in the set it was resolved from");
+                    (dir.path != own.root.join("repos"))
                         .then(|| "the `repos/` dir of another store".to_owned())
                 }
                 GrantKind::StoreSkills { store } => (*store != repo.store
