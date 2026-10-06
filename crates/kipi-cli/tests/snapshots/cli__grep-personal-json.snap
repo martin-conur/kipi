@@ -4,7 +4,7 @@ expression: out
 ---
 {
   "version": 1,
-  "searched": "scope chain of personal",
+  "searched": "the scope chain of personal",
   "hits": [
     {
       "path": "[HOME]/code/api/src/main.ts",

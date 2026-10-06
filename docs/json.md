@@ -232,7 +232,7 @@ error on stderr, exit 1).
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `version` | number | Schema version, currently `1` |
-| `searched` | string | What was searched: `scope chain of acme-ml`, `unscoped repos of store personal`, `every mounted store` |
+| `searched` | string | What was searched: `the scope chain of acme-ml`, `the unscoped repos of store personal`, `every mounted store` |
 | `hits` | [Hit] | Matching lines: conventions, notes, skills, then checkouts (by repo name); files in path order |
 | `truncated` | bool | More lines matched than `--limit` allowed |
 

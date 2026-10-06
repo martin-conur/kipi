@@ -12,7 +12,13 @@ use kipi_test_support::workspace_root;
 use regex::Regex;
 
 fn load() -> (StoreFixture, StoreSet, Plan) {
+    load_with(|_| {})
+}
+
+/// Copy the example stores, let `edit` change the copies, then load and resolve them.
+fn load_with(edit: impl FnOnce(&StoreFixture)) -> (StoreFixture, StoreSet, Plan) {
     let fixture = copy_example_stores(&ExampleStore::ALL).unwrap();
+    edit(&fixture);
     let mut env = Env::from_lookup(|_| None, Some(PathBuf::from("/HOME"))).unwrap();
     env.config_dir = workspace_root().join("examples");
     let paths: Vec<PathBuf> = fixture.paths().into_iter().map(PathBuf::from).collect();
@@ -109,4 +115,74 @@ fn knowledge_search_stays_in_the_view() {
     let found = search::search_knowledge(&stores, &plan, &personal, &any, &capped);
     assert_eq!(found.hits.len(), 2);
     assert!(found.truncated);
+}
+
+#[test]
+fn ambiguous_lookups_are_sorted_by_name_whatever_the_plan_order() {
+    let (_dir, stores, mut plan) = load_with(|fx| {
+        let file = fx.path(ExampleStore::Acme).join("bindings.toml");
+        let text = std::fs::read_to_string(&file).unwrap();
+        let text = text.replacen(
+            "summary = \"Public REST gateway\"\n",
+            "summary = \"Public REST gateway\"\naliases = [\"billing\"]\n",
+            1,
+        );
+        std::fs::write(&file, text).unwrap();
+    });
+    plan.repos.reverse();
+    let names: Vec<&str> = plan.repos.iter().map(|r| r.name.as_str()).collect();
+    let (b, a) = (
+        names.iter().position(|n| *n == "billing-api").unwrap(),
+        names.iter().position(|n| *n == "acme-api").unwrap(),
+    );
+    assert!(b < a, "the plan lists billing-api first: {names:?}");
+    let view = View::everything(&stores);
+    match search::lookup(&stores, &plan, &view, "billing") {
+        Lookup::Ambiguous(infos) => {
+            let names: Vec<&str> = infos.iter().map(|i| i.name.as_str()).collect();
+            assert_eq!(names, ["acme-api", "billing-api"]);
+        }
+        other => panic!("expected ambiguous, got {other:?}"),
+    }
+}
+
+#[test]
+fn checkout_hits_come_in_repo_name_order_whatever_the_plan_order() {
+    let (_dir, stores, mut plan) = load();
+    let checkouts = tempfile::tempdir().unwrap();
+    for repo in plan.repos.iter_mut() {
+        if ["api", "blog", "side-tool"].contains(&repo.name.as_str()) {
+            let dir = checkouts.path().join(&repo.name);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("README.md"), "needle\n").unwrap();
+            repo.path = Some(dir);
+        }
+    }
+    plan.repos.reverse();
+    let personal = View::scope(&stores, &plan, "personal").unwrap();
+    let options = SearchOptions {
+        repos: true,
+        ..SearchOptions::default()
+    };
+    let needle = Regex::new("^needle$").unwrap();
+    let found = search::search_knowledge(&stores, &plan, &personal, &needle, &options);
+    let repos: Vec<&str> = found
+        .hits
+        .iter()
+        .map(|h| match &h.source {
+            HitSource::Checkout { repo } => repo.as_str(),
+            other => panic!("unexpected hit {other:?}"),
+        })
+        .collect();
+    assert_eq!(repos, ["api", "blog", "side-tool"]);
+}
+
+#[test]
+fn view_labels_read_as_noun_phrases() {
+    let (_dir, stores, plan) = load();
+    assert_eq!(View::everything(&stores).label, "every mounted store");
+    assert_eq!(
+        View::scope(&stores, &plan, "acme-ml").unwrap().label,
+        "the scope chain of acme-ml"
+    );
 }

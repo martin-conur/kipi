@@ -34,7 +34,7 @@ pub fn run(loaded: &Loaded, args: &Args, out: &Output) -> Result<(), Failure> {
         )
     })?;
     let view = view(loaded, args.scope)?;
-    out.info(&format!("searching the {}", view.label));
+    out.info(&format!("searching {}", view.label));
     let options = SearchOptions {
         repos: args.repos,
         limit: args.limit,
@@ -70,7 +70,7 @@ pub fn run(loaded: &Loaded, args: &Args, out: &Output) -> Result<(), Failure> {
             "; `--repos` also searches the checkouts"
         };
         eprintln!(
-            "{} no match in the {}\n  {} patterns are case-sensitive; prefix `(?i)` to ignore case{more}",
+            "{} no match in {}\n  {} patterns are case-sensitive; prefix `(?i)` to ignore case{more}",
             p.hint("note:"),
             view.label,
             p.hint("hint:")

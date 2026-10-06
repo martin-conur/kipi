@@ -27,7 +27,8 @@ const BINARY_PROBE: usize = 8192;
 /// What a lookup or search may see.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct View {
-    /// What the view is, for messages: `scope chain of acme-ml`, `every mounted store`.
+    /// What the view is, as a noun phrase for messages: `the scope chain of acme-ml`,
+    /// `the unscoped repos of store personal`, `every mounted store`.
     pub label: String,
     /// Visible repo entries, sorted.
     pub repos: BTreeSet<String>,
@@ -73,7 +74,7 @@ impl View {
     /// and repos bind (shared skills included). `None` when no mounted store has `scope`.
     pub fn scope(stores: &StoreSet, plan: &Plan, scope: &str) -> Option<Self> {
         let (store, _) = stores.scope(scope)?;
-        let mut view = View::empty(&format!("scope chain of {scope}"));
+        let mut view = View::empty(&format!("the scope chain of {scope}"));
         let own = chain(stores, scope);
         let family: Vec<&str> = store
             .scopes
@@ -114,7 +115,7 @@ impl View {
         {
             return view;
         }
-        let mut view = View::empty(&format!("unscoped repos of store {}", repo.store));
+        let mut view = View::empty(&format!("the unscoped repos of store {}", repo.store));
         for other in &plan.repos {
             if other.store == repo.store && other.scope.value.is_none() {
                 view.add_repo(other);
@@ -237,7 +238,10 @@ pub fn lookup(stores: &StoreSet, plan: &Plan, view: &View, alias: &str) -> Looku
     match hits.len() {
         0 => Lookup::NotFound,
         1 => Lookup::Found(hits.remove(0)),
-        _ => Lookup::Ambiguous(hits),
+        _ => {
+            hits.sort_by(|a, b| a.name.cmp(&b.name));
+            Lookup::Ambiguous(hits)
+        }
     }
 }
 
@@ -367,7 +371,13 @@ pub fn search_knowledge(
         roots.push((skill.dir.clone(), source));
     }
     if options.repos {
-        for repo in plan.repos.iter().filter(|r| view.repos.contains(&r.name)) {
+        let mut cloned: Vec<&RepoPlan> = plan
+            .repos
+            .iter()
+            .filter(|r| view.repos.contains(&r.name))
+            .collect();
+        cloned.sort_by(|a, b| a.name.cmp(&b.name));
+        for repo in cloned {
             if let Some(path) = repo.path.as_ref().filter(|p| p.is_dir()) {
                 let source = HitSource::Checkout {
                     repo: repo.name.clone(),

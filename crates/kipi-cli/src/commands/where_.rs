@@ -117,14 +117,14 @@ fn not_found(loaded: &Loaded, view: &View, alias: &str, scoped: bool) -> Failure
     let hint = match (closest(alias, keys), scoped) {
         (Some(near), _) => format!("did you mean `{near}`?"),
         (None, true) => format!(
-            "only the {} is searched from here; `kipi where --any-scope {alias}` searches every \
+            "only {} is searched from here; `kipi where --any-scope {alias}` searches every \
              mounted store",
             view.label
         ),
         (None, false) => "`kipi resolve` lists every repo entry of the mounted stores".to_owned(),
     };
     let within = if scoped {
-        format!(" in the {}", view.label)
+        format!(" in {}", view.label)
     } else {
         String::new()
     };

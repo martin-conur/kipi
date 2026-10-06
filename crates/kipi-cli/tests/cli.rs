@@ -1597,6 +1597,30 @@ fn grep_scope_json_and_truncation() {
         "note: stopped after 1 matching lines\n  hint: narrow the pattern, pass `--scope`, or raise `--limit`\n"
     );
 
+    let assert = home
+        .bare()
+        .args(["grep", "idempotency", "-v"])
+        .current_dir(home.path())
+        .assert()
+        .success();
+    let err = home.scrub(&assert.get_output().stderr);
+    assert!(err.contains("searching every mounted store\n"), "{err}");
+    let assert = home
+        .bare()
+        .args(["grep", "no-such-text-anywhere", "-v", "--scope", "acme-ml"])
+        .current_dir(home.path())
+        .assert()
+        .success();
+    let err = home.scrub(&assert.get_output().stderr);
+    assert!(
+        err.contains("searching the scope chain of acme-ml\n"),
+        "{err}"
+    );
+    assert!(
+        err.contains("note: no match in the scope chain of acme-ml\n"),
+        "{err}"
+    );
+
     let (code, err) = failure_of(&home, home.bare().args(["grep", "x", "--scope", "acme-m"]));
     assert_eq!(code, 1);
     assert_eq!(
