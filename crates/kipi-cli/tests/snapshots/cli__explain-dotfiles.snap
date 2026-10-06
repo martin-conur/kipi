@@ -8,7 +8,7 @@ dotfiles
   checkout  /srv/code/dotfiles
 
 Scope
-  personal  ← fallback: scope `personal` (personal:bindings.toml:13)
+  personal  ← machine.toml [roots] personal ([HOME]/.config/kipi/machine.toml:9)
   chain: personal
 
 Skills  ○ inherited  ● explicit  ✗ excluded

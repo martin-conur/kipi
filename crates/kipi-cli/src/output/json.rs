@@ -7,6 +7,7 @@
 use std::path::{Path, PathBuf};
 
 use kipi_core::apply::Report;
+use kipi_core::doctor::{Finding, Fix, Level};
 use kipi_core::model::StoreSet;
 use kipi_core::plan::{
     AlwaysOn, Decided, GrantKind, Plan, PlannedSkill, Registry, RepoPlan, SkillOrigin, Source,
@@ -468,6 +469,82 @@ pub fn sync(outcome: &Outcome, dry_run: bool) -> serde_json::Result<String> {
     let mut out = serde_json::to_string_pretty(&doc)?;
     out.push('\n');
     Ok(out)
+}
+
+/// `kipi doctor`'s findings as pretty-printed JSON with a trailing newline
+/// (`docs/doctor.md`, "JSON").
+pub fn doctor(set: &StoreSet, findings: &[Finding]) -> serde_json::Result<String> {
+    let count = |level| findings.iter().filter(|f| f.level == level).count();
+    let doc = DoctorJson {
+        version: JSON_VERSION,
+        findings: findings
+            .iter()
+            .map(|f| FindingJson {
+                level: f.level.as_str(),
+                code: f.code.as_str(),
+                check: f.code.name(),
+                repo: f.repo.as_deref(),
+                at: f.at.as_ref().map(|at| set.provenance(at)),
+                message: &f.message,
+                hint: &f.hint,
+                fix: f.fix.as_ref().map(|fix| match fix {
+                    Fix::FillRemote {
+                        store,
+                        repo,
+                        remote,
+                    } => FixJson::FillRemote {
+                        store,
+                        repo,
+                        remote: remote.as_str(),
+                    },
+                }),
+            })
+            .collect(),
+        summary: DoctorSummaryJson {
+            error: count(Level::Error),
+            warn: count(Level::Warn),
+            info: count(Level::Info),
+        },
+    };
+    let mut out = serde_json::to_string_pretty(&doc)?;
+    out.push('\n');
+    Ok(out)
+}
+
+#[derive(Serialize)]
+struct DoctorJson<'a> {
+    version: u32,
+    findings: Vec<FindingJson<'a>>,
+    summary: DoctorSummaryJson,
+}
+
+#[derive(Serialize)]
+struct FindingJson<'a> {
+    level: &'static str,
+    code: &'static str,
+    check: &'static str,
+    repo: Option<&'a str>,
+    at: Option<String>,
+    message: &'a str,
+    hint: &'a str,
+    fix: Option<FixJson<'a>>,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+enum FixJson<'a> {
+    FillRemote {
+        store: &'a str,
+        repo: &'a str,
+        remote: &'a str,
+    },
+}
+
+#[derive(Serialize)]
+struct DoctorSummaryJson {
+    error: usize,
+    warn: usize,
+    info: usize,
 }
 
 /// A `kipi status` report as pretty-printed JSON with a trailing newline (`docs/json.md`,

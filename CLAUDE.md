@@ -32,6 +32,7 @@ examples/
   machine.toml config.toml # example per-machine config (placeholder paths)
 docs/decisions.md          # decisions the spec leaves open
 docs/adapters.md           # verified vendor paths/keys per adapter, with sources
+docs/doctor.md             # doctor check codes (K001…), levels and the --json shape
 ```
 
 New dependencies come from the §12 list via `<dep>.workspace = true`. Anything outside that list
@@ -47,6 +48,7 @@ cargo test -p kipi-test-support --test leak_guard          # leak guard only
 cargo test -p kipi-core --test resolve --test resolve_props  # resolution unit + property tests
 cargo test -p kipi-core --test render --test splice_props    # rendering snapshots + splice properties
 cargo test -p kipi-core --test apply                       # apply engine: tempdir integration tests
+cargo test -p kipi-core --test doctor                      # doctor: one fixture per check code
 cargo llvm-cov -p kipi-core --test resolve --test resolve_props  # resolve.rs coverage (cargo install cargo-llvm-cov)
 cargo deny check                                           # licenses + banned crates (cargo install cargo-deny)
 cargo run -p kipi-cli -- --help                            # run the CLI

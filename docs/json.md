@@ -3,7 +3,8 @@
 `kipi resolve --json` prints the resolved plan; `kipi resolve <repo> --json` and
 `kipi explain <repo> --json` print the same document restricted to one repo and the registry it
 renders; `kipi scan --json`, `kipi sync --json` and `kipi status --json` print their own reports
-([Scan](#scan), [Sync](#sync), [Status](#status)). The shape is stable: fields
+([Scan](#scan), [Sync](#sync), [Status](#status)), and `kipi doctor --json` prints its findings
+(shape in [docs/doctor.md](doctor.md#json)). The shape is stable: fields
 are only ever added, and anything that renames, removes or changes the meaning of a field bumps
 `version`. Output is pretty-printed, deterministic (two runs
 over the same stores and `machine.toml` are byte-identical) and ends with a newline.
@@ -176,5 +177,5 @@ synced), `not_cloned`, `checkout_missing`.
 | --- | --- |
 | 0 | Success |
 | 1 | User error: bad arguments, an invalid or inconsistent store, an unknown repo, a command not implemented yet |
-| 2 | `doctor` found an error-level problem |
+| 2 | `doctor` found an error-level problem (its report, JSON included, is still printed to stdout) |
 | 3 | I/O failure reading or writing a file |

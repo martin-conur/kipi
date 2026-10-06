@@ -1,6 +1,7 @@
 //! One module per subcommand (roadmap §7). Every command after loading is a function
 //! of the [`Plan`]; nothing reads config twice (roadmap §12).
 
+mod doctor;
 mod explain;
 mod resolve;
 mod scan;
@@ -131,6 +132,9 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
             },
             out,
         ),
+        Command::Doctor { repo, fix, .. } => {
+            doctor::run(&env()?, &global.stores, repo.as_deref(), *fix, out)
+        }
         other => Err(not_implemented(other)),
     }
 }
@@ -142,8 +146,7 @@ fn not_implemented(command: &Command) -> Failure {
         Command::Tree { .. }
         | Command::Where { .. }
         | Command::Grep { .. }
-        | Command::Edit { .. }
-        | Command::Doctor { .. } => "Stage 3",
+        | Command::Edit { .. } => "Stage 3",
         Command::Completions { .. } => "Stage 4",
         _ => "Stage 2",
     };
