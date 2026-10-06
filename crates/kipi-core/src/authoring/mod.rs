@@ -209,10 +209,7 @@ impl Outcome {
                 (Some(skill), Error::Io { path, source, hint }) => Error::Io {
                     path,
                     source,
-                    hint: format!(
-                        "{hint}; the skill was already installed at {} but is not bound:                          remove that directory, or re-run without it in the way",
-                        skill.to.display()
-                    ),
+                    hint: unbound_skill_hint(&hint, &skill.to),
                 },
                 (_, e) => e,
             });
@@ -225,6 +222,15 @@ impl Outcome {
         }
         Ok(())
     }
+}
+
+/// The hint of a failed bindings write after skill `dir` was installed.
+fn unbound_skill_hint(hint: &str, dir: &Path) -> String {
+    format!(
+        "{hint}; the skill was already installed at {} but is not bound: remove that \
+         directory, or re-run without it in the way",
+        dir.display()
+    )
 }
 
 /// `after` as a write of `path`, or `None` when the file already holds exactly that.
@@ -344,5 +350,19 @@ fn tilde(path: &Path, env: &Env) -> String {
         Ok(rel) if rel.as_os_str().is_empty() => "~".to_owned(),
         Ok(rel) => format!("~/{}", rel.display()),
         Err(_) => path.display().to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unbound_skill_hint_names_the_directory() {
+        assert_eq!(
+            unbound_skill_hint("check it", Path::new("/s/skills/x")),
+            "check it; the skill was already installed at /s/skills/x but is not bound: \
+             remove that directory, or re-run without it in the way"
+        );
     }
 }
