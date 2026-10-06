@@ -1,0 +1,46 @@
+# cargo-deny configuration. Run: cargo deny check
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+# Permissive licenses only; the full §12 dependency set resolves within this list.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Zlib",
+]
+# File-level copyleft, pulled in by `dirs` (via dirs-sys); used unmodified.
+exceptions = [
+    { crate = "option-ext", allow = ["MPL-2.0"] },
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+# Roadmap §1/§12: no network, no async runtime, no libgit2, no SQLite.
+deny = [
+    { crate = "tokio", reason = "no async runtime: kipi is a synchronous, offline CLI" },
+    { crate = "reqwest", reason = "no network crates" },
+    { crate = "hyper", reason = "no network crates" },
+    { crate = "git2", reason = "shell out to the git binary instead (kipi-core::git)" },
+    { crate = "libgit2-sys", reason = "shell out to the git binary instead (kipi-core::git)" },
+    { crate = "rusqlite", reason = "no database: files are the only interface" },
+    { crate = "libsqlite3-sys", reason = "no database: files are the only interface" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

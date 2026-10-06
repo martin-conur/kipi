@@ -1,0 +1,16 @@
+# Leak-guard denylist: one Rust regex per line; blank lines and `#` comments ignored.
+# Checked by crates/kipi-test-support/tests/leak_guard.rs over every file not ignored
+# by .gitignore (this file excepted). Absolute home paths are always checked.
+#
+# Never commit a real organization's name here: that would itself be the leak.
+# Put private patterns in $KIPI_LEAK_DENYLIST (newline-separated; CI reads it from
+# the repository secret of the same name) or a file named by $KIPI_LEAK_DENYLIST_FILE.
+
+# Credentials that must never land in fixtures or docs.
+-----BEGIN [A-Z ]*PRIVATE KEY-----
+\bAKIA[0-9A-Z]{16}\b
+\bgh[pousr]_[A-Za-z0-9]{36}\b
+\bxox[abprs]-[A-Za-z0-9-]{10,}
+
+# Internal-looking hostnames; examples use acme-org and example-user instead.
+(?i)\b[a-z0-9-]+\.(corp|internal|intranet)\b

@@ -1,0 +1,20 @@
+# Example ~/.config/kipi/machine.toml (roadmap §5.2). THIS machine only; never in any store.
+# Paths are placeholders; `kipi scan` writes the real ones.
+
+hostname = "laptop-a"
+
+[roots]                            # override a scope's roots on this machine
+"acme" = ["/Volumes/work/acme"]
+"acme-ml" = ["/Volumes/work/acme/ml"]
+
+[repos]                            # where each repo is cloned here; absent = not on this machine
+"billing-api"     = "/Volumes/work/acme/billing-api"
+"acme-api"        = "/Volumes/work/acme/api"
+"web-dashboard"   = "/Volumes/work/acme/web-dashboard"
+"events-pipeline" = "/Volumes/work/acme/ml/events-pipeline"
+"ml-platform"     = "/Volumes/work/acme/ml/ml-platform"
+# "feature-store" is not cloned on this machine: the registry lists it as (not cloned here).
+"side-tool"       = "/srv/code/side-tool"
+"api"             = "/srv/code/api"
+"blog"            = "/srv/code/blog"
+"dotfiles"        = "/srv/code/dotfiles"

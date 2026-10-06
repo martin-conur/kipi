@@ -1,0 +1,37 @@
+# Example personal store. Mounted on every machine; shares its skills.
+
+[store]
+name = "personal"
+version = 1
+share_skills = true                # acme's scope uses "personal/commit-style"
+
+[defaults]
+budget_tokens = 4000
+agents = ["claude", "generic"]
+grant = "related"
+
+[scopes.personal]
+roots = ["~/code"]
+skills = ["rust-style", "commit-style"]
+always = ["conventions/personal.md"]
+registry = true
+remote_patterns = ["github.com/example-user/"]
+
+[repos.side-tool]
+remote = "github.com/example-user/side-tool"
+summary = "Small CLI that renames photos by EXIF date; Rust, entry point src/main.rs"
+aliases = ["photos", "renamer"]
+related = ["api"]
+
+[repos.api]                        # same dir name as acme's `api` checkout; distinct remote
+remote = "github.com/example-user/api"
+summary = "Personal JSON API behind the blog and side-tool uploads"  # kipi:draft
+aliases = ["personal-api"]
+
+[repos.blog]
+remote = "github.com/example-user/blog"
+summary = "Static site; posts in content/, theme in themes/plain"
+aliases = ["site"]
+
+[repos.dotfiles]                   # no summary yet
+remote = "github.com/example-user/dotfiles"

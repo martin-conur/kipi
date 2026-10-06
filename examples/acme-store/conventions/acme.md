@@ -1,0 +1,4 @@
+- Every service exposes `/healthz` and `/readyz`; never remove them.
+- Money is stored as integer minor units with an ISO 4217 currency code, never as floats.
+- Public API changes start in the OpenAPI file and go through review before code.
+- Branches are `<ticket>-<short-name>`; squash-merge to `main`.
