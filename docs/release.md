@@ -32,7 +32,8 @@ Each target builds natively on its own GitHub runner (`ubuntu-22.04`, `ubuntu-22
   `crates/kipi-cli/Cargo.toml`, `rust-toolchain.toml` or `release.yml`).
 - **Every PR** also runs the fresh-machine E2E (`scripts/fresh-machine-e2e.sh`): a release build
   installed into an empty home in a clean `debian:stable-slim` container and on a fresh macOS
-  runner, then `init`, `scan`, `sync --all` and `doctor` on fake repos.
+  runner (`macos-14`, Apple Silicon: the label is pinned rather than `macos-latest` so the
+  `aarch64-apple-darwin` binary always matches the runner's architecture), then `init`, `scan`, `sync --all` and `doctor` on fake repos.
 
 ## One-time maintainer setup
 
@@ -64,13 +65,32 @@ A tag with a pre-release suffix (`v0.2.0-rc.1`) is published as a pre-release.
 
 ## Changing the release config
 
-Edit `dist-workspace.toml`, then run `dist generate` and commit the regenerated `release.yml`.
+Edit `dist-workspace.toml`, then regenerate `release.yml` and re-apply kipi's two hand edits.
 
-`release.yml` carries **one hand edit**: the `paths` filter on its `pull_request` trigger, so the
-dry run only runs on PRs that touch release config. Because of it, `dist-workspace.toml` sets
-`allow-dirty = ["ci"]`, which makes `dist generate` leave `release.yml` alone. To regenerate:
-comment out `allow-dirty`, run `dist generate`, put `allow-dirty` back and re-apply the `paths`
-filter (the comment above it in `release.yml` marks it). See [Decisions](decisions.md),
-"Stage 4: release engineering".
+`release.yml` carries **two hand edits** on top of what `dist generate` writes:
+
+1. **Every `uses:` pinned to a full commit SHA** with a `# vX.Y.Z` comment, like `ci.yml`. This
+   workflow holds `contents: write` and `HOMEBREW_TAP_TOKEN`, so a moved tag must not be able to
+   change what it runs. `dist generate` writes mutable tags (`actions/checkout@v6`).
+2. **A `paths` filter on the `pull_request` trigger**, so the dry run only runs on PRs that touch
+   release config.
+
+Because of them, `dist-workspace.toml` sets `allow-dirty = ["ci"]`, which makes `dist generate`
+(and `dist plan`) leave `release.yml` alone. To regenerate:
+
+1. Comment out `allow-dirty = ["ci"]` in `dist-workspace.toml` and run `dist generate`.
+2. Put `allow-dirty = ["ci"]` back.
+3. Re-apply the `paths` filter (copy it, with its comment, from the previous `release.yml` in
+   `git diff`) and the comment block above `name: Release`.
+4. Pin every `uses:`: for each `owner/repo@vN`, resolve the commit with
+   `gh api repos/<owner>/<repo>/commits/vN --jq .sha` and the matching release with
+   `gh api repos/<owner>/<repo>/releases --jq '.[].tag_name'`, then write
+   `owner/repo@<sha> # vN.x.y`. (`pinact run .github/workflows/release.yml` does the same.)
+5. `cargo test -p kipi-test-support --test workflow_pins` must pass: it fails on any `uses:` in
+   `.github/workflows/` that is not a 40-hex SHA with a version comment, so a forgotten step 4
+   fails `cargo test` locally and in CI.
+6. Open a PR; the release dry run runs on it. Confirm it passes before merging.
+
+See [Decisions](decisions.md), "Stage 4: release engineering".
 
 Before each release, also re-check the vendor paths in [Adapters](adapters.md).

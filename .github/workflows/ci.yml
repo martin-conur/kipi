@@ -74,7 +74,9 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
-          - os: macos-latest
+          # macos-14 is an Apple Silicon (arm64) image, matching the target; macos-latest
+          # could move to another architecture under us.
+          - os: macos-14
             target: aarch64-apple-darwin
     runs-on: ${{ matrix.os }}
     steps:
@@ -126,7 +128,8 @@ jobs:
     # A fresh macOS runner that did not build the binary; the script uses an empty HOME.
     name: fresh-machine e2e (macos)
     needs: e2e-build
-    runs-on: macos-latest
+    # Apple Silicon, so the aarch64-apple-darwin binary from e2e-build runs natively.
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:

@@ -868,7 +868,7 @@ The spec wins wherever it is explicit.
   `release.yml` carries one hand edit, a `paths` filter on `pull_request`
   (`dist-workspace.toml`, root and kipi-cli `Cargo.toml`, `rust-toolchain.toml`, `release.yml`),
   and `allow-dirty = ["ci"]` keeps `dist` from rejecting or overwriting it. The cost: regenerating
-  is a manual three-step (documented in `docs/release.md`). Running on every PR was the
+  is a manual procedure (documented in `docs/release.md`). Running on every PR was the
   alternative; four release builds per PR for a config that rarely changes was not worth it.
 - **Fresh-machine E2E is a POSIX script, not a Rust test** (`scripts/fresh-machine-e2e.sh`), so it
   runs where no toolchain exists. CI builds the release binary for `x86_64-unknown-linux-musl`
@@ -906,3 +906,10 @@ The spec wins wherever it is explicit.
 - **Leak guard allows `/home/linuxbrew`.** The generated `release.yml` puts Homebrew's Linux
   prefix on `PATH` in the formula job. It is a fixed system account, not a person, so it joins
   the placeholder names (`PLACEHOLDER_USERS`) instead of a hand edit to generated code.
+- **`release.yml` actions are pinned to commit SHAs** like `ci.yml`'s (review of #42): it holds
+  `contents: write` and `HOMEBREW_TAP_TOKEN`. That is a second hand edit kept by
+  `allow-dirty = ["ci"]`; `tests/workflow_pins.rs` in kipi-test-support fails on any `uses:` in
+  `.github/workflows/` without a 40-hex SHA and a `# vX.Y.Z` comment, so a regeneration that
+  forgets to re-pin fails `cargo test`. A test rather than a CI-only step, so it fails locally too.
+- **The macOS E2E runs on `macos-14`**, an Apple Silicon image, not `macos-latest`: it builds and
+  runs the `aarch64-apple-darwin` binary, and the label pins the architecture.
