@@ -7,6 +7,16 @@ the stable interface; human-readable output may change in any release.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`kipi scan` no longer writes a work repo into the personal store.** A new checkout whose
+  remote matches a `remote_patterns` entry of another mounted store than the one its path (or
+  `--scope`) places it in is no longer added (with its remote and drafted summary): scan reports
+  it as `foreign-remote` with the command that adds it to the right store, and records nothing
+  about it. An existing entry in the wrong store no longer gets that remote filled in or its
+  drafts refreshed. `--scope` now also places a checkout whose root is in such a store. No
+  migration; run `kipi doctor` to find entries an earlier scan already wrote (`K013`).
+
 ## [0.1.0]
 
 First public release.

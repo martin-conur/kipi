@@ -69,6 +69,13 @@ kipi scan
 `summary` (from `Cargo.toml` / `pyproject.toml` / `package.json` or the README) and drafted
 `aliases`. Drafted values carry a `# kipi:draft` marker.
 
+A checkout under a personal root whose remote matches another store's `remote_patterns` (an
+`acme-org` repo cloned into `~/code`) is never added to the personal store: `scan` reports it
+and names the fix, adding its directory to an acme root or running `kipi scan <path> --store acme
+--scope acme`. That check only works while the work store is mounted, so on a machine that also
+holds work checkouts, scope the personal roots narrowly (`~/code`, not all of `~/gits`) rather
+than relying on it.
+
 Two repos named `api` — `~/work/acme/acme-api` is fine, but if both were cloned as `api`, the
 second entry would be named `<owner>-api` and matched by its remote.
 

@@ -333,6 +333,19 @@ The spec wins wherever it is explicit.
   matches a scope's pattern (longest wins; a tie decides nothing) but its entry resolves to a scope
   that is neither that scope nor one extending it (so an `acme-ml` repo matching `acme`'s pattern
   is fine), or lives in another store. The hint is the `scope =` line, or the store to move to.
+- **A work remote never lands in another store** (#46, §1 principle 5). A new checkout whose
+  remote's longest `remote_patterns` match (a tie counts if any tied scope is in another store)
+  belongs to a store other than the one its root, or `--scope`, places it in is **reported, not
+  added**: `foreign-remote`, naming that store and the fix (add the directory to one of its
+  roots, or `kipi scan <path> --store <s> --scope <scope>`, or narrow the pattern). Nothing is
+  recorded about it, not even in `machine.toml` (there is no entry to record). We considered
+  adding it straight to the pattern's store with `scope = "<s>"`, and chose not to: a pattern can
+  be too broad, and filing a repo into the work store is the user's call. To make the hint
+  work, `--scope` also places a checkout whose root's store is claimed this way, not only one
+  outside every root. An existing entry identified in the wrong store keeps its
+  `scope-conflict` warning and no longer gets the work `remote` filled in or drafts refreshed.
+  With only the personal store mounted there is no pattern to check, so the docs recommend
+  narrow personal roots on machines that hold work checkouts.
 - **Drafting** (§9): manifest description first (`Cargo.toml` `package.description`, then
   `pyproject.toml` `project.description` / `tool.poetry.description`, `package.json`, the `//`
   comment block right above `go.mod`'s `module`); a non-string value such as

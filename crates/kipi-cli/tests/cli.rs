@@ -571,6 +571,47 @@ fn scan_reports_checkouts_outside_every_root() {
 }
 
 #[test]
+fn scan_never_writes_a_work_remote_into_the_personal_store() {
+    let home = scan_home();
+    // Under the personal root (~/code), but its remote matches the acme store's patterns.
+    let repo = FakeRepo {
+        entry: String::new(),
+        dir: "code/forgotten".into(),
+        origin_url: Some("git@github.com:acme-org/forgotten.git".into()),
+        readme: Some("Internal payroll service.\n".into()),
+        manifest: ManifestKind::None,
+        description: None,
+    };
+    repo.create_under(home.path()).unwrap();
+    let bindings = home.store(ExampleStore::Personal).join("bindings.toml");
+    let warning = "warning: ~/code/forgotten: its remote github.com/acme-org/forgotten matches \
+                   scopes.acme.remote_patterns of store `acme`, so nothing was added to store \
+                   `personal`\n  hint: add its directory to a root of scope `acme` in store \
+                   `acme`, or add it with `kipi scan [HOME]/code/forgotten --store acme --scope \
+                   acme`; if the pattern is too broad, narrow scopes.acme.remote_patterns\n";
+
+    let dry = stdout_of(&home, home.kipi().args(["scan", "--dry-run"]));
+    assert!(dry.contains(warning), "{dry}");
+    let before = fs::read_to_string(&bindings).unwrap();
+    let out = stdout_of(&home, home.kipi().arg("scan"));
+    assert!(out.contains(warning), "{out}");
+    assert!(!out.contains("+ forgotten"), "{out}");
+    // The scan still writes the personal store (dotfiles, blog's remote), never `forgotten`.
+    let after = fs::read_to_string(&bindings).unwrap();
+    assert!(
+        !after.contains("forgotten") && !after.contains("payroll"),
+        "{after}"
+    );
+    let machine = fs::read_to_string(home.path().join(".config/kipi/machine.toml")).unwrap();
+    assert!(!machine.contains("forgotten"), "{machine}");
+    assert_ne!(before, after);
+    // Scanning again leaves the personal store byte-identical.
+    let again = stdout_of(&home, home.kipi().arg("scan"));
+    assert!(again.contains(warning), "{again}");
+    assert_eq!(fs::read_to_string(&bindings).unwrap(), after);
+}
+
+#[test]
 fn scan_checks_store_and_scope() {
     let home = scan_home();
     let (code, err) = failure_of(&home, home.kipi().args(["scan", "--scope", "acme-m"]));

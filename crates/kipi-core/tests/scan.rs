@@ -343,27 +343,104 @@ fn checkouts_outside_every_root_are_reported_or_placed_with_scope() {
 }
 
 #[test]
-fn a_remote_matching_another_scopes_patterns_is_a_conflict() {
+fn a_remote_matching_another_stores_patterns_is_never_written_into_this_store() {
     let m = Machine::new(&ExampleStore::ALL);
+    let path = m.checkout(fake(
+        "code/payroll",
+        Some("git@github.com:acme-org/payroll.git"),
+        Some("Pays the people.\n"),
+    ));
+    let personal = m.bindings(ExampleStore::Personal);
+    let acme = m.bindings(ExampleStore::Acme);
+    let out = m.apply(&ScanOptions::default());
+    assert!(out.added.is_empty(), "{:?}", out.added);
+    assert_eq!(
+        m.bindings(ExampleStore::Personal),
+        personal,
+        "byte-identical"
+    );
+    assert_eq!(m.bindings(ExampleStore::Acme), acme);
+    assert!(!m.machine_toml().contains("payroll"));
+    let [w @ Warning::ForeignRemote { .. }] = out.warnings.as_slice() else {
+        panic!("{:?}", out.warnings)
+    };
+    assert_eq!((w.code(), w.entry()), ("foreign-remote", None));
+    assert_eq!(
+        w.message(|p| p.display().to_string()),
+        format!(
+            "{}: its remote github.com/acme-org/payroll matches scopes.acme.remote_patterns of \
+             store `acme`, so nothing was added to store `personal`",
+            path.display()
+        )
+    );
+    assert_eq!(
+        w.hint(),
+        format!(
+            "add its directory to a root of scope `acme` in store `acme`, or add it with \
+             `kipi scan {} --store acme --scope acme`; if the pattern is too broad, narrow \
+             scopes.acme.remote_patterns",
+            path.display()
+        )
+    );
+
+    // Forcing the personal scope is refused the same way.
+    let out = m.scan(&ScanOptions {
+        paths: vec![path.clone()],
+        scope: Some("personal".into()),
+        ..ScanOptions::default()
+    });
+    assert!(out.writes.is_empty());
+    assert_eq!(codes(&out), [("foreign-remote", None)]);
+
+    // The hint's command adds it to the acme store, with an explicit scope.
+    let out = m.apply(&ScanOptions {
+        paths: vec![path],
+        scope: Some("acme".into()),
+        ..ScanOptions::default()
+    });
+    assert_eq!(out.added.len(), 1);
+    assert_eq!(
+        (out.added[0].store.as_str(), out.added[0].explicit_scope),
+        ("acme", true)
+    );
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    assert_eq!(m.bindings(ExampleStore::Personal), personal);
+    assert!(
+        m.bindings(ExampleStore::Acme).contains(
+            "[repos.payroll]\nremote = \"github.com/acme-org/payroll\"\nscope = \"acme\"\n"
+        )
+    );
+}
+
+#[test]
+fn an_existing_entry_never_gets_another_stores_remote_or_drafts() {
+    let m = Machine::new(&ExampleStore::ALL);
+    let file = m.store(ExampleStore::Personal).join("bindings.toml");
+    let mut text = fs::read_to_string(&file).unwrap();
+    text.push_str("\n[repos.payroll]\nsummary = \"Old\"  # kipi:draft\n");
+    fs::write(&file, &text).unwrap();
     m.checkout(fake(
         "code/payroll",
         Some("git@github.com:acme-org/payroll.git"),
-        None,
+        Some("Pays the people.\n"),
     ));
-    let out = m.scan(&ScanOptions::default());
-    assert_eq!(out.added.len(), 1);
-    assert_eq!(out.added[0].store, "personal", "placed by path");
-    let [w @ Warning::ScopeConflict { .. }] = out.warnings.as_slice() else {
-        panic!("{:?}", out.warnings)
-    };
+    let out = m.apply(&refresh());
     assert_eq!(
-        w.hint(),
+        m.bindings(ExampleStore::Personal),
+        text,
+        "no remote, no re-draft"
+    );
+    assert!(out.remotes_filled.is_empty() && out.refreshed.is_empty());
+    assert_eq!(codes(&out), [("scope-conflict", Some("payroll"))]);
+    assert_eq!(
+        out.warnings[0].hint(),
         "the entry lives in store `personal`; move [repos.payroll] to store `acme` and add \
          `scope = \"acme\"`"
     );
-    assert!(w.message(|p| p.display().to_string()).ends_with(
-        "resolves to scope `personal`, but its remote matches scopes.acme.remote_patterns"
-    ),);
+    assert!(
+        m.machine_toml().contains("payroll = "),
+        "machine.toml is per-machine"
+    );
 }
 
 #[test]
