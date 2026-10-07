@@ -199,7 +199,7 @@ fn example_scopes_come_from_roots_patterns_and_the_personal_fallback() {
     );
     assert_eq!(rule("side-tool"), "machine.toml [roots] personal");
 
-    // Without that override no root holds `/srv/code/side-tool`: rule 3 places it.
+    // Without that override no root holds `/srv/code/side-tool`: rule 4 places it.
     let mut machine = machine;
     machine.roots.retain(|r| r.scope != "personal");
     let plan = ok(&set, &machine);

@@ -35,9 +35,11 @@ docs/decisions.md          # decisions the spec leaves open
 docs/adapters.md           # verified vendor paths/keys per adapter, with sources
 docs/doctor.md             # doctor check codes (K001…), levels and the --json shape
 docs/config-reference.md   # every config key; tests/config_reference.rs checks it against the serde model
-docs/release.md            # cargo-dist release + one-time maintainer setup (tap, HOMEBREW_TAP_TOKEN)
+docs/release.md            # cargo-dist release + maintainer setup (Homebrew deferred past 0.1.0)
 dist-workspace.toml        # cargo-dist config; `dist generate` → .github/workflows/release.yml (see docs/release.md)
 scripts/fresh-machine-e2e.sh  # zero-to-synced E2E against a built binary or release archive
+docs/demo/                 # demo.tape (vhs) + setup.sh → demo.gif and tree.png for the README
+CONTRIBUTING.md CHANGELOG.md CODE_OF_CONDUCT.md  # contributor docs; CHANGELOG feeds the release notes
 ```
 
 New dependencies come from the §12 list via `<dep>.workspace = true`. Anything outside that list
@@ -50,6 +52,7 @@ cargo fmt --all                                            # format
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace                                     # all tests, incl. leak guard + example stores
 cargo test -p kipi-test-support --test leak_guard          # leak guard only
+cargo test -p kipi-test-support --test leak_guard -- --ignored  # leak guard over all git history
 cargo test -p kipi-test-support --test workflow_pins       # every workflow `uses:` pinned to a commit SHA
 cargo test -p kipi-core --test resolve --test resolve_props  # resolution unit + property tests
 cargo test -p kipi-core --test render --test splice_props    # rendering snapshots + splice properties

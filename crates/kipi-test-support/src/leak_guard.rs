@@ -207,6 +207,106 @@ pub fn scan_tree(root: &Path, denylist: &Denylist) -> io::Result<Vec<Hit>> {
     Ok(hits)
 }
 
+/// Scan every blob and commit message reachable from any ref of the git repository at
+/// `root` except the stash (which is never pushed). This function fetches nothing: to
+/// cover a forge's pull-request refs, the caller must first fetch them into a local
+/// namespace (`git fetch origin '+refs/pull/*:refs/audit/pull/*'`). A hit's path is `<path>@<blob>` for file contents and
+/// `commit <sha>` for a message. Old versions of the committed denylist are skipped like
+/// the current one.
+pub fn scan_history(root: &Path, denylist: &Denylist) -> io::Result<Vec<Hit>> {
+    let refs = ["--exclude=refs/stash", "--all"];
+    let objects = git(
+        root,
+        &[&["rev-list", "--objects"][..], &refs].concat(),
+        None,
+    )?;
+    let mut blobs: Vec<(String, String)> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for line in String::from_utf8_lossy(&objects).lines() {
+        let Some((id, path)) = line.split_once(' ') else {
+            continue;
+        };
+        if path != DENYLIST_FILE && seen.insert(id.to_owned()) {
+            blobs.push((id.to_owned(), path.to_owned()));
+        }
+    }
+    // Trees and directories are in the list too; `--batch-check` filters them out.
+    let input: String = blobs.iter().map(|(id, _)| format!("{id}\n")).collect();
+    let types = git(
+        root,
+        &["cat-file", "--batch-check=%(objecttype)"],
+        Some(input.into_bytes()),
+    )?;
+    let types: Vec<&str> = std::str::from_utf8(&types)
+        .map_err(io::Error::other)?
+        .lines()
+        .collect();
+    blobs = blobs
+        .into_iter()
+        .zip(types)
+        .filter(|(_, t)| *t == "blob")
+        .map(|(b, _)| b)
+        .collect();
+
+    let mut hits = Vec::new();
+    for (id, path) in &blobs {
+        let bytes = git(root, &["cat-file", "blob", id], None)?;
+        if let Ok(text) = String::from_utf8(bytes) {
+            let label = PathBuf::from(format!("{path}@{}", &id[..12]));
+            hits.extend(scan_text(&label, &text, denylist));
+        }
+    }
+    let log = git(
+        root,
+        &[&["log", "--format=%H%n%B%x00"][..], &refs].concat(),
+        None,
+    )?;
+    for entry in String::from_utf8_lossy(&log).split('\0') {
+        let entry = entry.trim_start_matches('\n');
+        if let Some((sha, message)) = entry.split_once('\n') {
+            let label = PathBuf::from(format!("commit {}", &sha[..sha.len().min(12)]));
+            hits.extend(scan_text(&label, message, denylist));
+        }
+    }
+    Ok(hits)
+}
+
+/// Run `git -C root <args>`, feeding `stdin` if given, and return its stdout.
+fn git(root: &Path, args: &[&str], stdin: Option<Vec<u8>>) -> io::Result<Vec<u8>> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let mut child = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .stdin(if stdin.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    // Write from another thread so a large stdout cannot deadlock against our input.
+    let writer = stdin.map(|input| {
+        let mut pipe = child.stdin.take().expect("stdin is piped");
+        std::thread::spawn(move || pipe.write_all(&input))
+    });
+    let out = child.wait_with_output()?;
+    if let Some(w) = writer {
+        w.join()
+            .map_err(|_| io::Error::other("git stdin writer panicked"))??;
+    }
+    if !out.status.success() {
+        return Err(io::Error::other(format!(
+            "git {}: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr).trim()
+        )));
+    }
+    Ok(out.stdout)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,6 +383,35 @@ mod tests {
         ] {
             assert!(scan(text, &list).is_empty(), "unexpected hit in {text:?}");
         }
+    }
+
+    #[test]
+    fn history_scan_finds_a_leak_removed_in_a_later_commit() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let run = |args: &[&str]| {
+            let id = ["-c", "user.name=t", "-c", "user.email=t@example.com"];
+            git(root, &[&id[..], args].concat(), None).unwrap();
+        };
+        run(&["init", "-q"]);
+        fs::write(root.join("notes.md"), "ok\nwe ship Frobnicorp things\n").unwrap();
+        fs::write(root.join(DENYLIST_FILE), "frobnicorp\n").unwrap();
+        run(&["add", "."]);
+        run(&["commit", "-q", "-m", "add notes"]);
+        fs::write(root.join("notes.md"), "ok\n").unwrap();
+        run(&["commit", "-q", "-am", "scrub Frobnicorp"]);
+
+        let list = Denylist::parse("(?i)frobnicorp", "test").unwrap();
+        assert!(scan_tree(root, &list).unwrap().is_empty());
+        let hits = scan_history(root, &list).unwrap();
+        let where_: Vec<String> = hits
+            .iter()
+            .map(|h| format!("{}:{}", h.path.display(), h.line))
+            .collect();
+        assert_eq!(hits.len(), 2, "{where_:?}");
+        // `scan_history` scans every blob before any commit message, so the blob hit is first.
+        assert!(where_[0].starts_with("notes.md@") && where_[0].ends_with(":2"));
+        assert!(where_[1].starts_with("commit ") && where_[1].ends_with(":1"));
     }
 
     #[test]

@@ -11,6 +11,20 @@
 \bAKIA[0-9A-Z]{16}\b
 \bgh[pousr]_[A-Za-z0-9]{36}\b
 \bxox[abprs]-[A-Za-z0-9-]{10,}
+\bsk-ant-[A-Za-z0-9_-]{20,}
+\bsk-(?:proj-)?[A-Za-z0-9]{32,}\b
+\bAIza[0-9A-Za-z_-]{35}\b
+hooks\.slack\.com/services/
+\bglpat-[A-Za-z0-9_-]{20}\b
 
 # Internal-looking hostnames; examples use acme-org and example-user instead.
 (?i)\b[a-z0-9-]+\.(corp|internal|intranet)\b
+
+# Personal mailboxes (examples use @example.com / @example.invalid).
+(?i)\b[A-Za-z0-9._%+-]+@(?:gmail|googlemail|outlook|hotmail|live|yahoo|icloud|me|proton|protonmail)\.(?:com|me)\b
+
+# Machine-specific temp dirs that name the local environment (macOS per-user temp).
+/var/folders/[A-Za-z0-9_+-]{2}/[A-Za-z0-9_+-]{20,}/
+
+# Company-chat and SSO tenants.
+(?i)\b[a-z0-9-]+\.(?:slack\.com|atlassian\.net|okta\.com|sharepoint\.com|onmicrosoft\.com)\b

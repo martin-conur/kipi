@@ -913,3 +913,41 @@ The spec wins wherever it is explicit.
   forgets to re-pin fails `cargo test`. A test rather than a CI-only step, so it fails locally too.
 - **The macOS E2E runs on `macos-14`**, an Apple Silicon image, not `macos-latest`: it builds and
   runs the `aarch64-apple-darwin` binary, and the label pins the architecture.
+
+## Stage 4: public release 0.1.0 (#21)
+
+- **No Homebrew in 0.1.0** (maintainer decision). `dist-workspace.toml` drops the `homebrew`
+  installer, the `tap` and the `homebrew` publish job, and `crates/kipi-cli/Cargo.toml` drops
+  `[package.metadata.dist] formula = "kipi"`: that key alone makes `dist plan` emit `kipi.rb`
+  even with `installers = ["shell"]`. `release.yml` was regenerated and its two hand edits (SHA
+  pins, PR `paths` filter) re-applied; the `publish-homebrew-formula` job and the
+  `HOMEBREW_TAP_TOKEN` secret are gone. Install docs say "shell installer, prebuilt archive or
+  build from source". Roadmap §14's Stage 4 acceptance reads "shell installer →" instead of
+  `brew install kipi`. `docs/release.md` keeps the steps to add Homebrew back. The leak guard
+  still allows `/home/linuxbrew`, since the formula job will bring that path back.
+- **§6 gains the not-cloned placement rule** from "Stage 1: resolution engine (#3)" as rule 3,
+  so the published spec matches the code; `personal` / unscoped becomes rule 4. Earlier entries
+  in this file that say "rule 3" for the `personal` fallback predate the renumbering. Each §15
+  open decision now names its decision and points at its entry here.
+- **The history leak audit is a test.** `leak_guard::scan_history` runs the same scanner as the
+  tree scan over every blob and commit message reachable from any ref except the stash (old
+  copies of `.leak-denylist` skipped). `tests/leak_guard.rs::history_has_no_leaks` is
+  `#[ignore]`d locally, because a leak already in history cannot be fixed by a commit, and runs
+  in CI's `leak guard (history)` job with `fetch-depth: 0`, the forge's `refs/pull/*` fetched,
+  and the `KIPI_LEAK_DENYLIST` secret.
+- **Denylist additions are generic only:** more credential shapes (Anthropic, OpenAI, Google API
+  keys, Slack webhooks, GitLab tokens), personal mailbox domains, macOS per-user temp dirs
+  (`/var/folders/xx/<id>/`), and company chat/SSO tenant hosts. Employer names stay in the
+  secret.
+- **The README demo is reproducible.** `docs/demo/demo.tape` (vhs) sources
+  `docs/demo/setup.sh`, which copies both example stores into a throwaway home at the fixed
+  path `/tmp/kipi-demo` (so recorded paths do not vary per run, and never show a real home) and
+  creates empty git repos for their entries. The tape writes `docs/demo/demo.gif` and the
+  `kipi tree` screenshot `docs/demo/tree.png`. The setup refuses to clear `/tmp/kipi-demo` unless
+  it carries its `.kipi-demo` marker.
+- **Release notes come from `CHANGELOG.md`.** cargo-dist reads the section for the tagged
+  version (Keep a Changelog headings, `## [0.1.0]`) into the GitHub Release body.
+- **Code of conduct by reference.** `CODE_OF_CONDUCT.md` adopts the Contributor Covenant 2.1 by
+  link rather than copying its text, and routes reports to the maintainer privately.
+- **Help text.** `sync --agents` names its values and delimiter, `tree --budget` says it shows
+  tokens against the budget, and `edit`'s argument lists the target forms.
