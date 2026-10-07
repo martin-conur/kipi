@@ -374,7 +374,7 @@ fn a_remote_matching_another_stores_patterns_is_never_written_into_this_store() 
         )
     );
     assert_eq!(
-        w.hint(),
+        w.hint(|p| p.display().to_string()),
         format!(
             "add its directory to a root of scope `acme` in store `acme`, or add it with \
              `kipi scan {} --store acme --scope acme`; if the pattern is too broad, narrow \
@@ -433,7 +433,7 @@ fn an_existing_entry_never_gets_another_stores_remote_or_drafts() {
     assert!(out.remotes_filled.is_empty() && out.refreshed.is_empty());
     assert_eq!(codes(&out), [("scope-conflict", Some("payroll"))]);
     assert_eq!(
-        out.warnings[0].hint(),
+        out.warnings[0].hint(|p| p.display().to_string()),
         "the entry lives in store `personal`; move [repos.payroll] to store `acme` and add \
          `scope = \"acme\"`"
     );

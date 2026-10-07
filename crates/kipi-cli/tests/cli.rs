@@ -587,7 +587,7 @@ fn scan_never_writes_a_work_remote_into_the_personal_store() {
     let warning = "warning: ~/code/forgotten: its remote github.com/acme-org/forgotten matches \
                    scopes.acme.remote_patterns of store `acme`, so nothing was added to store \
                    `personal`\n  hint: add its directory to a root of scope `acme` in store \
-                   `acme`, or add it with `kipi scan [HOME]/code/forgotten --store acme --scope \
+                   `acme`, or add it with `kipi scan ~/code/forgotten --store acme --scope \
                    acme`; if the pattern is too broad, narrow scopes.acme.remote_patterns\n";
 
     let dry = stdout_of(&home, home.kipi().args(["scan", "--dry-run"]));

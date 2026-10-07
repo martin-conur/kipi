@@ -323,8 +323,8 @@ impl Warning {
         }
     }
 
-    /// What to do about it.
-    pub fn hint(&self) -> String {
+    /// What to do about it; paths are shown through `show`.
+    pub fn hint(&self, show: impl Fn(&Path) -> String) -> String {
         match self {
             Warning::ScopeConflict {
                 entry,
@@ -375,7 +375,7 @@ impl Warning {
                  `{pattern_store}`, or add it with `kipi scan {} --store {pattern_store} \
                  --scope {pattern_scope}`; if the pattern is too broad, narrow \
                  scopes.{pattern_scope}.remote_patterns",
-                path.display()
+                shell_word(&show(path))
             ),
             Warning::Vanished { entry, .. } => format!(
                 "re-clone it, or remove the `\"{entry}\"` line from machine.toml (scan never \
@@ -584,6 +584,19 @@ pub(crate) fn place<'a>(
             Placement::Tie(names)
         }
     }
+}
+
+/// `path` as one shell word: unchanged when it needs no quoting, else single-quoted after
+/// a leading `~/`, which must stay unquoted to expand.
+fn shell_word(path: &str) -> String {
+    let plain = |c: char| c.is_ascii_alphanumeric() || "/._-~+,:@%".contains(c);
+    if path.chars().all(plain) {
+        return path.to_owned();
+    }
+    let (prefix, rest) = path
+        .strip_prefix("~/")
+        .map_or(("", path), |rest| ("~/", rest));
+    format!("{prefix}'{}'", rest.replace('\'', r"'\''"))
 }
 
 /// The scope with the longest `remote_patterns` entry matching `remote`; a tie
@@ -908,14 +921,19 @@ impl<'a> Ctx<'a> {
         };
         // `--scope` also places a checkout whose root's store another store's
         // `remote_patterns` claims: that is how the hint below gets it into that store.
-        let (store, scope, explicit) = match place(self.stores.stores(), self.machine, &f.path) {
-            Placement::Scope(store, scope) if foreign(store).is_none() => (store, scope, false),
+        let placed = place(self.stores.stores(), self.machine, &f.path);
+        let blocked = match &placed {
+            Placement::Scope(store, _) => foreign(store),
+            _ => None,
+        };
+        let (store, scope, explicit) = match placed {
+            Placement::Scope(store, scope) if blocked.is_none() => (store, scope, false),
             other => match forced() {
                 Some((store, scope)) => (store, scope, true),
                 None => {
                     let reason = match other {
-                        Placement::Scope(store, _) => {
-                            self.out.warnings.extend(foreign(store));
+                        Placement::Scope(..) => {
+                            self.out.warnings.extend(blocked);
                             return;
                         }
                         Placement::Tie(names) => format!(
@@ -948,7 +966,7 @@ impl<'a> Ctx<'a> {
                 }
             },
         };
-        if let Some(w) = foreign(store) {
+        if explicit && let Some(w) = foreign(store) {
             self.out.warnings.push(w);
             return;
         }
@@ -1044,5 +1062,18 @@ impl<'a> Ctx<'a> {
             }
         }
         Ok(self.out)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::shell_word;
+
+    #[test]
+    fn shell_words_quote_only_when_needed_and_keep_tilde_expanding() {
+        assert_eq!(shell_word("~/code/forgotten"), "~/code/forgotten");
+        assert_eq!(shell_word("/srv/git/a.b-c_d"), "/srv/git/a.b-c_d");
+        assert_eq!(shell_word("~/my code/x"), "~/'my code/x'");
+        assert_eq!(shell_word("/tmp/it's"), r"'/tmp/it'\''s'");
     }
 }

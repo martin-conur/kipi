@@ -175,7 +175,7 @@ fn human(scan: &Scan, dry_run: bool, out: &Output) -> String {
             p.warn("warning:"),
             w.message(|path| out.path(path)),
             p.hint("hint:"),
-            w.hint()
+            w.hint(|path| out.path(path))
         ));
     }
     if !scan.not_found.is_empty() {
