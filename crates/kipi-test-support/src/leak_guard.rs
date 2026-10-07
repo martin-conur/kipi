@@ -208,8 +208,9 @@ pub fn scan_tree(root: &Path, denylist: &Denylist) -> io::Result<Vec<Hit>> {
 }
 
 /// Scan every blob and commit message reachable from any ref of the git repository at
-/// `root` except the stash (which is never pushed); fetch `refs/pull/*` first to cover a
-/// forge's pull-request refs. A hit's path is `<path>@<blob>` for file contents and
+/// `root` except the stash (which is never pushed). This function fetches nothing: to
+/// cover a forge's pull-request refs, the caller must first fetch them into a local
+/// namespace (`git fetch origin '+refs/pull/*:refs/audit/pull/*'`). A hit's path is `<path>@<blob>` for file contents and
 /// `commit <sha>` for a message. Old versions of the committed denylist are skipped like
 /// the current one.
 pub fn scan_history(root: &Path, denylist: &Denylist) -> io::Result<Vec<Hit>> {
@@ -408,6 +409,7 @@ mod tests {
             .map(|h| format!("{}:{}", h.path.display(), h.line))
             .collect();
         assert_eq!(hits.len(), 2, "{where_:?}");
+        // `scan_history` scans every blob before any commit message, so the blob hit is first.
         assert!(where_[0].starts_with("notes.md@") && where_[0].ends_with(":2"));
         assert!(where_[1].starts_with("commit ") && where_[1].ends_with(":1"));
     }
