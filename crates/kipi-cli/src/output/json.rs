@@ -358,7 +358,7 @@ pub fn scan(scan: &kipi_core::scan::Scan, dry_run: bool) -> serde_json::Result<S
                 entry: w.entry(),
                 path: w.path(),
                 message: w.message(|p| p.display().to_string()),
-                hint: w.hint(),
+                hint: w.hint(|p| p.display().to_string()),
             })
             .collect(),
         not_found: &scan.not_found,

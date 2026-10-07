@@ -54,7 +54,10 @@ tracked in git, kipi writes the block to the untracked `CLAUDE.local.md` instead
 
 Use two stores: a personal one mounted everywhere and a work one mounted only on the work laptop.
 Nothing crosses stores except skills a store explicitly shares, and `doctor` reports a work repo
-(by `remote_patterns`) recorded in the personal store. See [Concepts](concepts.md#scopes-and-the-leak-rule).
+(by `remote_patterns`) recorded in the personal store. `kipi scan` never adds such a repo to the
+personal store in the first place: it reports it with the command that adds it to the work store.
+That check needs the work store mounted, so on a machine that holds work checkouts, keep the
+personal roots narrow (`~/code`, not all of `~/gits`). See [Concepts](concepts.md#scopes-and-the-leak-rule).
 
 ## Windows?
 

@@ -72,6 +72,11 @@ kipi sync --all --dry-run # see what changes first
 kipi sync --all
 ```
 
+Keep `roots` narrow on a machine that also holds work checkouts: a personal root that
+covers them would place them in the personal store. `kipi scan` refuses to add a repo whose remote
+matches another mounted store's `remote_patterns`, but with only the personal store mounted there
+is no pattern to check against.
+
 Every repo under `~/code` now has a generated block in `CLAUDE.md` and `AGENTS.md`, skill
 links in `.claude/skills/` and `.agents/skills/`, and a read grant in
 `.claude/settings.local.json`. Everything kipi wrote is recorded in `.kipi/manifest.toml` and

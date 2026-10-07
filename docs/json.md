@@ -120,7 +120,9 @@ lies outside every root), `path`, `remote` (string \| null), `summary` (string \
 recorded checkout's origin differs from its entry's `remote`), `duplicate-checkouts` (several
 checkouts match one entry, or clone one new repo; `entry` is `null` then), `ambiguous-match`
 (several entries match a checkout), `unplaced` (a new checkout outside every root, under two
-scopes' roots at the same depth, or without a free name), `vanished` (a `machine.toml` path that no
+scopes' roots at the same depth, or without a free name), `foreign-remote` (a new checkout placed
+in one store whose remote matches another store's `remote_patterns`; nothing was added, `entry`
+is `null`), `vanished` (a `machine.toml` path that no
 longer exists).
 
 ## Sync

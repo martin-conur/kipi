@@ -187,6 +187,21 @@ pub enum Warning {
         /// What to do.
         hint: String,
     },
+    /// A new checkout whose remote matches `scopes.<pattern_scope>.remote_patterns` of
+    /// another store than the one its path (or `--scope`) places it in. Nothing was
+    /// added, so no work repo's name, remote or summary lands in that store (§1.5).
+    ForeignRemote {
+        /// The checkout.
+        path: PathBuf,
+        /// Its normalized remote.
+        remote: RemoteUrl,
+        /// The store it would have been added to.
+        store: String,
+        /// The scope whose `remote_patterns` match.
+        pattern_scope: String,
+        /// The store owning that scope.
+        pattern_store: String,
+    },
     /// A `machine.toml [repos]` path that no longer exists (kept: scan removes nothing).
     Vanished {
         /// The entry.
@@ -205,6 +220,7 @@ impl Warning {
             Warning::Duplicate { .. } => "duplicate-checkouts",
             Warning::Ambiguous { .. } => "ambiguous-match",
             Warning::Unplaced { .. } => "unplaced",
+            Warning::ForeignRemote { .. } => "foreign-remote",
             Warning::Vanished { .. } => "vanished",
         }
     }
@@ -216,6 +232,7 @@ impl Warning {
             | Warning::RemoteDiffers { path, .. }
             | Warning::Ambiguous { path, .. }
             | Warning::Unplaced { path, .. }
+            | Warning::ForeignRemote { path, .. }
             | Warning::Vanished { path, .. } => path,
             Warning::Duplicate { paths, .. } => &paths[0],
         }
@@ -228,7 +245,9 @@ impl Warning {
             | Warning::RemoteDiffers { entry, .. }
             | Warning::Vanished { entry, .. } => Some(entry),
             Warning::Duplicate { entry, .. } => entry.as_deref(),
-            Warning::Ambiguous { .. } | Warning::Unplaced { .. } => None,
+            Warning::Ambiguous { .. }
+            | Warning::Unplaced { .. }
+            | Warning::ForeignRemote { .. } => None,
         }
     }
 
@@ -286,6 +305,17 @@ impl Warning {
                 candidates.join(", ")
             ),
             Warning::Unplaced { path, reason, .. } => format!("{}: {reason}", show(path)),
+            Warning::ForeignRemote {
+                path,
+                remote,
+                store,
+                pattern_scope,
+                pattern_store,
+            } => format!(
+                "{}: its remote {remote} matches scopes.{pattern_scope}.remote_patterns of \
+                 store `{pattern_store}`, so nothing was added to store `{store}`",
+                show(path)
+            ),
             Warning::Vanished { entry, path } => format!(
                 "`{entry}` is recorded at {}, which no longer exists",
                 show(path)
@@ -293,8 +323,8 @@ impl Warning {
         }
     }
 
-    /// What to do about it.
-    pub fn hint(&self) -> String {
+    /// What to do about it; paths are shown through `show`.
+    pub fn hint(&self, show: impl Fn(&Path) -> String) -> String {
         match self {
             Warning::ScopeConflict {
                 entry,
@@ -335,6 +365,18 @@ impl Warning {
                 candidates.join(" / ")
             ),
             Warning::Unplaced { hint, .. } => hint.clone(),
+            Warning::ForeignRemote {
+                path,
+                pattern_scope,
+                pattern_store,
+                ..
+            } => format!(
+                "add its directory to a root of scope `{pattern_scope}` in store \
+                 `{pattern_store}`, or add it with `kipi scan {} --store {pattern_store} \
+                 --scope {pattern_scope}`; if the pattern is too broad, narrow \
+                 scopes.{pattern_scope}.remote_patterns",
+                shell_word(&show(path))
+            ),
             Warning::Vanished { entry, .. } => format!(
                 "re-clone it, or remove the `\"{entry}\"` line from machine.toml (scan never \
                  removes entries)"
@@ -544,9 +586,44 @@ pub(crate) fn place<'a>(
     }
 }
 
+/// `path` as one shell word: unchanged when it needs no quoting, else single-quoted after
+/// a leading `~/`, which must stay unquoted to expand.
+fn shell_word(path: &str) -> String {
+    let plain = |c: char| c.is_ascii_alphanumeric() || "/._-~+,:@%".contains(c);
+    if path.chars().all(plain) {
+        return path.to_owned();
+    }
+    let (prefix, rest) = path
+        .strip_prefix("~/")
+        .map_or(("", path), |rest| ("~/", rest));
+    format!("{prefix}'{}'", rest.replace('\'', r"'\''"))
+}
+
 /// The scope with the longest `remote_patterns` entry matching `remote`; a tie
 /// between scopes decides nothing.
 fn pattern_scope<'a>(stores: &'a StoreSet, remote: &RemoteUrl) -> Option<(&'a Store, &'a Scope)> {
+    match pattern_scopes(stores, remote).as_slice() {
+        [one] => Some(*one),
+        _ => None,
+    }
+}
+
+/// A scope of a store other than `store` among those with the longest `remote_patterns`
+/// entry matching `remote`: a checkout with that remote must not be written into
+/// `store`. A tie that includes another store's scope counts too (when in doubt, keep
+/// it out). `None` when no pattern matches or every best match is `store`'s own.
+fn foreign_pattern<'a>(
+    stores: &'a StoreSet,
+    store: &Store,
+    remote: &RemoteUrl,
+) -> Option<(&'a Store, &'a Scope)> {
+    pattern_scopes(stores, remote)
+        .into_iter()
+        .find(|(s, _)| s.name != store.name)
+}
+
+/// Every scope whose `remote_patterns` has the longest entry matching `remote`.
+fn pattern_scopes<'a>(stores: &'a StoreSet, remote: &RemoteUrl) -> Vec<(&'a Store, &'a Scope)> {
     let mut best: Vec<(&Store, &Scope)> = Vec::new();
     let mut best_len = 0;
     for store in stores.stores() {
@@ -568,10 +645,7 @@ fn pattern_scope<'a>(stores: &'a StoreSet, remote: &RemoteUrl) -> Option<(&'a St
             }
         }
     }
-    match best.as_slice() {
-        [one] => Some(*one),
-        _ => None,
-    }
+    best
 }
 
 /// The part of an entry name aliases are drafted from: without the `<owner>-` prefix
@@ -692,6 +766,12 @@ impl<'a> Ctx<'a> {
             }
         };
         let Some(f) = chosen else { return };
+        // Never copy a work remote or README summary into another store's entry; the
+        // scope-conflict warning below says to move the entry.
+        let foreign = f
+            .remote
+            .as_ref()
+            .is_some_and(|r| foreign_pattern(self.stores, store, r).is_some());
 
         match (&repo.remote, &f.remote) {
             (Some(expected), Some(found)) if expected != found => {
@@ -702,7 +782,7 @@ impl<'a> Ctx<'a> {
                     found: found.clone(),
                 });
             }
-            (None, Some(found)) => {
+            (None, Some(found)) if !foreign => {
                 let doc = self.bindings(store);
                 write::set_repo_key(doc, name, "remote", Value::from(found.as_str()));
                 self.out.remotes_filled.push(RemoteFilled {
@@ -714,7 +794,7 @@ impl<'a> Ctx<'a> {
             _ => {}
         }
 
-        if opts.refresh_drafts {
+        if opts.refresh_drafts && !foreign {
             self.refresh(store, repo, &f.path);
         }
 
@@ -828,12 +908,34 @@ impl<'a> Ctx<'a> {
             let name = opts.scope.as_deref()?;
             self.stores.scope(name)
         };
-        let (store, scope, explicit) = match place(self.stores.stores(), self.machine, &f.path) {
-            Placement::Scope(store, scope) => (store, scope, false),
+        let foreign = |store: &Store| {
+            let remote = f.remote.as_ref()?;
+            let (pstore, pscope) = foreign_pattern(self.stores, store, remote)?;
+            Some(Warning::ForeignRemote {
+                path: f.path.clone(),
+                remote: remote.clone(),
+                store: store.name.clone(),
+                pattern_scope: pscope.name.clone(),
+                pattern_store: pstore.name.clone(),
+            })
+        };
+        // `--scope` also places a checkout whose root's store another store's
+        // `remote_patterns` claims: that is how the hint below gets it into that store.
+        let placed = place(self.stores.stores(), self.machine, &f.path);
+        let blocked = match &placed {
+            Placement::Scope(store, _) => foreign(store),
+            _ => None,
+        };
+        let (store, scope, explicit) = match placed {
+            Placement::Scope(store, scope) if blocked.is_none() => (store, scope, false),
             other => match forced() {
                 Some((store, scope)) => (store, scope, true),
                 None => {
                     let reason = match other {
+                        Placement::Scope(..) => {
+                            self.out.warnings.extend(blocked);
+                            return;
+                        }
                         Placement::Tie(names) => format!(
                             "lies under roots of scopes {} at the same depth",
                             names.join(", ")
@@ -864,6 +966,10 @@ impl<'a> Ctx<'a> {
                 }
             },
         };
+        if explicit && let Some(w) = foreign(store) {
+            self.out.warnings.push(w);
+            return;
+        }
 
         let Some(name) = self.entry_name(f) else {
             let dir = f.path.file_name().map(|n| n.to_string_lossy().into_owned());
@@ -956,5 +1062,18 @@ impl<'a> Ctx<'a> {
             }
         }
         Ok(self.out)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::shell_word;
+
+    #[test]
+    fn shell_words_quote_only_when_needed_and_keep_tilde_expanding() {
+        assert_eq!(shell_word("~/code/forgotten"), "~/code/forgotten");
+        assert_eq!(shell_word("/srv/git/a.b-c_d"), "/srv/git/a.b-c_d");
+        assert_eq!(shell_word("~/my code/x"), "~/'my code/x'");
+        assert_eq!(shell_word("/tmp/it's"), r"'/tmp/it'\''s'");
     }
 }
