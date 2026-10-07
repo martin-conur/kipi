@@ -117,7 +117,7 @@ pub enum Command {
         /// Sync every repo cloned on this machine.
         #[arg(long, conflicts_with = "repos")]
         all: bool,
-        /// Adapters to render, overriding the plan.
+        /// Adapters to render instead of the plan's (comma-separated: claude, generic).
         #[arg(long, value_delimiter = ',')]
         agents: Vec<String>,
         /// Replace files kipi did not write.
@@ -146,7 +146,7 @@ pub enum Command {
         /// Only this store (by name).
         #[arg(long, value_name = "NAME", add = ArgValueCandidates::new(complete::stores))]
         store: Option<String>,
-        /// Show always-on token counts.
+        /// Show each repo's always-on tokens against its budget.
         #[arg(long)]
         budget: bool,
         /// Show this machine's paths.
@@ -181,7 +181,7 @@ pub enum Command {
     },
     /// Open a repo entry, skill, notes:<repo> or conventions:<scope> in $EDITOR.
     Edit {
-        /// What to edit.
+        /// A repo entry, a skill, notes:<repo> or conventions:<scope>.
         #[arg(add = ArgValueCandidates::new(complete::edit_targets))]
         target: String,
     },

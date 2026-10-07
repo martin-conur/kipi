@@ -3,12 +3,6 @@
 kipi runs on Linux and macOS (x86_64 and aarch64). It needs `git` on `PATH` and nothing else:
 release binaries are static on Linux (musl) and link only the system libraries on macOS.
 
-## Homebrew
-
-```bash
-brew install martin-conur/tap/kipi
-```
-
 ## Shell installer
 
 Downloads the binary for your platform from the GitHub release, checks its SHA-256 and installs it
@@ -62,6 +56,11 @@ candidates and never writes anything. If the stores cannot be loaded (none confi
 `bindings.toml`), names are simply not offered — completion never prints an error into your
 prompt. Names come from the configured stores; a `--store` flag typed on the same command line is
 not taken into account.
+
+## Homebrew
+
+Not yet: 0.1.0 ships the shell installer, prebuilt archives and source builds. A Homebrew tap is
+planned for a later release.
 
 ## Next
 

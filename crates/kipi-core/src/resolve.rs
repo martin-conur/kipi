@@ -20,7 +20,7 @@ use crate::plan::{
     RegistryEntry, RelatedRepo, RepoPlan, SkillOrigin, Source, alias_key,
 };
 
-/// The scope a repo falls back to when nothing else places it (roadmap §6, rule 3).
+/// The scope a repo falls back to when nothing else places it (roadmap §6, rule 4).
 pub const FALLBACK_SCOPE: &str = "personal";
 
 /// Resolve every repo entry of every mounted store against this machine.

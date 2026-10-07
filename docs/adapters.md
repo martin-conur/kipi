@@ -59,11 +59,14 @@ the CLAUDE files, and kipi does not look above the repo.
 
 ## Generic: Codex CLI, Cursor and other AGENTS.md agents (`generic`)
 
-| What | kipi writes | Source (checked 2026-10-06) |
+The always-on file and skills rows were re-checked against the linked pages on 2026-10-07 for the
+0.1.0 release (#21); nothing changed.
+
+| What | kipi writes | Source (checked 2026-10-07) |
 | --- | --- | --- |
-| Always-on file | `AGENTS.md` in the repo root. Codex reads `~/.codex/AGENTS.md`, then each directory from the git root down to the cwd; the combined text is capped at `project_doc_max_bytes` (32 KiB default) | <https://learn.chatgpt.com/docs/agent-configuration/agents-md> (was `developers.openai.com/codex/guides/agents-md`) |
+| Always-on file | `AGENTS.md` in the repo root. Codex reads `~/.codex/AGENTS.md`, then each directory from the git root down to the cwd; the combined text is capped at `project_doc_max_bytes` (32 KiB default). "Codex includes at most one file per directory" | <https://learn.chatgpt.com/docs/agent-configuration/agents-md> (was `developers.openai.com/codex/guides/agents-md`) |
 | Untracked side file | none: `AGENTS.override.md` *replaces* `AGENTS.md` at its level instead of adding to it, so writing the block there would hide the user's instructions | same page |
-| Skills | `.agents/skills/<name>` → symlink to `<store>/skills/<name>`. **Verified 2026-10-06:** "Codex scans `.agents/skills` in every directory from your current working directory up to the repository root", and "Codex supports symlinked skill folders and follows the symlink target when scanning these locations". Skill format: `SKILL.md` with `name` (≤ 64 chars, lowercase letters, digits, single hyphens, equal to the directory name) and `description` (≤ 1,024 chars) | <https://learn.chatgpt.com/docs/build-skills> (was `developers.openai.com/codex/skills`, which now redirects there); format: <https://agentskills.io/specification> |
+| Skills | `.agents/skills/<name>` → symlink to `<store>/skills/<name>`. **Verified 2026-10-06, re-checked 2026-10-07:** "Codex scans `.agents/skills` in every directory from your current working directory up to the repository root", and "Codex supports symlinked skill folders and follows the symlink target when scanning these locations". Skill format: `SKILL.md` with `name` (≤ 64 chars, lowercase letters, digits, single hyphens, equal to the directory name) and `description` (≤ 1,024 chars) | <https://learn.chatgpt.com/docs/build-skills> (was `developers.openai.com/codex/skills`, which now redirects there); format: <https://agentskills.io/specification> |
 | Read grant | none written in v1 (`render_grant` returns `None`) | — |
 
 **Sandbox reads — unverified in vendor docs.** kipi assumes Codex CLI's default sandboxes
@@ -91,9 +94,11 @@ read-only root either. A writable root would let the agent change other repos, w
 kipi's grant means, so the generic adapter keeps writing no grant; revisit if Codex adds a
 read-only root setting.
 
-**Verification status (#18, 2026-10-06).** The `.agents/skills` location is verified against
-the current Codex skills page (quoted above). The sandbox read behaviour is **not** stated in
-OpenAI's docs and stays marked unverified above.
+**Verification status (#21, 2026-10-07).** The `AGENTS.md` discovery order, the
+`project_doc_max_bytes` cap, `AGENTS.override.md` taking a directory's one slot, the
+`.agents/skills` locations and symlinked skill folders are verified against the current Codex
+pages (linked above). The sandbox read behaviour is **not** stated in OpenAI's docs and stays
+marked unverified above.
 
 ## Policy decisions
 

@@ -64,6 +64,29 @@ jobs:
       - name: Build the book
         run: mdbook build docs
 
+  leak-history:
+    # The leak guard over all of git history (every branch, tag and pull-request ref), not
+    # just the checkout: a name removed in a later commit is still public once pushed.
+    name: leak guard (history)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Fetch pull-request refs
+        run: git fetch --no-tags origin '+refs/pull/*:refs/audit/pull/*'
+
+      - name: Install toolchain (from rust-toolchain.toml)
+        run: rustup toolchain install && rustc --version
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Scan history
+        run: cargo test -p kipi-test-support --test leak_guard -- --ignored history_has_no_leaks
+        env:
+          KIPI_LEAK_DENYLIST: ${{ secrets.KIPI_LEAK_DENYLIST }}
+
   e2e-build:
     # The binary the fresh-machine E2E installs: a static musl build on Linux, the
     # native build on macOS (the same targets cargo-dist releases).

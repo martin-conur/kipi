@@ -211,7 +211,8 @@ Resolution is a pure function `(stores, machine) -> Plan` with no I/O beyond rea
 
 1. `repos.<name>.scope` if set (explicit).
 2. The scope whose root (after `machine.toml` overrides) is the deepest ancestor of the repo's path. Nested roots are allowed; deepest wins.
-3. `personal` if a scope with that name exists, else unscoped (gets no scope content; `doctor` warns).
+3. For a repo **not cloned on this machine** (no path to compare with roots): the scope whose `remote_patterns` has the longest entry that is a prefix of the repo's normalized `remote`. A tie between scopes decides nothing (fall through). A cloned repo is never placed by pattern, so `doctor`'s "matches a pattern but resolved elsewhere" check keeps its meaning.
+4. `personal` if a scope with that name exists, else unscoped (gets no scope content; `doctor` warns).
 
 **Effective skills of a repo:** walk the `extends` chain from the top-most ancestor down, taking the union of each scope's `skills`, then union `repos.<name>.skills`, then remove `repos.<name>.exclude`. Order is preserved for deterministic output. A skill referenced but not present in the repo's store (or, for a qualified `<store>/<skill>`, in that sharing store) is a hard error.
 
@@ -468,7 +469,7 @@ Example stores live in examples/acme-store and examples/personal-store and must 
 | 1 — Model + resolve | Model, config loading with validation, multiple stores + repo identity, `resolve.rs` (scopes, skills, registry, related, grants), `kipi resolve --json`, `kipi explain` | Resolve tests pass on both example stores mounted together and on the personal store alone; `explain` output matches §6 for every example repo |
 | 2 — Sync | `scan` with drafting, rendering, adapters (claude, generic), apply + manifest, read grants, `sync`, `status`, authoring commands | Zero to synced on the example repos with `init`, `scan`, `sync --all`; sync twice is a no-op; unbinding cleans up links and grants |
 | 3 — Visibility + doctor | `tree`, `where`, `grep`, `edit`, token counting with cache, all §10 checks, `--fix` | `tree` matches the §7 sketch; < 100 ms for 50 repos; one test per doctor check; `doctor` on the example store exits 0 |
-| 4 — Release 0.1.0 | `cargo-dist` release, Homebrew tap, completions, docs, README with GIF, final leak audit | `brew install kipi` → `init`, `scan`, `sync --all` works on a fresh macOS and Linux machine |
+| 4 — Release 0.1.0 | `cargo-dist` release, completions, docs, README with GIF, final leak audit (Homebrew tap deferred past 0.1.0, see `docs/decisions.md`) | shell installer → `init`, `scan`, `sync --all` works on a fresh macOS and Linux machine |
 
 Suggested first prompt for Claude Code: "Read roadmap.md and CLAUDE.md. Implement issue #1."
 
@@ -488,11 +489,13 @@ Suggested first prompt for Claude Code: "Read roadmap.md and CLAUDE.md. Implemen
 
 **Open decisions to settle in Stage 1–2**
 
-1. Registry rendering when a repo is not cloned on this machine. Recommendation: list it with `local: (not cloned here)`.
-2. Should `sync` write `AGENTS.md` by default? Recommendation: write it when the generic adapter is enabled (default) or the file already exists.
-3. Tracked `CLAUDE.md`: append the block anyway, or write it to an untracked side file the agent also loads? Recommendation: decide after checking which local/untracked memory files each agent currently loads; default to never dirtying a tracked file without `--allow-tracked`.
-4. Default `grant`: `related` (minimal) vs `registry` (frictionless). Recommendation: `related`; document `registry` for users who want no prompts at all.
-5. Whether `conventions/<scope>.md` may use `@import`-style includes. Recommendation: no; keep it a flat file so every adapter renders identically.
+All five are settled; each links to its entry in `docs/decisions.md`.
+
+1. Registry rendering when a repo is not cloned on this machine. Recommendation: list it with `local: (not cloned here)`. **Decided:** listed, and placed in its scope by `remote_patterns` (§6 rule 3). See `docs/decisions.md`, "Stage 1: resolution engine (#3)".
+2. Should `sync` write `AGENTS.md` by default? Recommendation: write it when the generic adapter is enabled (default) or the file already exists. **Decided:** written whenever the generic adapter is enabled. See `docs/decisions.md`, "Stage 2: adapters (#6)".
+3. Tracked `CLAUDE.md`: append the block anyway, or write it to an untracked side file the agent also loads? Recommendation: decide after checking which local/untracked memory files each agent currently loads; default to never dirtying a tracked file without `--allow-tracked`. **Decided:** never dirty a tracked file without `--allow-tracked`; Claude Code gets `CLAUDE.local.md`. See `docs/decisions.md`, "Stage 2: adapters (#6)".
+4. Default `grant`: `related` (minimal) vs `registry` (frictionless). Recommendation: `related`; document `registry` for users who want no prompts at all. **Decided:** `related`. See `docs/decisions.md`, "Stage 1: resolution engine (#3)".
+5. Whether `conventions/<scope>.md` may use `@import`-style includes. Recommendation: no; keep it a flat file so every adapter renders identically. **Decided:** no. See `docs/decisions.md`, "Stage 1: resolution engine (#3)".
 
 ## 16. Glossary
 

@@ -30,8 +30,9 @@ stores and has no sync transport — sync each store however its trust boundary 
 
 ## 2. Declare the scopes
 
-Scopes are configuration: open each `bindings.toml` (`kipi edit` needs a repo or skill, so use
-your editor) and add them.
+Scopes are configuration, and this is the one hand edit in the setup: open each `bindings.toml`
+in your editor (`kipi edit` needs a repo or skill). The skeleton `init` wrote has a
+commented `# [scopes.<scope>]` table: uncomment it, give it the scope's name and set `roots`.
 
 ```toml
 # ~/work/.kipi-acme/bindings.toml
