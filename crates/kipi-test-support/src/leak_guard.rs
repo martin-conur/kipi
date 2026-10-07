@@ -27,9 +27,18 @@ pub const ENV_PATTERNS: &str = "KIPI_LEAK_DENYLIST";
 /// Env var holding the path of an extra denylist file.
 pub const ENV_FILE: &str = "KIPI_LEAK_DENYLIST_FILE";
 
-/// User names that are clearly placeholders and allowed after `/Users/` or `/home/`.
-pub const PLACEHOLDER_USERS: &[&str] =
-    &["user", "username", "you", "yourname", "example", "shared"];
+/// User names that are clearly placeholders, or fixed system accounts no person owns
+/// (`/home/linuxbrew`, Homebrew's Linux prefix, which cargo-dist's release workflow
+/// uses), and so are allowed after `/Users/` or `/home/`.
+pub const PLACEHOLDER_USERS: &[&str] = &[
+    "user",
+    "username",
+    "you",
+    "yourname",
+    "example",
+    "shared",
+    "linuxbrew",
+];
 
 static HOME_PATH: LazyLock<Regex> = LazyLock::new(|| {
     // The leading group stands in for a lookbehind: the path must not continue a
@@ -266,6 +275,7 @@ mod tests {
             &home("Users", "<name>"),
             &home("home", "user"),
             &home("Users", "Shared"),
+            &format!("{}/.linuxbrew/bin", home("home", "linuxbrew")),
             "/Volumes/work/acme",
             "src/home/mod.rs",
             "https://example.com/home/page",

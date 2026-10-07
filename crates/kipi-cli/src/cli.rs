@@ -3,7 +3,10 @@
 
 use std::path::PathBuf;
 
-use clap::{ArgAction, Args, Parser, Subcommand};
+use clap::{ArgAction, Args, Parser, Subcommand, ValueHint};
+use clap_complete::ArgValueCandidates;
+
+use crate::complete;
 
 /// Give LLM coding agents a scoped map of your local repos and shared skills.
 #[derive(Debug, Parser)]
@@ -21,7 +24,7 @@ pub struct Cli {
 #[derive(Debug, Args)]
 pub struct Global {
     /// Mount this store instead of the configured ones (repeatable; before the subcommand).
-    #[arg(long = "store", value_name = "PATH")]
+    #[arg(long = "store", value_name = "PATH", value_hint = ValueHint::DirPath)]
     pub stores: Vec<PathBuf>,
     /// Print machine-readable JSON (see docs/json.md).
     #[arg(long, global = true)]
@@ -51,7 +54,7 @@ pub enum Command {
     /// Create a store and mount it, or mount an existing one.
     Init {
         /// Where the store lives (default: ~/.agents/store).
-        #[arg(long, value_name = "PATH")]
+        #[arg(long, value_name = "PATH", value_hint = ValueHint::DirPath)]
         store: Option<PathBuf>,
         /// The store's name (`[store] name`).
         #[arg(long)]
@@ -65,7 +68,7 @@ pub enum Command {
     /// List mounted stores, or unmount one.
     Stores {
         /// Remove this store (by name or path) from config.toml.
-        #[arg(long, value_name = "NAME")]
+        #[arg(long, value_name = "NAME", add = ArgValueCandidates::new(complete::stores))]
         unmount: Option<String>,
         #[command(flatten)]
         dry_run: DryRun,
@@ -73,15 +76,16 @@ pub enum Command {
     /// Find git repos under scope roots (or PATHs) and record them.
     Scan {
         /// Directories to walk instead of the scope roots.
+        #[arg(value_hint = ValueHint::DirPath)]
         paths: Vec<PathBuf>,
         /// Rewrite values still marked `# kipi:draft`.
         #[arg(long)]
         refresh_drafts: bool,
         /// Store (by name) for checkouts outside every root; must own --scope.
-        #[arg(long, value_name = "NAME", requires = "scope")]
+        #[arg(long, value_name = "NAME", requires = "scope", add = ArgValueCandidates::new(complete::stores))]
         store: Option<String>,
         /// Scope for checkouts outside every root (written as `scope =`).
-        #[arg(long)]
+        #[arg(long, add = ArgValueCandidates::new(complete::scopes))]
         scope: Option<String>,
         #[command(flatten)]
         dry_run: DryRun,
@@ -96,16 +100,19 @@ pub enum Command {
     /// Print the resolved plan (no side effects).
     Resolve {
         /// Only this repo entry.
+        #[arg(add = ArgValueCandidates::new(complete::repos))]
         repo: Option<String>,
     },
     /// Show where every decision for a repo comes from.
     Explain {
         /// The repo entry.
+        #[arg(add = ArgValueCandidates::new(complete::repos))]
         repo: String,
     },
     /// Materialize the plan into repos.
     Sync {
         /// Repo entries to sync.
+        #[arg(add = ArgValueCandidates::new(complete::repos))]
         repos: Vec<String>,
         /// Sync every repo cloned on this machine.
         #[arg(long, conflicts_with = "repos")]
@@ -125,18 +132,19 @@ pub enum Command {
     /// Per-repo sync state and always-on tokens vs budget.
     Status {
         /// Only this repo entry.
+        #[arg(add = ArgValueCandidates::new(complete::repos))]
         repo: Option<String>,
     },
     /// Stores → scopes → repos → skills, with provenance markers.
     Tree {
         /// Only this repo entry.
-        #[arg(long)]
+        #[arg(long, add = ArgValueCandidates::new(complete::repos))]
         repo: Option<String>,
         /// Only repos using this skill.
-        #[arg(long)]
+        #[arg(long, add = ArgValueCandidates::new(complete::skills))]
         skill: Option<String>,
         /// Only this store (by name).
-        #[arg(long, value_name = "NAME")]
+        #[arg(long, value_name = "NAME", add = ArgValueCandidates::new(complete::stores))]
         store: Option<String>,
         /// Show always-on token counts.
         #[arg(long)]
@@ -148,6 +156,7 @@ pub enum Command {
     /// Resolve an alias to a repo, its summary and paths.
     Where {
         /// A repo name or alias.
+        #[arg(add = ArgValueCandidates::new(complete::aliases))]
         alias: String,
         /// Print the repo's notes.
         #[arg(long)]
@@ -161,7 +170,7 @@ pub enum Command {
         /// A regular expression.
         pattern: String,
         /// Only this scope.
-        #[arg(long)]
+        #[arg(long, add = ArgValueCandidates::new(complete::scopes))]
         scope: Option<String>,
         /// Also search the checkouts of every repo in the scope chain.
         #[arg(long)]
@@ -173,11 +182,13 @@ pub enum Command {
     /// Open a repo entry, skill, notes:<repo> or conventions:<scope> in $EDITOR.
     Edit {
         /// What to edit.
+        #[arg(add = ArgValueCandidates::new(complete::edit_targets))]
         target: String,
     },
     /// Check stores, repos and grants for problems.
     Doctor {
         /// Only this repo entry.
+        #[arg(add = ArgValueCandidates::new(complete::repos))]
         repo: Option<String>,
         /// Apply the fixes marked safe.
         #[arg(long)]
@@ -187,7 +198,8 @@ pub enum Command {
     },
     /// Print shell completions.
     Completions {
-        /// bash, zsh, fish, elvish or powershell.
+        /// The shell to print the registration script for.
+        #[arg(value_parser = complete::SHELL_NAMES)]
         shell: String,
     },
 }
@@ -200,10 +212,10 @@ pub enum Add {
         /// The skill's directory name.
         name: String,
         /// Bind it to this scope.
-        #[arg(long)]
+        #[arg(long, add = ArgValueCandidates::new(complete::scopes))]
         scope: Option<String>,
         /// The store to create it in (by name).
-        #[arg(long, value_name = "NAME")]
+        #[arg(long, value_name = "NAME", add = ArgValueCandidates::new(complete::stores))]
         store: Option<String>,
         /// A git URL or path to import from.
         #[arg(long, value_name = "GIT-URL|PATH")]
@@ -219,10 +231,10 @@ pub enum Add {
         /// The entry name.
         name: String,
         /// Its scope.
-        #[arg(long)]
+        #[arg(long, add = ArgValueCandidates::new(complete::scopes))]
         scope: Option<String>,
         /// Its checkout on this machine.
-        #[arg(long)]
+        #[arg(long, value_hint = ValueHint::DirPath)]
         path: Option<PathBuf>,
         /// Its one-line summary.
         #[arg(long)]
@@ -236,15 +248,16 @@ pub enum Add {
 #[derive(Debug, Args)]
 pub struct Binding {
     /// The repo entry.
+    #[arg(add = ArgValueCandidates::new(complete::repos))]
     pub repo: String,
     /// Skills.
-    #[arg(long = "skill", value_name = "SKILL", num_args = 1..)]
+    #[arg(long = "skill", value_name = "SKILL", num_args = 1.., add = ArgValueCandidates::new(complete::skills))]
     pub skills: Vec<String>,
     /// Related repos.
-    #[arg(long, value_name = "REPO", num_args = 1..)]
+    #[arg(long, value_name = "REPO", num_args = 1.., add = ArgValueCandidates::new(complete::repos))]
     pub related: Vec<String>,
     /// Excluded skills.
-    #[arg(long, value_name = "SKILL", num_args = 1..)]
+    #[arg(long, value_name = "SKILL", num_args = 1.., add = ArgValueCandidates::new(complete::skills))]
     pub exclude: Vec<String>,
     /// Aliases.
     #[arg(long = "alias", value_name = "ALIAS", num_args = 1..)]
@@ -254,29 +267,6 @@ pub struct Binding {
 }
 
 impl Command {
-    /// The subcommand's name as typed (`add skill`, `sync`).
-    pub fn name(&self) -> &'static str {
-        match self {
-            Command::Init { .. } => "init",
-            Command::Stores { .. } => "stores",
-            Command::Scan { .. } => "scan",
-            Command::Add(Add::Skill { .. }) => "add skill",
-            Command::Add(Add::Repo { .. }) => "add repo",
-            Command::Bind(_) => "bind",
-            Command::Unbind(_) => "unbind",
-            Command::Resolve { .. } => "resolve",
-            Command::Explain { .. } => "explain",
-            Command::Sync { .. } => "sync",
-            Command::Status { .. } => "status",
-            Command::Tree { .. } => "tree",
-            Command::Where { .. } => "where",
-            Command::Grep { .. } => "grep",
-            Command::Edit { .. } => "edit",
-            Command::Doctor { .. } => "doctor",
-            Command::Completions { .. } => "completions",
-        }
-    }
-
     /// The command's `--dry-run`, for commands that write.
     pub fn dry_run(&self) -> Option<DryRun> {
         match self {

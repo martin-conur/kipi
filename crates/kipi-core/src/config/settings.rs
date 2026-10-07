@@ -27,6 +27,12 @@ struct RawConfig {
     tokenizer: Option<String>,
 }
 
+/// Every key `config.toml` accepts (see [`super::schema`]).
+pub(super) fn schema_keys() -> Vec<String> {
+    let keys = super::schema::fields::<RawConfig>();
+    keys.iter().map(|&k| k.to_owned()).collect()
+}
+
 /// Load `config.toml` from the config dir; an absent file is an empty [`Config`].
 pub fn load_config(env: &Env) -> Result<Config> {
     match Source::read_optional(&env.config_file())? {

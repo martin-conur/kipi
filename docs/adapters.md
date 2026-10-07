@@ -11,6 +11,9 @@ when. Re-check before each release and update the constant block and this page t
 
 ## Claude Code (`claude`)
 
+Every row below was re-checked against the linked pages on 2026-10-06 for the 0.1.0 release (#18);
+nothing changed.
+
 | What | kipi writes | Source (checked 2026-10-06) |
 | --- | --- | --- |
 | Always-on file | `CLAUDE.md` in the repo root (Claude Code also walks parent dirs and loads `~/.claude/CLAUDE.md`) | <https://code.claude.com/docs/en/memory> |
@@ -60,12 +63,21 @@ the CLAUDE files, and kipi does not look above the repo.
 | --- | --- | --- |
 | Always-on file | `AGENTS.md` in the repo root. Codex reads `~/.codex/AGENTS.md`, then each directory from the git root down to the cwd; the combined text is capped at `project_doc_max_bytes` (32 KiB default) | <https://learn.chatgpt.com/docs/agent-configuration/agents-md> (was `developers.openai.com/codex/guides/agents-md`) |
 | Untracked side file | none: `AGENTS.override.md` *replaces* `AGENTS.md` at its level instead of adding to it, so writing the block there would hide the user's instructions | same page |
-| Skills | `.agents/skills/<name>` → symlink to `<store>/skills/<name>`, the repo skills location of Codex CLI and other Agent-Skills-compatible tools. Skill format: `SKILL.md` with `name` (≤ 64 chars, lowercase letters, digits, single hyphens, equal to the directory name) and `description` (≤ 1,024 chars) | <https://developers.openai.com/codex/skills> (not re-fetched in this check, see below); format: <https://agentskills.io/specification> |
+| Skills | `.agents/skills/<name>` → symlink to `<store>/skills/<name>`. **Verified 2026-10-06:** "Codex scans `.agents/skills` in every directory from your current working directory up to the repository root", and "Codex supports symlinked skill folders and follows the symlink target when scanning these locations". Skill format: `SKILL.md` with `name` (≤ 64 chars, lowercase letters, digits, single hyphens, equal to the directory name) and `description` (≤ 1,024 chars) | <https://learn.chatgpt.com/docs/build-skills> (was `developers.openai.com/codex/skills`, which now redirects there); format: <https://agentskills.io/specification> |
 | Read grant | none written in v1 (`render_grant` returns `None`) | — |
 
-**Sandbox reads.** Codex CLI's default sandboxes (`read-only`, `workspace-write`) restrict
-*writes* to the workspace (plus configured writable roots) but let the agent read outside it, so
-another repo's path from the registry is readable without a grant. Extra writable roots exist
+**Sandbox reads — unverified in vendor docs.** kipi assumes Codex CLI's default sandboxes
+(`read-only`, `workspace-write`) restrict *writes* to the workspace (plus configured writable
+roots) but let the agent read outside it, so another repo's path from the registry is readable
+without a grant. As of 2026-10-06 OpenAI's own pages do not say this outright: the sandboxing page
+(<https://learn.chatgpt.com/docs/sandboxing>) says "Codex can read and edit files in the current
+workspace" and the approvals page (<https://learn.chatgpt.com/docs/agent-approvals-security>)
+defines the workspace as "the current directory and temporary directories like `/tmp`", and
+neither states whether reads beyond it are allowed. Third-party write-ups describe reads as
+unrestricted in both modes (e.g. the deny-read policy guide at
+<https://codex.danielvaughan.com/2026/04/25/codex-cli-filesystem-security-deny-read-policies-credential-protection/>).
+If a Codex user sees reads of a registry path blocked or prompted, that is this assumption failing;
+the agent can still ask for approval, and `copy` mode (roadmap §15) is the planned remedy. Extra writable roots exist
 (`sandbox_workspace_write.writable_roots`, `--add-dir`), but kipi never needs to write elsewhere,
 so the generic adapter writes nothing.
 
@@ -74,15 +86,14 @@ against <https://learn.chatgpt.com/docs/sandboxing> (was
 `developers.openai.com/codex/concepts/sandboxing`): the only extra-directory setting it names is
 `sandbox_workspace_write.writable_roots` in `config.toml` (the `--add-dir` flag adds to it), and it
 grants **write** access. That page does not say outright that reads outside the workspace are
-allowed (third-party guides say they are; see "Still to re-verify"), but nothing there offers a
+allowed (third-party guides say they are; see "Sandbox reads" above), but nothing there offers a
 read-only root either. A writable root would let the agent change other repos, which is more than
 kipi's grant means, so the generic adapter keeps writing no grant; revisit if Codex adds a
 read-only root setting.
 
-**Still to re-verify.** In this check the Codex skills page and Codex sandbox page could not be
-fetched (the latter has moved under `learn.chatgpt.com`); the `.agents/skills` location and the
-sandbox read behaviour above are carried from the spec (§3) and earlier reading of those pages.
-Confirm both before 0.1.0 (#18).
+**Verification status (#18, 2026-10-06).** The `.agents/skills` location is verified against
+the current Codex skills page (quoted above). The sandbox read behaviour is **not** stated in
+OpenAI's docs and stays marked unverified above.
 
 ## Policy decisions
 

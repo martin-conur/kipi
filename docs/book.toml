@@ -1,0 +1,15 @@
+# The kipi book: `mdbook build docs` (CI builds it on every push). The pages are the
+# Markdown files in this directory, listed in SUMMARY.md; the output goes to
+# target/book, which is gitignored.
+[book]
+title = "kipi"
+description = "A scoped map of your local repos and shared skills for LLM coding agents."
+language = "en"
+src = "."
+
+[build]
+build-dir = "../target/book"
+create-missing = false
+
+[output.html]
+git-repository-url = "https://github.com/martin-conur/kipi"

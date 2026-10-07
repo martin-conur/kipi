@@ -2,6 +2,7 @@
 
 mod cli;
 mod commands;
+mod complete;
 mod error;
 mod output;
 
@@ -16,6 +17,8 @@ use output::Output;
 use output::color::{Painter, no_color_env};
 
 fn main() -> ExitCode {
+    // A completion request (`KIPI_COMPLETE=<shell>`) is answered here and exits.
+    complete::handle_request();
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(e) => {

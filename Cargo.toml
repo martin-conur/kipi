@@ -8,6 +8,7 @@ edition = "2024"
 rust-version = "1.92"
 license = "Apache-2.0"
 repository = "https://github.com/martin-conur/kipi"
+homepage = "https://github.com/martin-conur/kipi"
 
 # The full §12 dependency set, pinned here and nowhere else. Member crates opt in
 # with `<dep>.workspace = true`. Adding a crate outside this list needs a recorded
@@ -52,3 +53,8 @@ todo = "warn"
 # time is otherwise dominated by unoptimized hashing, templating and parsing.
 [profile.dev.package."*"]
 opt-level = 2
+
+# The profile release artifacts are built with (cargo-dist, dist-workspace.toml).
+[profile.dist]
+inherits = "release"
+lto = "thin"

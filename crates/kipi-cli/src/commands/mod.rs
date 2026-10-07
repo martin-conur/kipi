@@ -284,7 +284,7 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
             b.dry_run.dry_run,
             out,
         ),
-        other => Err(not_implemented(other)),
+        Command::Completions { shell } => crate::complete::run(shell),
     }
 }
 
@@ -292,16 +292,4 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
 pub fn cwd_repo(loaded: &Loaded) -> Option<&RepoPlan> {
     let cwd = std::env::current_dir().ok()?;
     kipi_core::search::repo_at(&loaded.plan, &cwd)
-}
-
-/// The error for a declared but unimplemented subcommand.
-fn not_implemented(command: &Command) -> Failure {
-    let name = command.name();
-    let stage = "Stage 4";
-    Failure::user(
-        format!("`kipi {name}` is not implemented yet"),
-        format!(
-            "it lands in {stage} (roadmap §14); `kipi resolve` and `kipi explain <repo>` work today"
-        ),
-    )
 }

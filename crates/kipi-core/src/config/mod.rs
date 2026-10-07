@@ -9,6 +9,7 @@
 mod bindings;
 mod machine;
 mod paths;
+pub mod schema;
 mod settings;
 mod skills;
 mod source;
