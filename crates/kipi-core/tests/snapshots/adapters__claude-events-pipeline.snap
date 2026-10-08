@@ -16,7 +16,7 @@ grant → .claude/settings.local.json permissions.additionalDirectories
   + /Volumes/work/acme/billing-api
   + /Volumes/work/acme/ml/ml-platform
   + /Volumes/work/acme/web-dashboard
-exclude: .claude/skills/ .claude/settings.local.json .kipi/
+exclude: .claude/skills/ .claude/settings.local.json /CLAUDE.md .kipi/
 
 <!-- kipi:begin (do not edit; regenerate with `kipi sync`) -->
 ## Conventions (acme)

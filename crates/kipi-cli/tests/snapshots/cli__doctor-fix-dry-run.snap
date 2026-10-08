@@ -14,7 +14,7 @@ warn[K018] side-tool: link .claude/skills/old-skill points at ~/nowhere, which d
   hint: kipi did not create it; `kipi doctor --fix` removes the broken link
 warn[K019] side-tool: .claude/settings.local.json grants read access to ~/code/api, which does not exist
   hint: `kipi doctor --fix` removes `api` from machine.toml and re-syncs, which drops the entry
-warn[K021] billing-api: .git/info/exclude lacks `.claude/skills/`, `.claude/settings.local.json`, `.agents/`, `.kipi/`, so git shows kipi's files as untracked
+warn[K021] billing-api: .git/info/exclude lacks `.claude/skills/`, `.claude/settings.local.json`, `/CLAUDE.md`, `.agents/`, `/AGENTS.md`, `.kipi/`, so git shows kipi's files as untracked
   hint: `kipi doctor --fix` (or `kipi sync billing-api`) restores kipi's section
 info[K008] api: the summary of repo `api` is still a draft
   --> personal:bindings.toml:26

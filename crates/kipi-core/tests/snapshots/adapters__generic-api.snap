@@ -7,7 +7,7 @@ write block → AGENTS.md
 link .agents/skills/rust-style → ~/personal-store/skills/rust-style
 link .agents/skills/commit-style → ~/personal-store/skills/commit-style
 grant: none (no grant mechanism)
-exclude: .claude/skills/ .claude/settings.local.json .agents/ .kipi/
+exclude: .claude/skills/ .claude/settings.local.json /CLAUDE.md .agents/ /AGENTS.md .kipi/
 
 <!-- kipi:begin (do not edit; regenerate with `kipi sync`) -->
 ## Conventions (personal)

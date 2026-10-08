@@ -9,7 +9,7 @@ link .claude/skills/commit-style → ~/personal-store/skills/commit-style
 grant → .claude/settings.local.json permissions.additionalDirectories
   + ~/personal-store/repos
   + ~/personal-store/skills
-exclude: .claude/skills/ .claude/settings.local.json .agents/ .kipi/
+exclude: .claude/skills/ .claude/settings.local.json /CLAUDE.md .agents/ /AGENTS.md .kipi/
 
 <!-- kipi:begin (do not edit; regenerate with `kipi sync`) -->
 ## Conventions (personal)

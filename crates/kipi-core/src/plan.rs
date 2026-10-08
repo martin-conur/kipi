@@ -368,6 +368,9 @@ pub struct Checkout {
     /// Files present in the checkout that hold user content: not created by kipi (per the
     /// manifest), or created by kipi and since given text outside the block. Absolute.
     pub user_files: BTreeSet<PathBuf>,
+    /// Files present in the checkout that the manifest records as created by kipi (user
+    /// text added since included). Absolute.
+    pub created: BTreeSet<PathBuf>,
     /// Tracked files, as absolute paths.
     pub tracked: BTreeSet<PathBuf>,
     /// `--allow-tracked`: write the block into a tracked file anyway.
@@ -437,10 +440,14 @@ pub fn repo_actions(
             .map(|p| p.to_string())
             .collect();
         if let Some(Action::WriteBlock { file, .. }) = out.actions.first()
-            && *file != adapter.always_on_file(dir)
             && let Ok(rel) = file.strip_prefix(dir)
         {
-            own.push(rel.display().to_string());
+            if *file != adapter.always_on_file(dir) {
+                own.push(rel.display().to_string());
+            } else if kipi_owns(file, checkout) {
+                // Anchored: a `CLAUDE.md` in a subdirectory is the user's, not kipi's.
+                own.push(format!("/{}", rel.display()));
+            }
         }
         for p in own {
             if !patterns.contains(&p) {
@@ -459,6 +466,15 @@ pub fn repo_actions(
             patterns,
         },
     })
+}
+
+/// Whether kipi creates (or created) the always-on `file` and git does not track it, so
+/// it belongs in `.git/info/exclude`: absent (the block write creates it) or recorded as
+/// kipi-created. A file the user had before is never excluded, and neither is one the
+/// user has since started tracking (`git add -f`).
+fn kipi_owns(file: &Path, checkout: &Checkout) -> bool {
+    !checkout.tracked.contains(file)
+        && (!checkout.user_files.contains(file) || checkout.created.contains(file))
 }
 
 /// Where an adapter's block goes, with any import line to put inside it.

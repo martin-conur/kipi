@@ -186,7 +186,9 @@ fn untracked_files_get_the_block_in_place() {
         [
             ".claude/skills/",
             ".claude/settings.local.json",
+            "/CLAUDE.md",
             ".agents/",
+            "/AGENTS.md",
             ".kipi/"
         ]
     );
@@ -366,7 +368,7 @@ fn a_tracked_agents_md_without_a_block_is_imported_too() {
     let checkout = Checkout {
         user_files: [agents.clone()].into(),
         tracked: [agents].into(),
-        allow_tracked: false,
+        ..Checkout::default()
     };
     let actions = repo_actions(repo, &block::render(&plan, repo, &[], None), &checkout).unwrap();
     let Some(Action::WriteBlock { file, text }) = actions.agents[0].actions.first() else {

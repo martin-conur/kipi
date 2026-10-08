@@ -12,7 +12,7 @@ grant → .claude/settings.local.json permissions.additionalDirectories
   + ~/acme-store/repos
   + ~/acme-store/skills
   + ~/personal-store/skills
-exclude: .claude/skills/ .claude/settings.local.json .agents/ .kipi/
+exclude: .claude/skills/ .claude/settings.local.json /CLAUDE.md .agents/ /AGENTS.md .kipi/
 
 <!-- kipi:begin (do not edit; regenerate with `kipi sync`) -->
 ## Conventions (acme)
