@@ -463,6 +463,22 @@ The spec wins wherever it is explicit.
   - Exclude: one marker section in `.git/info/exclude` (``# kipi:begin (managed by `kipi sync`; do not
     edit)`` … `# kipi:end`), replaced in place or appended; removed with the last action. Located with
     `git rev-parse --git-path info/exclude` when `.git` is a file (worktrees, submodules).
+  - **The always-on files kipi creates are excluded too** (#48, §4 gitignore policy). §4 lists
+    only the adapters' directories and `.kipi/`, which left a kipi-created `CLAUDE.md` /
+    `AGENTS.md` (just the block, with its absolute local paths) showing as `??` and one
+    `git add .` away from a commit. So an adapter's own always-on file joins the section when it
+    is absent (the block write creates it) or the manifest records it `created`, and git does not
+    track it. The pattern is anchored (`/CLAUDE.md`, `/AGENTS.md`): a `CLAUDE.md` in a
+    subdirectory is the user's. A file the user had before (`created = false`) is never excluded;
+    one kipi created stays excluded after the user adds text outside the block, since the block
+    is still machine-specific. Once the user tracks a kipi-created file (`git add -f`), the
+    pattern is **dropped** (it would be harmless, but kipi no longer owns the file's place in
+    git), K022 reports the tracked block, the next sync moves it as for any tracked file
+    (`CLAUDE.local.md`; nothing for `AGENTS.md`), and removal leaves the file in place instead of
+    deleting a tracked file kipi happened to create. The lines go with the files: unbinding or
+    unmounting removes both. With the #6 AGENTS.md rule, a user `AGENTS.md` that carries the
+    block is the user's and stays unexcluded, and a kipi-created `CLAUDE.md` importing it is
+    excluded. K021 needs no change: it checks what the manifest recorded.
   - Grants: merged into the settings file's JSON array; see "Stage 2: read grants (#23)".
 - **Directories.** Missing parents are created one by one and recorded; a recorded directory that no
   wanted path lives under is removed once empty (deepest first) and stays recorded while it still

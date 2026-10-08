@@ -955,10 +955,11 @@ fn k021_exclude_section_lost() {
 fn k022_generated_block_in_a_tracked_file() {
     let s = SyncedFx::new();
     let api = s.checkout("api");
+    // kipi created it, so it is excluded: tracking it takes `-f`.
     let status = std::process::Command::new("git")
         .arg("-C")
         .arg(&api)
-        .args(["add", "CLAUDE.md"])
+        .args(["add", "-f", "CLAUDE.md"])
         .status()
         .unwrap();
     assert!(status.success());

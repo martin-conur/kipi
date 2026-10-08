@@ -310,6 +310,7 @@ pub fn checkout(dir: &Path, allow_tracked: bool, tracked: &TrackedCache) -> Resu
         }
     }
     let mut user_files = BTreeSet::new();
+    let mut created_files = BTreeSet::new();
     for file in &candidates {
         let Ok(meta) = fs::symlink_metadata(file) else {
             continue;
@@ -319,6 +320,9 @@ pub fn checkout(dir: &Path, allow_tracked: bool, tracked: &TrackedCache) -> Resu
             .ok()
             .and_then(|rel| manifest.block(rel))
             .is_some_and(|b| b.created);
+        if created {
+            created_files.insert(file.clone());
+        }
         let user = !created
             || !meta.is_file()
             || fs::read_to_string(file)
@@ -331,6 +335,7 @@ pub fn checkout(dir: &Path, allow_tracked: bool, tracked: &TrackedCache) -> Resu
     }
     Ok(Checkout {
         user_files,
+        created: created_files,
         tracked: tracked.tracked(dir, &candidates)?,
         allow_tracked,
     })
@@ -995,9 +1000,16 @@ impl<'a> Diff<'a> {
             if kind(&file)? != Some(Kind::File) {
                 continue;
             }
+            // A file kipi created that the user has since tracked (`git add -f`) is theirs:
+            // the block comes out, the file stays.
+            let owned = entry.created
+                && !self
+                    .tracked
+                    .tracked(self.root, std::slice::from_ref(&file))
+                    .is_ok_and(|t| t.contains(&file));
             match splice::remove_block(&file, &read(&file)?) {
                 Ok(None) => {}
-                Ok(Some(rest)) if entry.created && rest.trim().is_empty() => {
+                Ok(Some(rest)) if owned && rest.trim().is_empty() => {
                     self.deleted.insert(file.clone());
                     self.step(
                         Step::Delete(file.clone()),

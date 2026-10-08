@@ -9,7 +9,7 @@ link .agents/skills/pr-conventions → ~/acme-store/skills/pr-conventions
 link .agents/skills/commit-style → ~/personal-store/skills/commit-style
 link .agents/skills/dbt-conventions → ~/acme-store/skills/dbt-conventions
 grant: none (no grant mechanism)
-exclude: .claude/skills/ .claude/settings.local.json .agents/ .kipi/
+exclude: .claude/skills/ .claude/settings.local.json /CLAUDE.md .agents/ /AGENTS.md .kipi/
 
 <!-- kipi:begin (do not edit; regenerate with `kipi sync`) -->
 ## Conventions (acme)

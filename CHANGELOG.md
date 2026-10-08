@@ -16,6 +16,12 @@ the stable interface; human-readable output may change in any release.
   about it. An existing entry in the wrong store no longer gets that remote filled in or its
   drafts refreshed. `--scope` now also places a checkout whose root is in such a store. No
   migration; run `kipi doctor` to find entries an earlier scan already wrote (`K013`).
+- **The `CLAUDE.md` / `AGENTS.md` that `kipi sync` creates no longer show as untracked.** A file
+  kipi creates (and git does not track) is now listed in kipi's `.git/info/exclude` section as
+  `/CLAUDE.md` / `/AGENTS.md`, so `git add .` no longer commits the machine-specific block. A
+  file you already had is never excluded; one you start tracking with `git add -f` loses the
+  line and is no longer deleted when kipi removes its block. Unbinding or unmounting removes the
+  files and their lines. No migration: the next `kipi sync` adds the lines.
 
 ## [0.1.0]
 

@@ -763,7 +763,9 @@ fn sync_writes_blocks_into_claude_md_and_agents_md_and_the_exclude_file() {
     for pattern in [
         ".claude/skills/",
         ".claude/settings.local.json",
+        "/CLAUDE.md",
         ".agents/",
+        "/AGENTS.md",
         ".kipi/",
     ] {
         assert!(
@@ -778,6 +780,33 @@ fn sync_writes_blocks_into_claude_md_and_agents_md_and_the_exclude_file() {
             .join("generated/registry.acme.md")
             .is_file()
     );
+}
+
+/// The CLAUDE.md / AGENTS.md kipi creates are excluded like the rest of what it writes,
+/// so a clean checkout stays clean (#48).
+#[test]
+fn sync_leaves_a_clean_checkout_clean() {
+    let home = onboarded_home();
+    let dir = home.path().join("work/acme/billing-api");
+    let git = |args: &[&str]| {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&dir)
+            .args(["-c", "user.name=t", "-c", "user.email=t@example.invalid"])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}");
+        String::from_utf8(out.stdout).unwrap()
+    };
+    git(&["add", "-A"]);
+    git(&["commit", "--quiet", "-m", "init"]);
+    assert_eq!(git(&["status", "--porcelain"]), "");
+    for _ in 0..2 {
+        home.bare().args(["sync", "billing-api"]).assert().success();
+        assert!(dir.join("CLAUDE.md").is_file() && dir.join("AGENTS.md").is_file());
+        assert_eq!(git(&["status", "--porcelain"]), "");
+    }
 }
 
 #[test]

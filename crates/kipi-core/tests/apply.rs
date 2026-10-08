@@ -219,7 +219,7 @@ fn a_synced_repo_holds_blocks_links_excludes_and_a_manifest() {
     let exclude = fs::read_to_string(dir.join(".git/info/exclude")).unwrap();
     assert!(
         exclude.contains(&format!(
-            "{EXCLUDE_BEGIN}\n.claude/skills/\n.claude/settings.local.json\n.agents/\n.kipi/\n"
+            "{EXCLUDE_BEGIN}\n.claude/skills/\n.claude/settings.local.json\n/CLAUDE.md\n.agents/\n/AGENTS.md\n.kipi/\n"
         )),
         "{exclude}"
     );
@@ -1080,6 +1080,112 @@ fn user_adds(dir: &Path, path: &str) {
     dirs.as_array_mut().unwrap().push(path.into());
     fs::create_dir_all(file.parent().unwrap()).unwrap();
     fs::write(&file, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+}
+
+/// `git status --porcelain` in `dir`.
+fn porcelain(dir: &Path) -> String {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["status", "--porcelain"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    String::from_utf8(out.stdout).unwrap()
+}
+
+/// A checkout with everything committed, so `git status` starts clean.
+fn committed(world: &World, repo: &str) -> PathBuf {
+    let dir = world.dir(repo).to_path_buf();
+    git(&dir, &["add", "-A"]);
+    git(
+        &dir,
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "init",
+        ],
+    );
+    assert_eq!(porcelain(&dir), "");
+    dir
+}
+
+/// The patterns in kipi's section of the checkout's exclude file.
+fn kipi_excludes(dir: &Path) -> Vec<String> {
+    let text = fs::read_to_string(dir.join(".git/info/exclude")).unwrap_or_default();
+    text.lines()
+        .skip_while(|l| *l != EXCLUDE_BEGIN)
+        .skip(1)
+        .take_while(|l| !l.starts_with("# kipi:end"))
+        .map(str::to_owned)
+        .collect()
+}
+
+#[test]
+fn always_on_files_kipi_creates_are_excluded_and_removed_with_their_lines() {
+    let world = World::new();
+    let dir = committed(&world, "billing-api");
+    let before = tree(&dir);
+    assert!(!dir.join("CLAUDE.md").exists() && !dir.join("AGENTS.md").exists());
+    world.sync("billing-api", Options::default());
+    assert!(dir.join("CLAUDE.md").is_file() && dir.join("AGENTS.md").is_file());
+    assert_eq!(porcelain(&dir), "", "kipi-created files show as untracked");
+    let excludes = kipi_excludes(&dir);
+    assert!(excludes.contains(&"/CLAUDE.md".to_owned()), "{excludes:?}");
+    assert!(excludes.contains(&"/AGENTS.md".to_owned()), "{excludes:?}");
+
+    let again = world.sync("billing-api", Options::default());
+    assert!(again.is_unchanged(), "{:#?}", again.changes);
+
+    // Text the user adds outside the block does not make the file theirs to commit.
+    let claude = dir.join("CLAUDE.md");
+    let text = fs::read_to_string(&claude).unwrap();
+    fs::write(&claude, format!("{text}\nMy notes.\n")).unwrap();
+    let report = world.sync("billing-api", Options::default());
+    assert!(report.is_unchanged(), "{:#?}", report.changes);
+    assert_eq!(porcelain(&dir), "");
+    fs::write(&claude, text).unwrap();
+
+    // Unbind: the files and their exclude lines go; the checkout is as it was.
+    world.apply("billing-api", &[], Options::default());
+    assert_eq!(tree(&dir), before);
+    assert_eq!(porcelain(&dir), "");
+}
+
+#[test]
+fn a_user_agents_md_is_never_excluded() {
+    let world = World::new();
+    let dir = world.dir("billing-api").to_path_buf();
+    fs::write(dir.join("AGENTS.md"), "# Agents\n\nBe brief.\n").unwrap();
+    for _ in 0..2 {
+        world.sync("billing-api", Options::default());
+        let excludes = kipi_excludes(&dir);
+        assert!(!excludes.contains(&"/AGENTS.md".to_owned()), "{excludes:?}");
+    }
+    world.apply("billing-api", &[], Options::default());
+    assert_eq!(
+        fs::read_to_string(dir.join("AGENTS.md")).unwrap(),
+        "# Agents\n\nBe brief.\n"
+    );
+}
+
+#[test]
+fn a_kipi_created_file_the_user_tracks_is_theirs_and_loses_its_exclude_line() {
+    let world = World::new();
+    let dir = world.dir("billing-api").to_path_buf();
+    world.sync("billing-api", Options::default());
+    git(&dir, &["add", "-f", "AGENTS.md"]);
+    world.sync("billing-api", Options::default());
+    let excludes = kipi_excludes(&dir);
+    assert!(!excludes.contains(&"/AGENTS.md".to_owned()), "{excludes:?}");
+    assert!(excludes.contains(&"/CLAUDE.md".to_owned()), "{excludes:?}");
+    // A tracked AGENTS.md gets no block (no untracked side file), but the user's file stays.
+    assert_eq!(fs::read_to_string(dir.join("AGENTS.md")).unwrap(), "");
 }
 
 #[test]
