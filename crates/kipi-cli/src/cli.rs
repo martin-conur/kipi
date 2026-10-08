@@ -109,9 +109,9 @@ pub enum Command {
         #[arg(add = ArgValueCandidates::new(complete::repos))]
         repo: String,
     },
-    /// Materialize the plan into repos.
+    /// Materialize the plan into repos (and their linked worktrees).
     Sync {
-        /// Repo entries to sync.
+        /// Repo entries to sync (default: the repo or worktree you are in).
         #[arg(add = ArgValueCandidates::new(complete::repos))]
         repos: Vec<String>,
         /// Sync every repo cloned on this machine.
@@ -126,6 +126,9 @@ pub enum Command {
         /// Write the generated block into a tracked CLAUDE.md / AGENTS.md.
         #[arg(long)]
         allow_tracked: bool,
+        /// Run by the post-checkout hook: do nothing outside a known repo.
+        #[arg(long, hide = true, conflicts_with_all = ["repos", "all"])]
+        hook: bool,
         #[command(flatten)]
         dry_run: DryRun,
     },
@@ -196,12 +199,37 @@ pub enum Command {
         #[command(flatten)]
         dry_run: DryRun,
     },
+    /// Install or remove the git hook that syncs each new worktree.
+    #[command(subcommand)]
+    Hook(Hook),
     /// Print shell completions.
     Completions {
         /// The shell to print the registration script for.
         #[arg(value_parser = complete::SHELL_NAMES)]
         shell: String,
     },
+}
+
+/// `kipi hook`.
+#[derive(Debug, Subcommand)]
+pub enum Hook {
+    /// Install the post-checkout hook (an existing hook is kept and still runs).
+    Install(HookTargets),
+    /// Remove kipi's post-checkout hook, putting back the one it replaced.
+    Uninstall(HookTargets),
+}
+
+/// The repos `kipi hook` acts on.
+#[derive(Debug, Args)]
+pub struct HookTargets {
+    /// Repo entries.
+    #[arg(add = ArgValueCandidates::new(complete::repos))]
+    pub repos: Vec<String>,
+    /// Every repo cloned on this machine.
+    #[arg(long, conflicts_with = "repos")]
+    pub all: bool,
+    #[command(flatten)]
+    pub dry_run: DryRun,
 }
 
 /// `kipi add`.
@@ -277,6 +305,7 @@ impl Command {
             | Command::Sync { dry_run, .. }
             | Command::Doctor { dry_run, .. } => Some(*dry_run),
             Command::Bind(b) | Command::Unbind(b) => Some(b.dry_run),
+            Command::Hook(Hook::Install(h) | Hook::Uninstall(h)) => Some(h.dry_run),
             Command::Resolve { .. }
             | Command::Explain { .. }
             | Command::Status { .. }

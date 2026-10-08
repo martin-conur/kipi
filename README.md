@@ -81,7 +81,8 @@ Every repo under `~/code` now has a generated block in `CLAUDE.md` and `AGENTS.m
 links in `.claude/skills/` and `.agents/skills/`, and a read grant in
 `.claude/settings.local.json`. Everything kipi wrote is recorded in `.kipi/manifest.toml` and
 listed in `.git/info/exclude`, so your tracked files stay clean. Running `sync` again changes
-nothing. The [quickstart](docs/quickstart.md) walks through ten repos split across a personal
+nothing. Working in `git worktree`s? `kipi hook install --all` syncs each new one as it is
+created. The [quickstart](docs/quickstart.md) walks through ten repos split across a personal
 store and a work store.
 
 ## See what every repo gets

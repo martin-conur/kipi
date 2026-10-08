@@ -3,6 +3,11 @@
 //! [`apply::Options::dry_run`] set: it compares the desired plan with the manifest and the
 //! disk and writes nothing.
 //!
+//! A checkout's linked worktrees (`git worktree add`) are the same repo entry: with
+//! [`Options::worktrees`] each gets the repo's plan too, with its own manifest. They share
+//! one `info/exclude`, so every working tree of a repo keeps the same section there: the
+//! patterns all of them want.
+//!
 //! The caller loads the stores and `machine.toml`, resolves the [`Plan`] and, for a run
 //! that writes, holds [`apply::Lock`] across the call.
 
@@ -12,8 +17,9 @@ use std::path::{Path, PathBuf};
 use crate::apply::{self, Op, Report, Target, What};
 use crate::cache::Caches;
 use crate::error::Result;
+use crate::git;
 use crate::model::{AgentId, Machine, StoreSet};
-use crate::plan::{self, Decided, Notice, Plan, RepoPlan, Source};
+use crate::plan::{self, Action, Decided, Notice, Plan, RepoPlan, Source};
 use crate::render::block;
 use crate::tokens::Counter;
 
@@ -26,6 +32,31 @@ pub enum Selection {
     /// These repo entries, in this order; names not in the plan are ignored (the CLI
     /// rejects them first, with a hint).
     Only(Vec<String>),
+    /// One working tree of a repo entry: its checkout or one of its linked worktrees, as
+    /// [`locate`] finds it.
+    Tree {
+        /// The entry name.
+        repo: String,
+        /// The working tree.
+        dir: PathBuf,
+    },
+}
+
+/// The repo entry whose checkout, or a linked worktree of it, is the working tree
+/// holding `dir`, with that working tree; `None` outside every known repo.
+pub fn locate<'p>(plan: &'p Plan, dir: &Path) -> Option<(&'p RepoPlan, PathBuf)> {
+    let (top, common) = git::working_tree(dir)?;
+    plan.repos.iter().find_map(|r| {
+        let path = r.path.as_deref()?;
+        let real = path.canonicalize().ok()?;
+        if real == top {
+            Some((r, path.to_path_buf()))
+        } else if real.join(".git").canonicalize().ok()? == common {
+            Some((r, top.clone()))
+        } else {
+            None
+        }
+    })
 }
 
 /// How [`run`] behaves.
@@ -39,13 +70,17 @@ pub struct Options {
     pub allow_tracked: bool,
     /// The home directory, written as `~` in blocks and registries.
     pub home: Option<PathBuf>,
+    /// Also apply each selected repo's plan to its linked worktrees (and, with
+    /// [`Selection::All`], clean the worktrees of orphaned checkouts).
+    pub worktrees: bool,
 }
 
 /// What [`run`] did to the repos and stores it covered.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Outcome {
-    /// One per covered repo: the selection's repos in plan order (or as named), then any
-    /// orphaned checkouts sorted by entry name.
+    /// One per covered working tree: the selection's repos in plan order (or as named),
+    /// each checkout followed by its linked worktrees, then any orphaned checkouts sorted
+    /// by entry name.
     pub repos: Vec<RepoOutcome>,
     /// One per mounted store: its `generated/` directory.
     pub registries: Vec<StoreOutcome>,
@@ -58,8 +93,10 @@ pub struct RepoOutcome {
     pub name: String,
     /// The store owning the entry; `None` for an orphan.
     pub store: Option<String>,
-    /// The checkout, from `machine.toml`.
+    /// The checkout, from `machine.toml`, or the linked worktree.
     pub path: Option<PathBuf>,
+    /// `path` is a linked worktree of the entry's checkout.
+    pub worktree: bool,
     /// What happened.
     pub state: RepoState,
     /// The checkout had a manifest before the run: kipi had synced it before.
@@ -199,18 +236,20 @@ pub fn run(
             report,
         });
     }
-    let repos: Vec<&RepoPlan> = match selection {
-        Selection::All => plan.repos.iter().collect(),
-        Selection::Only(names) => names.iter().filter_map(|n| plan.repo(n)).collect(),
+    let (repos, only): (Vec<&RepoPlan>, _) = match selection {
+        Selection::All => (plan.repos.iter().collect(), None),
+        Selection::Only(names) => (names.iter().filter_map(|n| plan.repo(n)).collect(), None),
+        Selection::Tree { repo, dir } => (plan.repo(repo).into_iter().collect(), Some(dir)),
     };
-    let sync = |repo: &&RepoPlan| sync_repo(stores, plan, repo, opts, caches);
+    let sync =
+        |repo: &&RepoPlan| sync_repo(stores, plan, repo, only.map(PathBuf::as_path), opts, caches);
     if opts.apply.dry_run {
-        outcome.repos = parallel_map(&repos, sync)
-            .into_iter()
-            .collect::<Result<_>>()?;
+        for trees in parallel_map(&repos, sync) {
+            outcome.repos.extend(trees?);
+        }
     } else {
         for repo in &repos {
-            outcome.repos.push(sync(repo)?);
+            outcome.repos.extend(sync(repo)?);
         }
     }
     if *selection == Selection::All {
@@ -223,37 +262,52 @@ pub fn run(
             .collect();
         orphans.sort_by(|a, b| a.entry.cmp(&b.entry));
         for m in orphans {
-            let target = Target::repo(&m.path);
-            if !m.path.is_dir() || !exists(&target.manifest) {
+            if !m.path.is_dir() {
                 continue;
             }
-            outcome.repos.push(RepoOutcome {
-                name: m.entry.clone(),
-                store: None,
-                path: Some(m.path.clone()),
-                state: RepoState::Orphan(apply::run(&target, &[], opts.apply, &caches.tracked)?),
-                had_manifest: true,
-                notices: Vec::new(),
-                always_on: None,
-            });
+            for (dir, worktree) in trees(&m.path, opts.worktrees) {
+                let target = Target::repo(&dir);
+                if !exists(&target.manifest) {
+                    continue;
+                }
+                outcome.repos.push(RepoOutcome {
+                    name: m.entry.clone(),
+                    store: None,
+                    state: RepoState::Orphan(apply::run(
+                        &target,
+                        &[],
+                        opts.apply,
+                        &caches.tracked,
+                    )?),
+                    path: Some(dir),
+                    worktree,
+                    had_manifest: true,
+                    notices: Vec::new(),
+                    always_on: None,
+                });
+            }
         }
     }
     Ok(outcome)
 }
 
+/// Sync `repo`'s checkout and, with [`Options::worktrees`], its linked worktrees; with
+/// `only`, just that working tree. One outcome per working tree covered.
 fn sync_repo(
     stores: &StoreSet,
     plan: &Plan,
     repo: &RepoPlan,
+    only: Option<&Path>,
     opts: &Options,
     caches: &Caches,
-) -> Result<RepoOutcome> {
+) -> Result<Vec<RepoOutcome>> {
     let conventions = block::load_conventions(repo)?;
     let rendered = block::render(plan, repo, &conventions, opts.home.as_deref());
     let mut out = RepoOutcome {
         name: repo.name.clone(),
         store: Some(repo.store.clone()),
         path: repo.path.clone(),
+        worktree: false,
         state: RepoState::NotCloned,
         had_manifest: false,
         notices: Vec::new(),
@@ -265,15 +319,12 @@ fn sync_repo(
         )),
     };
     let Some(dir) = &repo.path else {
-        return Ok(out);
+        return Ok(vec![out]);
     };
     if !dir.is_dir() {
         out.state = RepoState::CheckoutMissing;
-        return Ok(out);
+        return Ok(vec![out]);
     }
-    let target = Target::repo(dir);
-    out.had_manifest = exists(&target.manifest);
-    let checkout = apply::checkout(dir, opts.allow_tracked, &caches.tracked)?;
     let overridden;
     let repo = match &opts.agents {
         Some(agents) => {
@@ -284,17 +335,66 @@ fn sync_repo(
         }
         None => repo,
     };
-    let Some(wanted) = plan::repo_actions(repo, &rendered, &checkout) else {
-        return Ok(out);
-    };
-    out.notices = wanted
-        .agents
-        .iter()
-        .flat_map(|a| a.notices.iter().cloned())
-        .collect();
-    let actions: Vec<_> = wanted.actions().cloned().collect();
-    out.state = RepoState::Applied(apply::run(&target, &actions, opts.apply, &caches.tracked)?);
-    Ok(out)
+    // Every working tree is planned, applied or not, since they share one exclude section.
+    let mut planned = Vec::new();
+    for (tree, worktree) in trees(dir, true) {
+        let checkout = apply::checkout(&tree, opts.allow_tracked, &caches.tracked)?;
+        let wanted = plan::tree_actions(repo, &tree, &rendered, &checkout);
+        planned.push((tree, worktree, wanted));
+    }
+    let mut patterns: Vec<String> = Vec::new();
+    for (.., wanted) in &planned {
+        if let Action::Exclude { patterns: own, .. } = &wanted.exclude {
+            for p in own {
+                if !patterns.contains(p) {
+                    patterns.push(p.clone());
+                }
+            }
+        }
+    }
+    let real = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    let only = only.map(real);
+    let mut outcomes = Vec::new();
+    for (tree, worktree, mut wanted) in planned {
+        let selected = match &only {
+            Some(only) => real(&tree) == *only,
+            None => !worktree || opts.worktrees,
+        };
+        if !selected {
+            continue;
+        }
+        if let Action::Exclude { patterns: own, .. } = &mut wanted.exclude {
+            own.clone_from(&patterns);
+        }
+        let target = Target::repo(&tree);
+        let mut tree_out = RepoOutcome {
+            had_manifest: exists(&target.manifest),
+            notices: wanted
+                .agents
+                .iter()
+                .flat_map(|a| a.notices.iter().cloned())
+                .collect(),
+            path: Some(tree),
+            worktree,
+            ..out.clone()
+        };
+        let actions: Vec<_> = wanted.actions().cloned().collect();
+        tree_out.state =
+            RepoState::Applied(apply::run(&target, &actions, opts.apply, &caches.tracked)?);
+        outcomes.push(tree_out);
+    }
+    Ok(outcomes)
+}
+
+/// The working trees of the checkout `dir`: itself, then (with `linked`) its linked
+/// worktrees, each flagged as one. A worktree git cannot list is left out.
+fn trees(dir: &Path, linked: bool) -> Vec<(PathBuf, bool)> {
+    let mut trees = vec![(dir.to_path_buf(), false)];
+    if linked {
+        let found = git::worktrees(dir).unwrap_or_default();
+        trees.extend(found.into_iter().map(|w| (w, true)));
+    }
+    trees
 }
 
 /// The rendered block plus the descriptions of the skills the agent indexes at startup:

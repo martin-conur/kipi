@@ -6,6 +6,7 @@ mod doctor;
 mod edit;
 pub mod explain;
 mod grep;
+mod hook;
 mod resolve;
 mod scan;
 mod status;
@@ -24,7 +25,7 @@ use kipi_core::plan::{Plan, RepoPlan};
 use kipi_core::resolve::resolve as resolve_plan;
 use kipi_core::tokens::Tokenizer;
 
-use crate::cli::{Add, Command, Global};
+use crate::cli::{Add, Command, Global, Hook};
 use crate::error::Failure;
 use crate::output::Output;
 
@@ -130,6 +131,7 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
             agents,
             force,
             allow_tracked,
+            hook,
             dry_run,
         } => {
             let env = env()?;
@@ -140,6 +142,7 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
                 force: *force,
                 allow_tracked: *allow_tracked,
                 dry_run: dry_run.dry_run,
+                hook: *hook,
             };
             sync::run(&env, &load(&env)?, &args, out)
         }
@@ -284,6 +287,15 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
             b.dry_run.dry_run,
             out,
         ),
+        Command::Hook(Hook::Install(h) | Hook::Uninstall(h)) => {
+            let args = hook::Args {
+                install: matches!(command, Command::Hook(Hook::Install(_))),
+                repos: &h.repos,
+                all: h.all,
+                dry_run: h.dry_run.dry_run,
+            };
+            hook::run(&load(&env()?)?, &args, out)
+        }
         Command::Completions { shell } => crate::complete::run(shell),
     }
 }

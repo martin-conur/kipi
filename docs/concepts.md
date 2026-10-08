@@ -71,6 +71,15 @@ yours). `grant` chooses what goes in:
 An ad-hoc mention ("make this match billing") still works without a grant: the registry gives the
 path, and the agent asks once.
 
+## Worktrees
+
+A linked worktree (`git worktree add`) is the same repo entry as its main checkout, never a
+second one: `machine.toml` and the registry keep the main checkout's path, and `kipi scan`
+skips worktrees. Sync gives each worktree the repo's plan, with its own `.kipi/manifest.toml`.
+All working trees of a repo share one `info/exclude`, so kipi's section there lists what any of
+them needs. `kipi hook install` adds a git `post-checkout` hook that runs `kipi sync` in each
+new worktree; hooks live in the shared git directory, so one install covers them all.
+
 ## Scopes and the leak rule
 
 A repo's scope is its explicit `scope`, else the scope whose root is the deepest ancestor of its

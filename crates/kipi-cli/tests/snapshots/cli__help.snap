@@ -15,13 +15,14 @@ Commands:
   unbind       Remove skills, relations, exclusions or aliases from a repo entry
   resolve      Print the resolved plan (no side effects)
   explain      Show where every decision for a repo comes from
-  sync         Materialize the plan into repos
+  sync         Materialize the plan into repos (and their linked worktrees)
   status       Per-repo sync state and always-on tokens vs budget
   tree         Stores → scopes → repos → skills, with provenance markers
   where        Resolve an alias to a repo, its summary and paths
   grep         Search skills, notes and conventions (and checkouts with --repos)
   edit         Open a repo entry, skill, notes:<repo> or conventions:<scope> in $EDITOR
   doctor       Check stores, repos and grants for problems
+  hook         Install or remove the git hook that syncs each new worktree
   completions  Print shell completions
   help         Print this message or the help of the given subcommand(s)
 

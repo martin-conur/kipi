@@ -441,6 +441,7 @@ pub fn sync(outcome: &Outcome, dry_run: bool) -> serde_json::Result<String> {
                 name: &r.name,
                 store: r.store.as_deref(),
                 path: r.path.as_deref(),
+                worktree: r.worktree,
                 status: match &r.state {
                     RepoState::Applied(report) if report.is_unchanged() => "unchanged",
                     RepoState::Applied(_) => "changed",
@@ -683,6 +684,7 @@ struct SyncRepoJson<'a> {
     name: &'a str,
     store: Option<&'a str>,
     path: Option<&'a Path>,
+    worktree: bool,
     status: &'static str,
     always_on: Option<AlwaysOnJson>,
     notices: Vec<NoticeJson<'a>>,

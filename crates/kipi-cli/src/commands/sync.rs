@@ -1,6 +1,10 @@
 //! `kipi sync [repo...] [--all]`: plan → diff → apply, then a per-repo summary of links,
 //! blocks and grants added or removed, always-on size vs budget, and warnings (roadmap
 //! §7, §8). `--dry-run` lists every change, with JSON diffs for the read grant.
+//!
+//! Named repos and `--all` cover each checkout's linked worktrees too; with neither,
+//! `kipi sync` syncs the working tree it is run in (a checkout or a linked worktree of
+//! one). `--hook` is that, run by the `post-checkout` hook: silent outside a known repo.
 
 use kipi_core::apply::{self, Report};
 use kipi_core::config::Env;
@@ -26,6 +30,8 @@ pub struct Args<'a> {
     pub allow_tracked: bool,
     /// `--dry-run`.
     pub dry_run: bool,
+    /// `--hook`: run by the `post-checkout` hook.
+    pub hook: bool,
 }
 
 /// Sync, then report.
@@ -33,10 +39,17 @@ pub fn run(env: &Env, loaded: &Loaded, args: &Args, out: &Output) -> Result<(), 
     let selection = if args.all {
         Selection::All
     } else if args.repos.is_empty() {
-        return Err(Failure::user(
-            "no repo to sync",
-            "name repo entries (`kipi sync billing-api`) or pass `--all`",
-        ));
+        let here = std::env::current_dir()
+            .ok()
+            .and_then(|cwd| sync::locate(&loaded.plan, &cwd));
+        match here {
+            Some((repo, dir)) => Selection::Tree {
+                repo: repo.name.clone(),
+                dir,
+            },
+            None if args.hook => return Ok(()),
+            None => return Err(no_repo_here(loaded)),
+        }
     } else {
         for name in args.repos {
             loaded.repo(name)?;
@@ -51,6 +64,7 @@ pub fn run(env: &Env, loaded: &Loaded, args: &Args, out: &Output) -> Result<(), 
         },
         allow_tracked: args.allow_tracked,
         home: Some(env.home.clone()),
+        worktrees: true,
     };
     let _lock = if args.dry_run {
         None
@@ -72,6 +86,39 @@ pub fn run(env: &Env, loaded: &Loaded, args: &Args, out: &Output) -> Result<(), 
     }
     out.print(&human(&outcome, args.dry_run, out))?;
     Ok(())
+}
+
+/// `kipi sync` with nothing named, outside every known repo: say how to name one, with
+/// real entries of the mounted stores.
+fn no_repo_here(loaded: &Loaded) -> Failure {
+    let cloned: Vec<&str> = loaded
+        .plan
+        .repos
+        .iter()
+        .filter(|r| r.path.is_some())
+        .map(|r| r.name.as_str())
+        .collect();
+    let hint = match cloned.as_slice() {
+        [] => {
+            "run it inside a repo kipi knows, or record your checkouts with `kipi scan`".to_owned()
+        }
+        names => {
+            let shown = names
+                .iter()
+                .take(3)
+                .map(|n| format!("`{n}`"))
+                .collect::<Vec<_>>();
+            let more = if names.len() > 3 { ", …" } else { "" };
+            format!(
+                "run it inside a repo kipi knows, name entries (`kipi sync <repo>`: {}{more}), or pass `--all`",
+                shown.join(", ")
+            )
+        }
+    };
+    Failure::user(
+        "no repo to sync: the working directory is in no known repo",
+        hint,
+    )
 }
 
 /// `--agents claude,generic` as adapters; `None` when not given.
@@ -173,7 +220,11 @@ fn details(report: &Report, dry_run: bool, out: &Output) -> String {
 
 fn repo(r: &RepoOutcome, dry_run: bool, out: &Output) -> String {
     let p = &out.paint;
-    let name = p.heading(&r.name);
+    let name = if r.worktree {
+        format!("{} {}", p.heading(&r.name), p.dim("(worktree)"))
+    } else {
+        p.heading(&r.name)
+    };
     let path = r.path.as_deref().map(|d| out.path(d));
     let mut text = match path {
         Some(path) => format!("{name}  {path}\n"),
@@ -231,8 +282,9 @@ fn repo(r: &RepoOutcome, dry_run: bool, out: &Output) -> String {
 fn human(outcome: &Outcome, dry_run: bool, out: &Output) -> String {
     let p = &out.paint;
     let mut text = String::new();
-    let (mut changed, mut current, mut skipped) = (0, 0, 0);
+    let (mut changed, mut current, mut skipped, mut worktrees) = (0, 0, 0, 0);
     for r in &outcome.repos {
+        worktrees += usize::from(r.worktree);
         match r.state.report() {
             Some(report) if report.is_unchanged() => current += 1,
             Some(_) => changed += 1,
@@ -268,9 +320,17 @@ fn human(outcome: &Outcome, dry_run: bool, out: &Output) -> String {
     } else {
         ("Synced", "changed")
     };
+    let covered = match worktrees {
+        0 => plural(total, "repo", "repos"),
+        n if n == total => plural(n, "worktree", "worktrees"),
+        n => format!(
+            "{} and {}",
+            plural(total - n, "repo", "repos"),
+            plural(n, "worktree", "worktrees")
+        ),
+    };
     text.push_str(&format!(
-        "\n{lead} {}: {changed} {verb}, {current} up to date, {skipped} skipped.\n",
-        plural(total, "repo", "repos"),
+        "\n{lead} {covered}: {changed} {verb}, {current} up to date, {skipped} skipped.\n",
     ));
     text
 }

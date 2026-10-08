@@ -133,11 +133,12 @@ longer exists).
 | --- | --- | --- |
 | `version` | number | Schema version, currently `1` |
 | `dry_run` | bool | `true` when nothing was written |
-| `repos` | [SyncRepo] | The named repos in the order given, or with `--all` every repo entry sorted by name, then orphaned checkouts sorted by entry name |
+| `repos` | [SyncRepo] | The named repos in the order given, or with `--all` every repo entry sorted by name, then orphaned checkouts sorted by entry name; each checkout is followed by its linked worktrees. With no repo named, just the working tree `kipi sync` ran in |
 | `registries` | [{`store`, `report`: Report}] | One per mounted store: its `generated/` registries |
 
 **SyncRepo**: `name`, `store` (string \| null; `null` for an orphan), `path` (the checkout from
-`machine.toml`, or `null`), `status`, `always_on` (AlwaysOn \| null; `null` for an orphan),
+`machine.toml`, the linked worktree, or `null`), `worktree` (bool: `path` is a linked worktree of the
+entry's checkout), `status`, `always_on` (AlwaysOn \| null; `null` for an orphan),
 `notices` ([{`message`, `hint`}]: what an adapter declined to do, such as a block not written into a
 tracked file), `report` (Report \| null; `null` when the repo was skipped). `status` is one of
 `changed`, `unchanged`, `not_cloned` (no checkout in `machine.toml`; skipped), `checkout_missing`
