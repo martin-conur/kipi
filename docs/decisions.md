@@ -980,3 +980,50 @@ The spec wins wherever it is explicit.
   link rather than copying its text, and routes reports to the maintainer privately.
 - **Help text.** `sync --agents` names its values and delimiter, `tree --budget` says it shows
   tokens against the budget, and `edit`'s argument lists the target forms.
+
+## Worktree support (#49)
+
+- **A linked worktree is its checkout's entry.** It is found from the checkout, with `git
+  worktree list --porcelain -z`, never recorded: `machine.toml`, the registry and `scan` keep only
+  the main checkout (`scan` already skipped a directory whose `.git` is a file). A checkout whose
+  `.git` directory has no `worktrees/` is answered without starting `git`. A worktree git lists as
+  `prunable` (its directory deleted by hand) or whose directory is gone is skipped, so doctor and
+  sync have nothing to say about it; doctor still looks only at `machine.toml` checkouts.
+- **Same plan, own manifest.** Each worktree gets exactly the checkout's actions (block, skill
+  links, grant) built for its own path (`plan::tree_actions`), recorded in its own
+  `.kipi/manifest.toml`. The block is identical in every working tree: its "This repo" section
+  names no path, so nothing differs to render.
+- **One exclude section for all working trees.** They share `info/exclude` through the common git
+  directory. Every working tree is planned on each sync of the repo, applied or not, and each
+  writes the union of the patterns any of them wants (main checkout's first). Writing
+  per-tree patterns would flip the shared section back and forth whenever two trees differ (a
+  `CLAUDE.md` tracked on one branch and not the other; with #48, a block file kipi created in one
+  tree but not another). The cost: a pattern one tree needs also hides the same path in the
+  others.
+- **Who covers worktrees.** `kipi sync <repo>` and `--all` sync each checkout's worktrees
+  (`sync::Options::worktrees`); `--all` also cleans the worktrees of orphaned checkouts, so
+  unmounting a store or deleting an entry cleans them too. `status`, `tree` and `doctor` keep one
+  row per entry and do not look at worktrees. In output, a worktree is its own row labelled
+  `(worktree)`, and JSON has `worktree: true` on it.
+- **A bare `kipi sync` syncs here.** This replaces "`sync` requires repo names or `--all`" from
+  #8: inside a checkout or a linked worktree of a known entry (`git rev-parse --show-toplevel
+  --git-common-dir`, matched against each entry's checkout), it syncs just that working tree.
+  Outside every known repo it is still an error; the hint lists up to three real entries of the
+  mounted stores instead of a fixed example name.
+- **`kipi hook install|uninstall [repo...|--all]`** is a new command (roadmap §7 has none). The
+  hook is a short `sh` script (`templates/post-checkout.sh`) with a `# kipi:post-checkout` marker
+  line: kipi's own hook is recognized by it, and installing again leaves it alone (or rewrites an
+  older version). It runs only when its first argument is the all-zero id, which is how `git
+  worktree add` checks a new tree out; a branch switch costs nothing. It calls `kipi sync --hook
+  --quiet` with stdout dropped: `--hook` is a hidden flag that makes a bare `kipi sync` silent and
+  successful outside a known repo. A missing `kipi` on PATH skips it, and kipi's exit status is
+  ignored, so it never fails a checkout; its errors still reach stderr. `GIT_DIR`,
+  `GIT_WORK_TREE` and `GIT_INDEX_FILE` are unset for kipi, which locates the tree from its working
+  directory (git runs the hook at the new tree's root).
+- **Chaining.** A hook already there is renamed `post-checkout.pre-kipi` (a rename, so its bytes
+  and mode are kept) and run first when executable; its exit status is the hook's. Uninstall
+  removes kipi's and renames it back; with both a foreign `post-checkout` and a
+  `post-checkout.pre-kipi` present, install refuses rather than guess. Hooks go in the common git
+  directory's `hooks/`, so one install covers every worktree. A repo with `core.hooksPath` set is
+  refused with a hint: that directory is usually shared by other repos (or a hook manager owns
+  it), so the hook belongs in whatever runs there.

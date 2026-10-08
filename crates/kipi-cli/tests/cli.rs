@@ -1020,11 +1020,13 @@ fn a_tracked_claude_md_gets_its_block_in_claude_local_md_unless_allow_tracked() 
 #[test]
 fn sync_needs_repos_or_all() {
     let home = onboarded_home();
-    let (code, err) = failure_of(&home, home.bare().arg("sync"));
+    let (code, err) = failure_of(&home, home.bare().arg("sync").current_dir(home.path()));
     assert_eq!(code, 1);
     assert_eq!(
         err,
-        "error: no repo to sync\n  hint: name repo entries (`kipi sync billing-api`) or pass `--all`\n"
+        "error: no repo to sync: the working directory is in no known repo\n  hint: run it inside a \
+         repo kipi knows, name entries (`kipi sync <repo>`: `acme-api`, `api`, `billing-api`, …), \
+         or pass `--all`\n"
     );
     let (code, err) = failure_of(&home, home.bare().args(["sync", "billing-apu"]));
     assert_eq!(code, 1);
@@ -2192,4 +2194,318 @@ fn tree_of_fifty_repos_is_fast_with_a_warm_cache() {
         best < std::time::Duration::from_millis(100),
         "kipi tree took {best:?} for 50 repos"
     );
+}
+
+// Worktrees: a linked worktree (`git worktree add`) is the same repo entry as its checkout.
+
+/// `git` in `dir`, as the test home's user, with the built `kipi` first on PATH (for the
+/// post-checkout hook) and an identity for commits.
+fn git_in(home: &Home, dir: &Path, args: &[&str]) -> String {
+    let bin = assert_cmd::cargo::cargo_bin("kipi");
+    let path = format!(
+        "{}:{}",
+        bin.parent().unwrap().display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args([
+            "-c",
+            "user.name=kipi-test",
+            "-c",
+            "user.email=test@example.com",
+        ])
+        .args(args)
+        .env("HOME", home.path())
+        .env("PATH", path)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env_remove("KIPI_CONFIG_DIR")
+        .env_remove("KIPI_CACHE_DIR")
+        .env_remove("KIPI_STORE")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).unwrap()
+}
+
+const WORKTREE_REPO: &str = "work/acme/billing-api";
+
+/// A linked worktree of billing-api's checkout at `~/worktrees/<name>` (canonical).
+fn add_worktree(home: &Home, name: &str) -> PathBuf {
+    let repo = home.path().join(WORKTREE_REPO);
+    git_in(
+        home,
+        &repo,
+        &["commit", "--quiet", "--allow-empty", "-m", name],
+    );
+    let wt = home.path().join("worktrees").join(name);
+    git_in(
+        home,
+        &repo,
+        &["worktree", "add", "--quiet", wt.to_str().unwrap()],
+    );
+    wt.canonicalize().unwrap()
+}
+
+/// The `repos` of `kipi sync --json` that are linked worktrees, as (name, last two path
+/// components, status). git names a worktree by its real path, which the home's scrubbing
+/// may only partly cover.
+fn synced_worktrees(doc: &serde_json::Value) -> Vec<(String, String, String)> {
+    doc["repos"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|r| r["worktree"] == true)
+        .map(|r| {
+            let path = Path::new(r["path"].as_str().unwrap());
+            let tail: Vec<_> = path.iter().rev().take(2).collect();
+            (
+                r["name"].as_str().unwrap().to_owned(),
+                format!(
+                    "{}/{}",
+                    tail[1].to_string_lossy(),
+                    tail[0].to_string_lossy()
+                ),
+                r["status"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn sync_all_covers_linked_worktrees_and_twice_is_a_no_op() {
+    let home = onboarded_home();
+    let wt = add_worktree(&home, "feat");
+    let doc = json_of(&home, home.bare().args(["sync", "--all", "--json"]));
+    assert_eq!(
+        synced_worktrees(&doc),
+        [(
+            "billing-api".into(),
+            "worktrees/feat".into(),
+            "changed".into()
+        )]
+    );
+    let main = home.path().join(WORKTREE_REPO);
+    for file in ["CLAUDE.md", "AGENTS.md"] {
+        assert_eq!(
+            fs::read_to_string(wt.join(file)).unwrap(),
+            fs::read_to_string(main.join(file)).unwrap(),
+            "{file}: the worktree gets the repo's block"
+        );
+    }
+    assert!(wt.join(".kipi/manifest.toml").is_file(), "its own manifest");
+    assert_eq!(
+        fs::read_link(wt.join(".claude/skills/code-review")).unwrap(),
+        fs::read_link(main.join(".claude/skills/code-review")).unwrap()
+    );
+    let exclude = fs::read_to_string(main.join(".git/info/exclude")).unwrap();
+    assert_eq!(exclude.matches("# kipi:begin").count(), 1, "{exclude}");
+
+    let synced = files_under(home.path());
+    let doc = json_of(&home, home.bare().args(["sync", "--all", "--json"]));
+    for repo in doc["repos"].as_array().unwrap() {
+        assert_eq!(repo["status"], "unchanged", "{repo}");
+    }
+    assert_eq!(synced_worktrees(&doc).len(), 1);
+    assert_eq!(
+        files_under(home.path()),
+        synced,
+        "the second sync wrote nothing"
+    );
+    let text = stdout_of(&home, home.bare().args(["sync", "--all"]));
+    assert!(text.contains("billing-api (worktree)"), "{text}");
+    assert!(
+        text.ends_with("Synced 10 repos and 1 worktree: 0 changed, 11 up to date, 0 skipped.\n"),
+        "{text}"
+    );
+}
+
+#[test]
+fn sync_with_nothing_named_syncs_the_working_tree_it_runs_in() {
+    let home = onboarded_home();
+    let wt = add_worktree(&home, "feat");
+    let main = home.path().join(WORKTREE_REPO);
+    let text = stdout_of(&home, home.bare().arg("sync").current_dir(&wt));
+    assert!(text.contains("billing-api (worktree)"), "{text}");
+    assert!(
+        text.ends_with("Synced 1 worktree: 1 changed, 0 up to date, 0 skipped.\n"),
+        "{text}"
+    );
+    assert!(wt.join("CLAUDE.md").is_file());
+    assert!(
+        !main.join("CLAUDE.md").exists(),
+        "only the working tree it ran in"
+    );
+
+    fs::create_dir_all(main.join("src")).unwrap();
+    let text = stdout_of(&home, home.bare().arg("sync").current_dir(main.join("src")));
+    assert!(
+        text.ends_with("Synced 1 repo: 1 changed, 0 up to date, 0 skipped.\n"),
+        "{text}"
+    );
+    assert!(main.join("CLAUDE.md").is_file());
+
+    // Outside every known repo: the hook's run is silent, a user's is an error.
+    let outside = home.path().join("elsewhere");
+    fs::create_dir_all(&outside).unwrap();
+    home.bare()
+        .args(["sync", "--hook"])
+        .current_dir(&outside)
+        .assert()
+        .success()
+        .stdout("")
+        .stderr("");
+}
+
+#[test]
+fn scan_never_records_a_worktree() {
+    let home = onboarded_home();
+    add_worktree(&home, "feat");
+    let machine = home.path().join(".config/kipi/machine.toml");
+    let before = files_under(home.path());
+    for args in [
+        vec!["scan"],
+        vec!["scan", "worktrees"],
+        vec!["scan", "worktrees/feat"],
+    ] {
+        let text = stdout_of(&home, home.bare().args(&args).current_dir(home.path()));
+        assert!(text.ends_with("Nothing to write.\n"), "{args:?}: {text}");
+    }
+    assert_eq!(files_under(home.path()), before);
+    assert!(
+        !fs::read_to_string(machine).unwrap().contains("worktrees"),
+        "machine.toml keeps the main checkout"
+    );
+}
+
+#[test]
+fn hook_install_is_chained_idempotent_and_uninstall_restores_the_old_hook() {
+    let home = onboarded_home();
+    let hooks = home.path().join(WORKTREE_REPO).join(".git/hooks");
+    fs::create_dir_all(&hooks).unwrap();
+    let theirs = "#!/bin/sh\necho \"theirs $1\" >> \"$(dirname \"$0\")/../theirs.log\"\n";
+    fs::write(hooks.join("post-checkout"), theirs).unwrap();
+    let mut perms = fs::metadata(hooks.join("post-checkout"))
+        .unwrap()
+        .permissions();
+    std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
+    fs::set_permissions(hooks.join("post-checkout"), perms).unwrap();
+
+    let text = stdout_of(&home, home.bare().args(["hook", "install", "billing-api"]));
+    assert!(text.contains("kept as post-checkout.pre-kipi"), "{text}");
+    let installed = fs::read_to_string(hooks.join("post-checkout")).unwrap();
+    assert!(installed.contains("# kipi:post-checkout"));
+    let text = stdout_of(&home, home.bare().args(["hook", "install", "--all"]));
+    assert!(
+        text.contains(
+            "billing-api  ~/work/acme/billing-api\n  post-checkout hook already installed"
+        ),
+        "{text}"
+    );
+    assert_eq!(
+        fs::read_to_string(hooks.join("post-checkout")).unwrap(),
+        installed
+    );
+    assert_eq!(
+        fs::read_to_string(hooks.join("post-checkout.pre-kipi")).unwrap(),
+        theirs
+    );
+
+    // The new worktree has kipi's files as soon as `git worktree add` returns, and the
+    // chained hook still ran.
+    let wt = add_worktree(&home, "feat");
+    assert!(wt.join("CLAUDE.md").is_file());
+    assert!(wt.join(".kipi/manifest.toml").is_file());
+    assert!(
+        wt.join(".claude/settings.local.json").is_file(),
+        "the read grant"
+    );
+    let log = fs::read_to_string(home.path().join(WORKTREE_REPO).join(".git/theirs.log")).unwrap();
+    assert_eq!(log, "theirs 0000000000000000000000000000000000000000\n");
+
+    let text = stdout_of(&home, home.bare().args(["hook", "uninstall", "--all"]));
+    assert!(text.contains("the hook it had replaced is back"), "{text}");
+    assert_eq!(
+        fs::read_to_string(hooks.join("post-checkout")).unwrap(),
+        theirs
+    );
+    assert!(!hooks.join("post-checkout.pre-kipi").exists());
+    let text = stdout_of(
+        &home,
+        home.bare().args(["hook", "uninstall", "billing-api"]),
+    );
+    assert!(text.contains("no kipi post-checkout hook here"), "{text}");
+}
+
+#[test]
+fn a_hooked_worktree_and_its_checkout_have_a_clean_git_status() {
+    let home = onboarded_home();
+    let main = home.path().join(WORKTREE_REPO);
+    git_in(&home, &main, &["add", "--all"]);
+    git_in(&home, &main, &["commit", "--quiet", "-m", "init"]);
+    home.bare().args(["sync", "billing-api"]).assert().success();
+    home.bare()
+        .args(["hook", "install", "billing-api"])
+        .assert()
+        .success();
+    let wt = add_worktree(&home, "feat");
+    assert!(wt.join("CLAUDE.md").is_file());
+    for dir in [&main, &wt] {
+        assert_eq!(
+            git_in(&home, dir, &["status", "--porcelain"]),
+            "",
+            "{}",
+            dir.display()
+        );
+    }
+}
+
+#[test]
+fn a_removed_worktree_leaves_nothing_for_sync_or_doctor() {
+    let home = onboarded_home();
+    home.bare().args(["sync", "--all"]).assert().success();
+    let doctor =
+        |home: &Home| json_of(home, home.bare().args(["doctor", "--json"]))["findings"].clone();
+    let before = doctor(&home);
+    let removed = add_worktree(&home, "removed");
+    let deleted = add_worktree(&home, "deleted");
+    home.bare().args(["sync", "--all"]).assert().success();
+    git_in(
+        &home,
+        &home.path().join(WORKTREE_REPO),
+        &["worktree", "remove", "--force", removed.to_str().unwrap()],
+    );
+    fs::remove_dir_all(&deleted).unwrap();
+    let doc = json_of(&home, home.bare().args(["sync", "--all", "--json"]));
+    assert_eq!(synced_worktrees(&doc), []);
+    assert_eq!(doctor(&home), before);
+}
+
+#[test]
+fn unmounting_a_store_cleans_its_repos_worktrees_too() {
+    let home = onboarded_home();
+    let wt = add_worktree(&home, "feat");
+    home.bare().args(["sync", "--all"]).assert().success();
+    assert!(wt.join("CLAUDE.md").is_file());
+    home.bare()
+        .args(["stores", "--unmount", "acme"])
+        .assert()
+        .success();
+    let doc = json_of(&home, home.bare().args(["sync", "--all", "--json"]));
+    assert_eq!(
+        synced_worktrees(&doc),
+        [(
+            "billing-api".into(),
+            "worktrees/feat".into(),
+            "orphan".into()
+        )]
+    );
+    for file in ["CLAUDE.md", "AGENTS.md", ".kipi", ".claude"] {
+        assert!(!wt.join(file).exists(), "{file} removed");
+    }
 }

@@ -19,6 +19,9 @@ pub const REGISTRY_MD: &str = include_str!("../../../templates/registry.md.j2");
 /// The body of the generated block in `CLAUDE.md` / `AGENTS.md`, rendered by `render::block`.
 pub const BLOCK_MD: &str = include_str!("../../../templates/block.md.j2");
 
+/// The git `post-checkout` hook installed by `kipi hook install`.
+pub const POST_CHECKOUT: &str = include_str!("../../../templates/post-checkout.sh");
+
 #[cfg(test)]
 mod tests {
     use super::*;

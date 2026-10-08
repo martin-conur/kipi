@@ -204,6 +204,74 @@ pub fn info_exclude(repo: &Path) -> Result<PathBuf> {
     Ok(repo.join(out.trim()))
 }
 
+/// The linked worktrees of the checkout at `repo` (`git worktree add`), as `git worktree
+/// list` names them: not the main working tree, not `repo` itself, and none whose
+/// directory is gone (a worktree deleted without `git worktree remove`). A checkout with
+/// a `.git` directory holding no `worktrees/` is answered without starting `git`; a
+/// directory that is not a git checkout has none.
+pub fn worktrees(repo: &Path) -> Result<Vec<PathBuf>> {
+    let dot_git = repo.join(".git");
+    if !dot_git.exists() || (dot_git.is_dir() && !dot_git.join("worktrees").is_dir()) {
+        return Ok(Vec::new());
+    }
+    let out = run(
+        repo,
+        Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(["worktree", "list", "--porcelain", "-z"]),
+    )?;
+    let real = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    let this = real(repo);
+    // Records are NUL-separated lines, each worktree ending with an empty line; the main
+    // working tree comes first.
+    let mut found = Vec::new();
+    for record in out.split("\0\0").skip(1) {
+        let mut lines = record.split('\0');
+        let Some(path) = lines.next().and_then(|l| l.strip_prefix("worktree ")) else {
+            continue;
+        };
+        let path = PathBuf::from(path);
+        let unusable = lines.any(|l| l == "bare" || l.starts_with("prunable"));
+        if !unusable && path.is_dir() && real(&path) != this {
+            found.push(path);
+        }
+    }
+    Ok(found)
+}
+
+/// The working tree holding `dir` and its repository's common git directory (the main
+/// checkout's `.git`, shared by every linked worktree), both canonical; `None` when `dir`
+/// is not inside a git working tree. A directory with no `.git` in it or any ancestor is
+/// answered without starting `git`.
+pub fn working_tree(dir: &Path) -> Option<(PathBuf, PathBuf)> {
+    if !dir
+        .ancestors()
+        .any(|d| fs::symlink_metadata(d.join(".git")).is_ok())
+    {
+        return None;
+    }
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args([
+            "rev-parse",
+            "--path-format=absolute",
+            "--show-toplevel",
+            "--git-common-dir",
+        ])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut lines = text.lines();
+    let top = Path::new(lines.next()?).canonicalize().ok()?;
+    let common = Path::new(lines.next()?).canonicalize().ok()?;
+    Some((top, common))
+}
+
 /// `git init` the directory `dir` (it must exist).
 pub fn init(dir: &Path) -> Result<()> {
     run(
@@ -383,6 +451,60 @@ mod tests {
         assert_eq!(status(&sub), Some(clean), "inside a work tree");
         std::fs::write(sub.join("x"), "x").unwrap();
         assert!(!status(&sub).unwrap().clean);
+    }
+
+    #[test]
+    fn worktrees_lists_the_linked_ones_that_still_exist() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path().join("main");
+        std::fs::create_dir(&repo).unwrap();
+        git(&repo, &["init", "--quiet"]);
+        assert!(worktrees(&repo).unwrap().is_empty(), "no worktrees/ yet");
+        assert!(worktrees(dir.path()).unwrap().is_empty(), "not a checkout");
+        git(
+            &repo,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@example.com",
+                "commit",
+                "--quiet",
+                "--allow-empty",
+                "-m",
+                "init",
+            ],
+        );
+        let (a, b) = (dir.path().join("a"), dir.path().join("b c"));
+        for wt in [&a, &b] {
+            git(
+                &repo,
+                &[
+                    "worktree",
+                    "add",
+                    "--quiet",
+                    "--detach",
+                    wt.to_str().unwrap(),
+                ],
+            );
+        }
+        let real = |p: &Path| p.canonicalize().unwrap();
+        let found: Vec<PathBuf> = worktrees(&repo).unwrap().iter().map(|p| real(p)).collect();
+        assert_eq!(found, [real(&a), real(&b)]);
+        assert_eq!(
+            worktrees(&a).unwrap().len(),
+            1,
+            "from a worktree: the other one"
+        );
+
+        let (top, common) = working_tree(&b).unwrap();
+        assert_eq!(top, real(&b));
+        assert_eq!(common, real(&repo.join(".git")));
+        assert_eq!(working_tree(dir.path()), None);
+
+        std::fs::remove_dir_all(&b).unwrap();
+        let found: Vec<PathBuf> = worktrees(&repo).unwrap().iter().map(|p| real(p)).collect();
+        assert_eq!(found, [real(&a)], "a deleted worktree is left out");
     }
 
     #[test]

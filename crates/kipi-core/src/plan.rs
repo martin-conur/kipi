@@ -418,7 +418,17 @@ pub fn repo_actions(
     block: &RenderedBlock,
     checkout: &Checkout,
 ) -> Option<RepoActions> {
-    let dir = repo.path.as_ref()?;
+    Some(tree_actions(repo, repo.path.as_ref()?, block, checkout))
+}
+
+/// The actions for `repo` in the working tree `dir`: its checkout, or one of the
+/// checkout's linked worktrees, which gets the same plan.
+pub fn tree_actions(
+    repo: &RepoPlan,
+    dir: &Path,
+    block: &RenderedBlock,
+    checkout: &Checkout,
+) -> RepoActions {
     let adapters: Vec<&dyn AgentAdapter> = repo
         .agents
         .value
@@ -457,15 +467,15 @@ pub fn repo_actions(
         agents.push(out);
     }
     patterns.push(MANIFEST_EXCLUDE.to_owned());
-    Some(RepoActions {
+    RepoActions {
         repo: repo.name.clone(),
-        dir: dir.clone(),
+        dir: dir.to_path_buf(),
         agents,
         exclude: Action::Exclude {
-            repo: dir.clone(),
+            repo: dir.to_path_buf(),
             patterns,
         },
-    })
+    }
 }
 
 /// Whether kipi creates (or created) the always-on `file` and git does not track it, so

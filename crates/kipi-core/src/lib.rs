@@ -14,6 +14,7 @@ pub mod edit;
 pub mod error;
 pub mod frontmatter;
 pub mod git;
+pub mod hook;
 pub mod json_merge;
 pub mod manifest;
 pub mod model;

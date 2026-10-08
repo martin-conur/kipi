@@ -7,6 +7,20 @@ the stable interface; human-readable output may change in any release.
 
 ## [Unreleased]
 
+### Added
+
+- **Worktrees.** A linked worktree (`git worktree add`) is the same repo entry as its checkout:
+  `kipi sync <repo>` and `kipi sync --all` now sync each checkout's worktrees too (each with its
+  own `.kipi/manifest.toml`), and `--all` cleans the worktrees of an unmounted store's repos.
+  `kipi scan` never records a worktree. `kipi sync --json` repos gain `worktree` (bool).
+- **`kipi sync` with no repo named** syncs the working tree it runs in, a checkout or a linked
+  worktree of one. Outside every known repo it is still an error, now with a hint naming your
+  real entries.
+- **`kipi hook install|uninstall [repo...|--all]`** installs a git `post-checkout` hook that runs
+  `kipi sync` in each new worktree, so it has the block, skill links and read grant as soon as
+  `git worktree add` returns. An existing hook is kept as `post-checkout.pre-kipi` and still
+  runs; uninstall puts it back unchanged. No migration; run `kipi hook install --all` to opt in.
+
 ### Fixed
 
 - **`kipi scan` no longer writes a work repo into the personal store.** A new checkout whose

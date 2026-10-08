@@ -132,6 +132,22 @@ kipi doctor --fix    # applies the fixes marked safe
 collisions, budgets, stale links and grants, and drafts still waiting for review. See
 [Doctor checks](doctor.md).
 
+## Worktrees
+
+kipi's files are untracked, so `git worktree add` makes a working tree without them. A linked
+worktree is the same repo entry as its checkout, and `kipi sync <repo>` / `kipi sync --all` sync
+it too. Inside one, a bare `kipi sync` syncs just that working tree. To have new worktrees
+synced the moment they are made, install the git hook once per repo:
+
+```bash
+kipi hook install --all       # a post-checkout hook in each repo; one covers all its worktrees
+git -C ~/work/acme/billing-api worktree add ../billing-api-feat   # already has the block
+kipi hook uninstall --all     # removes it, putting back any hook it had replaced
+```
+
+A hook already in `.git/hooks/post-checkout` keeps running: kipi's hook calls it first. Removing
+a worktree removes kipi's files with it; nothing is left for `doctor` to report.
+
 ## A second machine
 
 Get the stores onto it (any way you like), then:
