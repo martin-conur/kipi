@@ -2443,7 +2443,6 @@ fn hook_install_is_chained_idempotent_and_uninstall_restores_the_old_hook() {
 }
 
 #[test]
-#[ignore = "needs #48: kipi-created CLAUDE.md / AGENTS.md are not excluded yet"]
 fn a_hooked_worktree_and_its_checkout_have_a_clean_git_status() {
     let home = onboarded_home();
     let main = home.path().join(WORKTREE_REPO);
