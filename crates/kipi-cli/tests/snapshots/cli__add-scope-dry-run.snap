@@ -1,0 +1,23 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: out
+---
+add scope acme-data (store acme)
+  + store acme: [scopes.acme-data]
+  + extends: acme
+  + roots: ~/work/acme/data
+  + skills: dbt-conventions
+
+Dry run: would write 1 file:
+--- ~/stores/acme-store/bindings.toml
++++ ~/stores/acme-store/bindings.toml
+@@ -23,4 +23,9 @@
+ skills = ["dbt-conventions"]
+ 
++[scopes.acme-data]
++extends = "acme"
++roots = ["~/work/acme/data"]
++skills = ["dbt-conventions"]
++
+ [repos.billing-api]
+ remote = "github.com/acme-org/billing-api"   # normalized origin URL; filled by scan; primary match key

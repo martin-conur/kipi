@@ -244,11 +244,12 @@ Resolution is a pure function `(stores, machine) -> Plan` with no I/O beyond rea
 
 | Command | Purpose | Writes |
 | --- | --- | --- |
-| `init [--store <path>] [--name <n>] [--git]` | Create a store (dirs, `bindings.toml` skeleton with its name, optional `git init`) and add it to `config.toml`; pointed at an existing store, just mounts it | store, config |
+| `init [--store <path>] [--name <n>] [--git] [--scope <s> --root <path>...]` | Create a store (dirs, `bindings.toml` skeleton with its name, optional `git init`) and add it to `config.toml`; pointed at an existing store, just mounts it; `--scope` also declares a first scope (as `add scope`) | store, config |
 | `stores` | List mounted stores: name, path, git status, scopes, repo count; `--unmount <name>` removes one from `config.toml` | config |
 | `scan [path...] [--refresh-drafts]` | Find git repos under scope roots or given paths; write `machine.toml [repos]`; match repos by `remote` then name (§5.2); add missing `[repos.<name>]` entries (with `remote`, drafted summary, aliases) to the store that owns the inferred scope; fill `remote` on existing entries that lack it; report repos whose inferred scope conflicts with `remote_patterns` | machine.toml, bindings.toml of the owning store (new entries / drafts / remote only) |
 | `add skill <name> [--scope s] [--store n] [--from <git-url\|path>]` | Create a skill dir from template, or import an existing SKILL.md tree (e.g. from `~/.claude/skills/`) | store |
 | `add repo <name> [--scope s] [--path p] [--summary "…"]` | Register a repo by hand in the store owning its scope; reads `remote` from the checkout | store, machine |
+| `add scope <name> --root <path>... [--extends <s>] [--registry] [--skill <s>...] [--store <n>]` | Declare `[scopes.<name>]` (toml_edit, comment-preserving) in `--store`, else the store owning `--extends`, else the only mounted store; roots under home written `~/…` | bindings.toml |
 | `bind <repo> --skill <s>... / --related <repo>... / --exclude <s>... / --alias <a>...` | Edit a repo's entry (toml_edit, comment-preserving) | bindings.toml |
 | `unbind <repo> ...` | Inverse of bind | bindings.toml |
 | `resolve [repo]` | Print the Plan (JSON with `--json`); no side effects | — |

@@ -45,21 +45,11 @@ content, and nothing ever crosses into a repo outside its scope.
 curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/martin-conur/kipi/releases/latest/download/kipi-cli-installer.sh | sh
 
-# 2. Create a store (a plain directory, by default ~/.agents/store)
+# 2. Create a store (a plain directory, by default ~/.agents/store) and a scope:
+#    the directories whose repos it covers
 kipi init
-```
+kipi add scope personal --root ~/code --registry
 
-Open `~/.agents/store/bindings.toml`. The skeleton has a commented
-`# [scopes.<scope>]` table. Uncomment it, name the scope and point `roots` at where your
-repos live. This is the only hand edit:
-
-```toml
-[scopes.personal]
-roots = ["~/code"]
-registry = true
-```
-
-```bash
 # 3. Find your checkouts and draft a summary and aliases for each one
 kipi scan
 

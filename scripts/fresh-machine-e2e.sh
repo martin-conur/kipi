@@ -54,13 +54,10 @@ step "kipi init"
 kipi init --store "$HOME/work/.kipi-acme" --name acme
 store=$HOME/work/.kipi-acme
 test -f "$store/bindings.toml" || fail "init wrote no bindings.toml"
-# A scope is configuration, written in the TOML like any user would (roadmap §5.1).
-cat >> "$store/bindings.toml" <<'TOML'
 
-[scopes.acme]
-roots = ["~/work/acme"]
-registry = true
-TOML
+step "kipi add scope"
+kipi add scope acme --root "$HOME/work/acme" --registry
+has "$store/bindings.toml" 'roots = \["~/work/acme"\]'
 
 step "kipi scan"
 kipi scan

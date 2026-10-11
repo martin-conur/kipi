@@ -1309,13 +1309,27 @@ fn authoring_from_an_empty_home_to_a_synced_repo() {
     );
     let store = home.path().join(".agents/store");
     assert!(store.join(".git").is_dir());
-    // The user declares a scope by hand, as the skeleton's commented example shows.
+    // The scope is declared with `add scope`: no TOML is edited by hand anywhere here.
     let bindings = store.join("bindings.toml");
-    let mut text = fs::read_to_string(&bindings).unwrap();
-    text.push_str("\n[scopes.personal]\nroots = [\"~/code\"]\nregistry = true\n");
-    fs::write(&bindings, text).unwrap();
+    let out = stdout_of(
+        &home,
+        home.bare()
+            .args(["add", "scope", "personal", "--registry", "--root"])
+            .arg(home.path().join("code")),
+    );
+    assert!(out.contains("+ roots: ~/code"), "{out}");
+    let text = fs::read_to_string(&bindings).unwrap();
+    assert!(
+        text.contains("\n[scopes.personal]\nroots = [\"~/code\"]\nregistry = true\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains("# [scopes.<scope>]"),
+        "the skeleton's comments survive"
+    );
 
-    home.bare().arg("scan").assert().success();
+    let out = stdout_of(&home, home.bare().arg("scan"));
+    assert!(out.contains("lib-core"), "{out}");
     let src = user_skill(&home, "review");
     let out = stdout_of(
         &home,
@@ -1457,6 +1471,143 @@ fn add_repo_registers_an_entry_and_its_checkout() {
     insta::assert_snapshot!("add-repo", out);
     let explain = stdout_of(&home, home.kipi().args(["explain", "notes-app"]));
     assert!(explain.contains("~/code/notes-app"), "{explain}");
+}
+
+#[test]
+fn add_scope_dry_run_keeps_comments_and_ordering() {
+    let home = Home::new();
+    fs::create_dir_all(home.path().join("work/acme/data")).unwrap();
+    let bindings = home.store(ExampleStore::Acme).join("bindings.toml");
+    let before = fs::read_to_string(&bindings).unwrap();
+    let args = |dry_run: bool| {
+        let mut cmd = home.kipi();
+        cmd.args(["add", "scope", "acme-data", "--extends", "acme", "--skill"])
+            .args(["dbt-conventions", "--root"])
+            .arg(home.path().join("work/acme/data"));
+        if dry_run {
+            cmd.arg("--dry-run");
+        }
+        cmd
+    };
+    let out = stdout_of(&home, &mut args(true));
+    insta::assert_snapshot!("add-scope-dry-run", out);
+    assert_eq!(fs::read_to_string(&bindings).unwrap(), before);
+
+    stdout_of(&home, &mut args(false));
+    let after = fs::read_to_string(&bindings).unwrap();
+    let added = "\n[scopes.acme-data]\nextends = \"acme\"\nroots = [\"~/work/acme/data\"]\n\
+                 skills = [\"dbt-conventions\"]\n";
+    assert_eq!(
+        after.replacen(added, "", 1),
+        before,
+        "only the table was added"
+    );
+    let tree = stdout_of(&home, home.kipi().arg("tree"));
+    assert!(tree.contains("acme-data"), "{tree}");
+}
+
+#[test]
+fn add_scope_is_rejected_without_writing() {
+    let home = Home::new();
+    let code = home.path().join("code");
+    fs::create_dir_all(&code).unwrap();
+    let files = files_under(&home.path().join("stores"));
+    let fail = |args: &[&str]| {
+        let mut cmd = home.kipi();
+        cmd.args(["add", "scope"])
+            .args(args)
+            .arg("--root")
+            .arg(&code);
+        failure_of(&home, &mut cmd)
+    };
+
+    let (code_, err) = fail(&["extra", "--extends", "acme-m"]);
+    assert_eq!(code_, 1);
+    assert_eq!(
+        err,
+        "error: no scope `acme-m` in the mounted stores\n  hint: did you mean `acme-ml`?\n"
+    );
+    let (_, err) = fail(&["extra", "--extends", "acme", "--store", "personal"]);
+    assert_eq!(
+        err,
+        "error: scope `acme` is in store `acme`, not `personal`\n  hint: `extends` resolves \
+         only within a store: pass `--store acme`, or extend a scope of store `personal`\n"
+    );
+    let (_, err) = fail(&["acme"]);
+    assert!(
+        err.starts_with("error: scope `acme` already exists in store `acme`\n"),
+        "{err}"
+    );
+    let (_, err) = fail(&["extra"]);
+    assert!(err.contains("several stores are mounted"), "{err}");
+    assert!(err.contains("pass --store <name>"), "{err}");
+    // A skill of another store that does not share its skills fails revalidation.
+    let (_, err) = fail(&[
+        "extra",
+        "--store",
+        "personal",
+        "--skill",
+        "acme/code-review",
+    ]);
+    assert!(err.contains("(rejected: nothing was written)"), "{err}");
+    let (_, err) = failure_of(
+        &home,
+        home.kipi()
+            .args(["add", "scope", "extra", "--store", "personal", "--root"])
+            .arg(home.path().join("missing")),
+    );
+    assert!(err.contains("is not a directory"), "{err}");
+    assert_eq!(files_under(&home.path().join("stores")), files);
+}
+
+#[test]
+fn init_with_a_scope_needs_no_hand_edit() {
+    let home = Home::empty();
+    let repo = FakeRepo {
+        entry: String::new(),
+        dir: "code/app".into(),
+        origin_url: Some("https://github.com/example-user/app.git".into()),
+        readme: Some("A small example project.\n".into()),
+        manifest: ManifestKind::None,
+        description: None,
+    };
+    let app = repo.create_under(home.path()).unwrap();
+    let code = home.path().join("code");
+    let init = || {
+        let mut cmd = home.bare();
+        cmd.args(["init", "--scope", "personal", "--root"])
+            .arg(&code);
+        cmd
+    };
+    let out = stdout_of(&home, &mut init());
+    assert!(out.contains("+ store personal: [scopes.personal]"), "{out}");
+    let bindings = home.path().join(".agents/store/bindings.toml");
+    let text = fs::read_to_string(&bindings).unwrap();
+    assert!(
+        text.contains("\n[scopes.personal]\nroots = [\"~/code\"]\n\n# [scopes.<scope>]"),
+        "{text}"
+    );
+    let again = stdout_of(&home, &mut init());
+    assert!(
+        again.contains("= scope: [scopes.personal]  (exists; left as is)"),
+        "{again}"
+    );
+    assert!(again.ends_with("Nothing to write.\n"), "{again}");
+
+    home.bare().arg("scan").assert().success();
+    home.bare().args(["sync", "--all"]).assert().success();
+    assert!(app.join("CLAUDE.md").is_file());
+    let text = fs::read_to_string(&bindings).unwrap();
+
+    // Adding a scope to an already mounted store goes through the same check.
+    let (_, err) = failure_of(
+        &home,
+        home.bare()
+            .args(["init", "--scope", "x", "--root"])
+            .arg(home.path().join("missing")),
+    );
+    assert!(err.contains("is not a directory"), "{err}");
+    assert_eq!(fs::read_to_string(&bindings).unwrap(), text);
 }
 
 #[test]

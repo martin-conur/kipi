@@ -30,9 +30,20 @@ stores and has no sync transport — sync each store however its trust boundary 
 
 ## 2. Declare the scopes
 
-Scopes are configuration, and this is the one hand edit in the setup: open each `bindings.toml`
-in your editor (`kipi edit` needs a repo or skill). The skeleton `init` wrote has a
-commented `# [scopes.<scope>]` table: uncomment it, give it the scope's name and set `roots`.
+A scope says which directories hold its repos. Declare each one with `add scope`; it edits the
+store's `bindings.toml` in place, keeping its comments, and checks the result before writing:
+
+```bash
+kipi add scope acme --store acme --root ~/work/acme --registry
+kipi add scope acme-ml --extends acme --root ~/work/acme/ml   # goes in acme's store
+kipi add scope personal --store personal --root ~/code --registry
+```
+
+`--extends` names a scope of the same store (nothing crosses stores); with it, `--store` can be
+left out. `--skill <name>...` binds skills to the scope as it is created. With a single store,
+`kipi init --scope personal --root ~/code` creates the store and its first scope in one step.
+
+The result, which you can also write by hand (`always` and `remote_patterns` have no flag yet):
 
 ```toml
 # ~/work/.kipi-acme/bindings.toml

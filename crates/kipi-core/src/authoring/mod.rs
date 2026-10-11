@@ -1,4 +1,4 @@
-//! The authoring commands (roadmap §7 `init`, `stores --unmount`, `add skill|repo`,
+//! The authoring commands (roadmap §7 `init`, `stores --unmount`, `add skill|repo|scope`,
 //! `bind`, `unbind`): edits to `bindings.toml`, `config.toml` and `machine.toml` that keep
 //! comments, ordering and blank lines (toml_edit, roadmap §1 principle 6).
 //!
@@ -11,12 +11,14 @@
 mod bind;
 mod init;
 mod repo;
+mod scope;
 mod skill;
 mod toml;
 
 pub use bind::{Binding, bind, unbind};
 pub use init::{InitOptions, default_store_name, init, unmount};
 pub use repo::{RepoOptions, add_repo};
+pub use scope::{ScopeOptions, add_scope};
 pub use skill::{SkillOptions, add_skill, is_git_url};
 
 use std::fs;

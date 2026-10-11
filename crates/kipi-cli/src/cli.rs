@@ -62,6 +62,12 @@ pub enum Command {
         /// Also `git init` the store.
         #[arg(long)]
         git: bool,
+        /// Declare this scope in the store (see `kipi add scope`).
+        #[arg(long, requires = "roots")]
+        scope: Option<String>,
+        /// The --scope's roots: directories holding its repos.
+        #[arg(long = "root", value_name = "PATH", num_args = 1.., requires = "scope", value_hint = ValueHint::DirPath)]
+        roots: Vec<PathBuf>,
         #[command(flatten)]
         dry_run: DryRun,
     },
@@ -90,7 +96,7 @@ pub enum Command {
         #[command(flatten)]
         dry_run: DryRun,
     },
-    /// Add a skill or a repo entry.
+    /// Add a skill, a repo entry or a scope.
     #[command(subcommand)]
     Add(Add),
     /// Add skills, relations, exclusions or aliases to a repo entry.
@@ -270,6 +276,28 @@ pub enum Add {
         #[command(flatten)]
         dry_run: DryRun,
     },
+    /// Declare a scope: the directories whose repos belong to it.
+    Scope {
+        /// The scope name.
+        name: String,
+        /// Directories holding the scope's repos.
+        #[arg(long = "root", value_name = "PATH", num_args = 1.., required = true, value_hint = ValueHint::DirPath)]
+        roots: Vec<PathBuf>,
+        /// The parent scope, in the same store.
+        #[arg(long, value_name = "SCOPE", add = ArgValueCandidates::new(complete::scopes))]
+        extends: Option<String>,
+        /// Build a registry for the scope and render it into the block.
+        #[arg(long)]
+        registry: bool,
+        /// Skills every repo in the scope gets.
+        #[arg(long = "skill", value_name = "SKILL", num_args = 1.., add = ArgValueCandidates::new(complete::skills))]
+        skills: Vec<String>,
+        /// The store to declare it in (by name).
+        #[arg(long, value_name = "NAME", add = ArgValueCandidates::new(complete::stores))]
+        store: Option<String>,
+        #[command(flatten)]
+        dry_run: DryRun,
+    },
 }
 
 /// The arguments of `bind` and `unbind`.
@@ -301,7 +329,9 @@ impl Command {
             Command::Init { dry_run, .. }
             | Command::Stores { dry_run, .. }
             | Command::Scan { dry_run, .. }
-            | Command::Add(Add::Skill { dry_run, .. } | Add::Repo { dry_run, .. })
+            | Command::Add(
+                Add::Skill { dry_run, .. } | Add::Repo { dry_run, .. } | Add::Scope { dry_run, .. },
+            )
             | Command::Sync { dry_run, .. }
             | Command::Doctor { dry_run, .. } => Some(*dry_run),
             Command::Bind(b) | Command::Unbind(b) => Some(b.dry_run),

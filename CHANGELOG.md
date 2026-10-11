@@ -9,6 +9,12 @@ the stable interface; human-readable output may change in any release.
 
 ### Added
 
+- **`kipi add scope <name> --root <path>... [--extends <s>] [--registry] [--skill <s>...]
+  [--store <n>]`** declares a scope in a store's `bindings.toml`, keeping its comments, and
+  checks the result before writing (`--dry-run` prints the diff). `kipi init --scope <name>
+  --root <path>...` creates a store and its first scope in one step. Onboarding (`init`, `add
+  scope`, `scan`, `sync --all`) no longer needs a hand-edited TOML. No migration.
+
 - **Worktrees.** A linked worktree (`git worktree add`) is the same repo entry as its checkout:
   `kipi sync <repo>` and `kipi sync --all` now sync each checkout's worktrees too (each with its
   own `.kipi/manifest.toml`), and `--all` cleans the worktrees of an unmounted store's repos.
