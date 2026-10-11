@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use toml_edit::{DocumentMut, Item, Value};
 
+use super::scope::{self, ScopeOptions};
 use super::toml::{push, table_mut};
 use super::{Change, Op, Outcome, absolute, file_write, tilde};
 use crate::config::{self, BINDINGS_FILE, DEFAULT_STORE, Env};
@@ -27,6 +28,10 @@ pub struct InitOptions<'a> {
     pub name: Option<&'a str>,
     /// `--git`.
     pub git: bool,
+    /// `--scope`: declare this scope in the store, unless it already has it.
+    pub scope: Option<&'a str>,
+    /// `--root`: the roots of `--scope`.
+    pub roots: &'a [PathBuf],
 }
 
 /// The name a new store at `root` gets without `--name`: `personal` for the default store,
@@ -43,12 +48,23 @@ pub fn default_store_name(root: &Path, env: &Env) -> String {
 
 /// Create the store at `opts.path` (dirs, `bindings.toml` skeleton, `.gitignore`, with
 /// `--git` a repository) unless it exists, and add it to `config.toml` `stores` unless it
-/// is listed. Never overwrites a file. The new mount set is loaded and resolved first.
+/// is listed. With `--scope`, declare that scope in the store unless it has it. Never
+/// overwrites a file other than by that edit. The new mount set is loaded and resolved
+/// first.
 pub fn init(env: &Env, cfg: &Config, machine: &Machine, opts: &InitOptions) -> Result<Outcome> {
     let root = match opts.path {
         Some(p) => absolute(p, env)?,
         None => env.home.join(DEFAULT_STORE),
     };
+    let scope_opts = opts.scope.map(|name| ScopeOptions {
+        name,
+        roots: opts.roots,
+        ..ScopeOptions::default()
+    });
+    let roots = scope_opts
+        .as_ref()
+        .map(|s| scope::check(s, env))
+        .transpose()?;
     let mut out = Outcome::default();
     let bindings = root.join(BINDINGS_FILE);
     let new_text = if bindings.is_file() {
@@ -75,8 +91,25 @@ pub fn init(env: &Env, cfg: &Config, machine: &Machine, opts: &InitOptions) -> R
             )
             .note("exists; mounted as is"),
         );
+        let mut edited = None;
+        if let (Some(s), Some(roots)) = (&scope_opts, &roots) {
+            if store.scope(s.name).is_some() {
+                out.changes.push(
+                    Change::new(Op::Keep, "scope", format!("[scopes.{}]", s.name))
+                        .note("exists; left as is"),
+                );
+            } else {
+                let mut doc = store.bindings.doc.clone();
+                out.changes
+                    .extend(scope::declare(&mut doc, &store.name, s, roots));
+                let text = doc.to_string();
+                out.writes
+                    .extend(file_write(bindings.clone(), text.clone()));
+                edited = Some(text);
+            }
+        }
         out.store = Some(store.name);
-        None
+        edited
     } else {
         if root.is_file() {
             return Err(Error::usage(
@@ -93,7 +126,13 @@ pub fn init(env: &Env, cfg: &Config, machine: &Machine, opts: &InitOptions) -> R
                 "pass a name with --name: letters, digits, `-`, `_` and `.`",
             )
         })?;
-        let text = skeleton(&name);
+        let mut text = skeleton(&name);
+        let mut scope_changes = Vec::new();
+        if let (Some(s), Some(roots)) = (&scope_opts, &roots) {
+            let mut doc: DocumentMut = text.parse().expect("the skeleton is valid TOML");
+            scope_changes = scope::declare(&mut doc, &name, s, roots);
+            text = doc.to_string();
+        }
         // A store name clash with a mounted store is caught when mounting below.
         config::load_store_text(&root, text.clone(), env).map_err(Error::rejected)?;
         out.dirs = std::iter::once(root.clone())
@@ -117,6 +156,7 @@ pub fn init(env: &Env, cfg: &Config, machine: &Machine, opts: &InitOptions) -> R
             "store",
             format!("{name} at {}", root.display()),
         ));
+        out.changes.extend(scope_changes);
         out.store = Some(name);
         Some(text)
     };
@@ -156,7 +196,8 @@ fn skeleton(name: &str) -> String {
 }
 
 /// Add `root` to `config.toml` `stores` (after the implicit default store, when the file
-/// lists none and that store exists), checking the new set loads and resolves.
+/// lists none and that store exists), checking the new set loads and resolves. A store
+/// already listed is checked too when `new_text` edits it.
 fn mount(
     env: &Env,
     cfg: &Config,
@@ -165,37 +206,46 @@ fn mount(
     new_text: Option<String>,
     out: &mut Outcome,
 ) -> Result<()> {
-    if cfg.stores.iter().any(|p| same_dir(p, root)) {
-        out.changes.push(
-            Change::new(Op::Keep, "config.toml stores", tilde(root, env)).note("already mounted"),
-        );
-        return Ok(());
-    }
+    let mounted = cfg.stores.iter().any(|p| same_dir(p, root));
     let mut paths: Vec<PathBuf> = cfg.stores.clone();
     let default = env.home.join(DEFAULT_STORE);
     if paths.is_empty() && default != root && default.join(BINDINGS_FILE).is_file() {
         // Listing only the new store would silently unmount the implicit default one.
         paths.push(default);
     }
-    let added: Vec<PathBuf> = paths
-        .iter()
-        .filter(|p| !cfg.stores.contains(p))
-        .cloned()
-        .chain(std::iter::once(root.to_path_buf()))
-        .collect();
-    paths.push(root.to_path_buf());
+    let added: Vec<PathBuf> = if mounted {
+        Vec::new()
+    } else {
+        paths
+            .iter()
+            .filter(|p| !cfg.stores.contains(p))
+            .cloned()
+            .chain(std::iter::once(root.to_path_buf()))
+            .collect()
+    };
+    if !mounted {
+        paths.push(root.to_path_buf());
+    }
 
     let check = || {
         let stores = paths
             .iter()
-            .map(|p| match (&new_text, p == root) {
+            .map(|p| match (&new_text, same_dir(p, root)) {
                 (Some(text), true) => config::load_store_text(p, text.clone(), env),
                 _ => config::load_store(p, env),
             })
             .collect::<Result<Vec<_>>>()?;
         resolve(&StoreSet::new(stores)?, machine).map(drop)
     };
-    check().map_err(Error::rejected)?;
+    if new_text.is_some() || !mounted {
+        check().map_err(Error::rejected)?;
+    }
+    if mounted {
+        out.changes.push(
+            Change::new(Op::Keep, "config.toml stores", tilde(root, env)).note("already mounted"),
+        );
+        return Ok(());
+    }
 
     let mut doc = cfg
         .source

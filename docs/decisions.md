@@ -646,6 +646,24 @@ The spec wins wherever it is explicit.
   `scope =` is written only when `--scope` disagrees with (or there is no) path placement, as in
   `scan`. `--summary` is written as reviewed (no draft marker). `--path` is recorded in
   `machine.toml`.
+- **`add scope`** (#44): a spec addition to §7, so onboarding (`init` → `add scope` → `scan` →
+  `sync --all`) needs no hand-edited TOML. The scope name must be free in every mounted store and
+  needs at least one `--root`; each root must be an existing directory and is written `~/…` when
+  under the home directory (never an absolute home path). The store is `--store`, else the store
+  owning `--extends`, else the only mounted store, else a usage error. An unknown `--extends` is a
+  usage error naming the closest scope; one in another store than `--store` is refused before
+  anything is checked further (`extends` resolves only within a store). `--skill` refs are checked
+  by the usual revalidation, so a skill of a store that does not share its skills rejects the edit.
+  The table is written `extends`, `roots`, `skills`, `registry`, after the store's last scope, or
+  before its first repo entry when it has no scope yet; the skeleton's trailing comments stay at
+  the end. `always` and `remote_patterns` have no flag: they need a conventions file or a policy
+  decision, both hand edits anyway.
+- **`init --scope <name> --root <path>...`** declares that scope in the store `init` creates or
+  mounts, with the same checks and placement as `add scope` (no `--extends`, `--skill` or
+  `--registry`: the first scope of a store has nothing to extend, and the rest is one `add scope`
+  away). If the store already declares the scope, it is left as is (`keep`), so re-running `init`
+  stays a no-op. An already mounted store edited this way is re-validated with the other mounted
+  stores, as a new mount is.
 - **JSON**: `stores --json` and every authoring command's `--json` report are documented in
   `docs/json.md` ("Stores", "Authoring").
 - **`tempfile`** moves from kipi-core's dev-dependencies to its dependencies (it is in the §12

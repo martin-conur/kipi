@@ -1,11 +1,13 @@
-//! The authoring commands: `init`, `stores --unmount`, `add skill|repo`, `bind`, `unbind`
+//! The authoring commands: `init`, `stores --unmount`, `add skill|repo|scope`, `bind`, `unbind`
 //! (roadmap §7). Each computes a [`kipi_core::authoring::Outcome`], then writes it under
 //! the lock, or with `--dry-run` prints it as a unified diff.
 
 use std::path::PathBuf;
 
 use kipi_core::apply::Lock;
-use kipi_core::authoring::{self, Binding, InitOptions, Op, Outcome, RepoOptions, SkillOptions};
+use kipi_core::authoring::{
+    self, Binding, InitOptions, Op, Outcome, RepoOptions, ScopeOptions, SkillOptions,
+};
 use kipi_core::config::{self, Env};
 use kipi_core::model::{Config, Machine, StoreSet};
 
@@ -68,6 +70,20 @@ pub fn add_repo(
     let outcome = authoring::add_repo(&stores, &machine, env, opts)?;
     let title = format!("add repo {}", opts.name);
     finish("add repo", title, &outcome, env, dry_run, out)
+}
+
+/// `kipi add scope`.
+pub fn add_scope(
+    env: &Env,
+    store_flags: &[PathBuf],
+    opts: &ScopeOptions,
+    dry_run: bool,
+    out: &Output,
+) -> Result<(), Failure> {
+    let (_, stores, machine) = load(env, store_flags)?;
+    let outcome = authoring::add_scope(&stores, &machine, env, opts)?;
+    let title = format!("add scope {}", opts.name);
+    finish("add scope", title, &outcome, env, dry_run, out)
 }
 
 /// `kipi bind` (`adding`) or `kipi unbind`.

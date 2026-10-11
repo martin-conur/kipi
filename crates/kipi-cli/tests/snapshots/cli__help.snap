@@ -10,7 +10,7 @@ Commands:
   init         Create a store and mount it, or mount an existing one
   stores       List mounted stores, or unmount one
   scan         Find git repos under scope roots (or PATHs) and record them
-  add          Add a skill or a repo entry
+  add          Add a skill, a repo entry or a scope
   bind         Add skills, relations, exclusions or aliases to a repo entry
   unbind       Remove skills, relations, exclusions or aliases from a repo entry
   resolve      Print the resolved plan (no side effects)
