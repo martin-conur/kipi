@@ -29,6 +29,10 @@ the stable interface; human-readable output may change in any release.
 
 ### Fixed
 
+- **`kipi tree` keeps a scope with many roots on one short line.** A scope with several roots
+  shows the first and a count (`(~/code/maps +3)`) instead of every root inline; `--machine`
+  still lists them all and `--json` is unchanged. A scope header too wide for its count to line
+  up no longer pushes every repo row's token and state columns off-screen.
 - **`kipi scan` no longer writes a work repo into the personal store.** A new checkout whose
   remote matches a `remote_patterns` entry of another mounted store than the one its path (or
   `--scope`) places it in is no longer added (with its remote and drafted summary): scan reports

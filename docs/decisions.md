@@ -1045,3 +1045,15 @@ The spec wins wherever it is explicit.
   directory's `hooks/`, so one install covers every worktree. A repo with `core.hooksPath` set is
   refused with a hint: that directory is usually shared by other repos (or a hook manager owns
   it), so the hook belongs in whatever runs there.
+
+## `tree`: scopes with many roots (#52)
+
+- **Several roots show as the first plus a count**, `personal  (~/code/maps +3)`, so a scope with
+  per-repo roots (the layout #46 recommends when personal and work checkouts share a folder)
+  keeps a short header. `--machine` lists every root (from `machine.toml [roots]` when it
+  overrides them), and `--json` always has the full `roots` / `machine_roots`. No separate
+  `--roots` flag: `--machine` is already where `tree` shows this machine's paths.
+- **A wide scope header does not set the column.** A scope line wider than 48 characters (box
+  prefix, name, roots, `extends`) puts `always-on: N tok` two spaces after itself instead of
+  pushing the right-hand column, so repo rows stay readable at 100 columns. Every scope line in
+  the example stores is under the cap, so the §7 layout is unchanged.
