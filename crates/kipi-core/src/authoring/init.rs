@@ -91,6 +91,8 @@ pub fn init(env: &Env, cfg: &Config, machine: &Machine, opts: &InitOptions) -> R
             )
             .note("exists; mounted as is"),
         );
+        // An edited bindings.toml is validated by `mount`'s check, not `revalidate` as in
+        // `add scope`; both load and resolve the full mounted store set with the edit.
         let mut edited = None;
         if let (Some(s), Some(roots)) = (&scope_opts, &roots) {
             if store.scope(s.name).is_some() {

@@ -179,7 +179,8 @@ fn insert(doc: &mut DocumentMut, opts: &ScopeOptions, roots: &[String]) -> Vec<C
                 .filter_map(|(_, t)| t.as_table().and_then(Table::position))
                 .min()
         });
-        table.set_position(first_repo.map(|p| p - 1));
+        // `[store]` precedes every `[repos.*]` in a loaded store, so `p` is at least 1.
+        table.set_position(first_repo.map(|p| p.saturating_sub(1)));
         let mut scopes = Table::new();
         scopes.set_implicit(true);
         doc.insert("scopes", Item::Table(scopes));
