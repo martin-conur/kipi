@@ -178,6 +178,11 @@ pub struct Display {
     pub machine: bool,
 }
 
+/// The widest scope header (box prefix, name, roots, `extends`) that still sets the right
+/// column; a wider one puts its token count two spaces after itself instead, so the repo
+/// rows stay readable at 100 columns.
+const SCOPE_LABEL_CAP: usize = 48;
+
 /// A styled piece of a line.
 type Seg = (String, Style);
 
@@ -415,20 +420,28 @@ impl Renderer<'_> {
             _ => &scope.roots,
         };
         let mut left = vec![plain(head), (scope.name.clone(), styles::name())];
-        if !roots.is_empty() {
-            let roots: Vec<String> = roots.iter().map(|r| self.path(r)).collect();
-            left.push(plain(format!("  ({})", roots.join(", "))));
+        if let [first, rest @ ..] = roots.as_slice() {
+            // Several roots show as the first and a count, so a scope with per-repo roots
+            // keeps a short line; `--machine` lists them all, and `--json` always does.
+            let label = if rest.is_empty() || self.display.machine {
+                let roots: Vec<String> = roots.iter().map(|r| self.path(r)).collect();
+                roots.join(", ")
+            } else {
+                format!("{} +{}", self.path(first), rest.len())
+            };
+            left.push(plain(format!("  ({label})")));
         }
         if let Some(parent) = &scope.extends {
             left.push((format!("  extends {parent}"), styles::source()));
         }
-        self.lines.push(Line {
-            left,
-            right: Right::Aligned(vec![plain(format!(
-                "always-on: {} tok",
-                human(scope.always_on)
-            ))]),
-        });
+        let right = vec![plain(format!("always-on: {} tok", human(scope.always_on)))];
+        // A header wider than the cap does not set the column the repo rows align to.
+        let right = if width(&left) <= SCOPE_LABEL_CAP {
+            Right::Aligned(right)
+        } else {
+            Right::Soft(right)
+        };
+        self.lines.push(Line { left, right });
     }
 
     fn repo_line(&mut self, repo: &RepoNode, head: &str) {
@@ -652,5 +665,73 @@ mod tests {
         );
         assert!(text.contains("team-ml  (/Volumes/ml)"), "{text}");
         assert!(text.contains("~/work/stray"), "{text}");
+    }
+
+    /// One scope with per-repo roots under long paths (#52).
+    fn many_roots() -> Tree {
+        let roots: Vec<PathBuf> = ["geo-tools", "chat-service", "ranking-lab", "hex-map"]
+            .iter()
+            .map(|r| PathBuf::from(format!("/Volumes/Disk/code/{r}")))
+            .collect();
+        let mut chat = repo("chat-service", 231, State::Missing);
+        chat.draft_summary = true;
+        let personal = ScopeNode {
+            name: "personal".into(),
+            roots: roots.clone(),
+            machine_roots: None,
+            extends: None,
+            always_on: 184,
+            skills: Vec::new(),
+            registry: None,
+            scopes: Vec::new(),
+            repos: vec![chat, repo("geo-tools", 1210, State::Synced)],
+        };
+        Tree {
+            tokenizer: "cl100k_base",
+            stores: vec![StoreNode {
+                name: "me".into(),
+                root: PathBuf::from("/h/.agents/store"),
+                git: None,
+                shares_skills: false,
+                scopes: vec![personal],
+                unscoped: Vec::new(),
+            }],
+        }
+    }
+
+    #[test]
+    fn many_long_roots_keep_the_scope_line_short() {
+        let text = render(
+            &many_roots(),
+            Display::default(),
+            &Painter::plain(),
+            Some(Path::new("/h")),
+        );
+        insta::assert_snapshot!(text, @r"
+        [store me  ~/.agents/store  no git]
+        personal  (/Volumes/Disk/code/geo-tools +3)  always-on: 184 tok
+        ├─ chat-service                               231 tok  ✗ missing  draft summary
+        └─ geo-tools                                 1.2k tok  ✓ synced
+        ");
+    }
+
+    #[test]
+    fn machine_lists_every_root_without_moving_the_columns() {
+        let display = Display {
+            machine: true,
+            ..Display::default()
+        };
+        let text = render(
+            &many_roots(),
+            display,
+            &Painter::plain(),
+            Some(Path::new("/h")),
+        );
+        insta::assert_snapshot!(text, @r"
+        [store me  ~/.agents/store  no git]
+        personal  (/Volumes/Disk/code/geo-tools, /Volumes/Disk/code/chat-service, /Volumes/Disk/code/ranking-lab, /Volumes/Disk/code/hex-map)  always-on: 184 tok
+        ├─ chat-service  ~/work/chat-service   231 tok  ✗ missing  draft summary
+        └─ geo-tools  ~/work/geo-tools        1.2k tok  ✓ synced
+        ");
     }
 }
