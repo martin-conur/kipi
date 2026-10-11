@@ -16,6 +16,8 @@ the stable interface; human-readable output may change in any release.
   removes what kipi wrote into its checkout (and linked worktrees); the next `kipi sync --all`
   drops it from the registries. Refused while another entry lists it in `related`. Its
   `notes.md` is kept unless `--notes`.
+- **`kipi edit scope:<name>`** opens the store's `bindings.toml` at the `[scopes.<name>]` line
+  and validates on exit, like a repo entry.
 - **`kipi add repo <name> --path <dir>`** on an existing entry with no checkout on this machine
   records the checkout (and fills a missing `remote`) instead of refusing.
 - **`kipi add scope <name> --root <path>... [--extends <s>] [--no-registry] [--skill <s>...]

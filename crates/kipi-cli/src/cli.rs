@@ -196,9 +196,9 @@ pub enum Command {
         #[arg(long, value_name = "N", default_value_t = kipi_core::search::DEFAULT_LIMIT)]
         limit: usize,
     },
-    /// Open a repo entry, skill, notes:<repo> or conventions:<scope> in $EDITOR.
+    /// Open a repo entry, skill, scope:<name>, notes:<repo> or conventions:<scope> in $EDITOR.
     Edit {
-        /// A repo entry, a skill, notes:<repo> or conventions:<scope>.
+        /// A repo entry, a skill, scope:<name>, notes:<repo> or conventions:<scope>.
         #[arg(add = ArgValueCandidates::new(complete::edit_targets))]
         target: String,
     },

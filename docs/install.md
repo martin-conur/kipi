@@ -33,7 +33,7 @@ cargo install --locked --git https://github.com/martin-conur/kipi kipi-cli
 `powershell`. It completes subcommands and flags, and asks `kipi` itself for **repo entry names,
 aliases, skills, scopes and store names** from the stores your `config.toml` (or `$KIPI_STORE`)
 mounts, so new entries complete as soon as they exist. `kipi edit` also completes
-`notes:<repo>` and `conventions:<scope>`.
+`scope:<name>`, `notes:<repo>` and `conventions:<scope>`.
 
 Load it from your shell's startup file, so the script always matches the installed `kipi`:
 

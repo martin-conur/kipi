@@ -758,7 +758,9 @@ The spec wins wherever it is explicit.
   prefix). A repo opens its store's `bindings.toml` at the `[repos.<name>]` line; a skill its
   `SKILL.md`. Missing notes are created from `templates/notes.md`; a missing conventions file is
   created empty, at the scope's first `always` entry under `conventions/` or else
-  `conventions/<scope>.md`, with a note when no `always` lists it.
+  `conventions/<scope>.md`, with a note when no `always` lists it. `scope:<name>` (#55) opens
+  the owning store's `bindings.toml` at the `[scopes.<name>]` line, like a repo entry; it always
+  needs the prefix, since a bare name means a repo entry or a skill.
 - **Editor**: `$EDITOR`, else `config.toml` `editor`, else a user error. The command may carry
   arguments (`code -w`). Line syntax by program name: `file:line` for `hx`/`helix`, `subl`, `zed`,
   `micro`; `+line file` for vi-likes, `nano`, `emacs`, `kak`; `--goto file:line` for VS Code-likes;

@@ -364,7 +364,12 @@ fn completions_offer_repo_skill_alias_scope_and_store_names() {
     );
     has(
         &["edit", ""],
-        &["billing-api", "notes:billing-api", "conventions:acme"],
+        &[
+            "billing-api",
+            "notes:billing-api",
+            "scope:acme-ml",
+            "conventions:acme",
+        ],
     );
     has(&["completions", ""], &["bash", "zsh", "fish", "elvish"]);
 }
@@ -2389,6 +2394,58 @@ fn edit_creates_notes_from_the_template_and_reports_invalid_edits() {
         "{err}"
     );
     assert!(err.contains("hint: did you mean `summary`?"), "{err}");
+}
+
+#[test]
+fn edit_scope_opens_the_table_and_validates() {
+    let home = Home::new();
+    let hx = fake_hx(&home, "^skills = \\[\"dbt-conventions\"\\]", "skills = []");
+    let out = stdout_of(
+        &home,
+        home.kipi()
+            .args(["edit", "scope:acme-ml"])
+            .env("EDITOR", &hx),
+    );
+    insta::assert_snapshot!("edit-scope", out);
+    let args = fs::read_to_string(home.path().join("editor-args")).unwrap();
+    assert_eq!(
+        home.scrub(args.as_bytes()),
+        "[HOME]/stores/acme-store/bindings.toml:20\n",
+        "opened at the `[scopes.acme-ml]` line"
+    );
+    let bindings = home.store(ExampleStore::Acme).join("bindings.toml");
+    assert!(
+        fs::read_to_string(&bindings)
+            .unwrap()
+            .contains("roots = [\"~/work/acme/ml\"]\nskills = []\n")
+    );
+
+    let (_, err) = failure_of(
+        &home,
+        home.kipi()
+            .args(["edit", "scope:acme-m"])
+            .env("EDITOR", "true"),
+    );
+    assert!(
+        err.starts_with(
+            "error: no scope `acme-m` in the mounted stores\n  hint: did you mean `acme-ml`?"
+        ),
+        "{err}"
+    );
+
+    // An invalid edit is reported (and left in the file for the user to fix).
+    let hx = fake_hx(&home, "^extends = \"acme\"", "extends = \"nope\"");
+    let (code, err) = failure_of(
+        &home,
+        home.kipi()
+            .args(["edit", "scope:acme-ml"])
+            .env("EDITOR", &hx),
+    );
+    assert_eq!(code, 1);
+    assert!(
+        err.contains("scope `acme-ml` extends `nope`, which is not a scope in store `acme`"),
+        "{err}"
+    );
 }
 
 /// An onboarded home after `kipi sync --all`.

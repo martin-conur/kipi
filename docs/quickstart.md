@@ -70,7 +70,8 @@ registry = true
 
 Nested roots are fine: `events-pipeline` sits under both roots and lands in `acme-ml`, the deepest.
 
-Change a scope later with `kipi scope`, which edits the table in place the same way:
+Change a scope later with `kipi scope`, which edits the table in place the same way (or open
+the table itself with `kipi edit scope:<name>`):
 
 ```bash
 kipi scope personal --no-registry            # or --registry

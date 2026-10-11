@@ -261,7 +261,7 @@ Resolution is a pure function `(stores, machine) -> Plan` with no I/O beyond rea
 | `tree [--repo r] [--skill s] [--store n] [--budget] [--machine]` | Tree view of stores → scopes → repos → skills/related with provenance markers (○ inherited, ● explicit, ✗ excluded) | — |
 | `where <alias>` | Resolve alias → repo name, summary, local path, notes path (`--notes` prints the notes) | — |
 | `grep <pattern> [--scope s] [--repos]` | Regex search over skills, notes and conventions in the repo's own store (plus shared skills it uses); with `--repos`, also over the local checkouts of every repo in the scope chain (gitignore-aware) | — |
-| `edit <repo\|skill\|notes:<repo>\|conventions:<scope>>` | Open the right file (at the right line for TOML entries) in `$EDITOR`; validate on exit; editing a drafted entry marks it reviewed | store |
+| `edit <repo\|skill\|scope:<name>\|notes:<repo>\|conventions:<scope>>` | Open the right file (at the right line for TOML entries and scopes) in `$EDITOR`; validate on exit; editing a drafted entry marks it reviewed | store |
 | `doctor [repo] [--fix]` | Checks in §10; `--fix` applies safe fixes | optional |
 | `completions <shell>` | Shell completions | — |
 

@@ -1,0 +1,5 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: out
+---
+[HOME]/stores/acme-store/bindings.toml: valid
