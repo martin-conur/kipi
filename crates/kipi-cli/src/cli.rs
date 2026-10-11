@@ -68,6 +68,9 @@ pub enum Command {
         /// The --scope's roots: directories holding its repos.
         #[arg(long = "root", value_name = "PATH", num_args = 1.., requires = "scope", value_hint = ValueHint::DirPath)]
         roots: Vec<PathBuf>,
+        /// Declare the --scope without a registry.
+        #[arg(long, requires = "scope")]
+        no_registry: bool,
         #[command(flatten)]
         dry_run: DryRun,
     },
@@ -99,6 +102,11 @@ pub enum Command {
     /// Add a skill, a repo entry or a scope.
     #[command(subcommand)]
     Add(Add),
+    /// Remove a repo entry.
+    #[command(subcommand)]
+    Remove(Remove),
+    /// Change a scope: its registry, roots, parent, skills or always-on files.
+    Scope(ScopeArgs),
     /// Add skills, relations, exclusions or aliases to a repo entry.
     Bind(Binding),
     /// Remove skills, relations, exclusions or aliases from a repo entry.
@@ -286,9 +294,12 @@ pub enum Add {
         /// The parent scope, in the same store.
         #[arg(long, value_name = "SCOPE", add = ArgValueCandidates::new(complete::scopes))]
         extends: Option<String>,
-        /// Build a registry for the scope and render it into the block.
-        #[arg(long)]
+        /// Build a registry for the scope (the default, unless a scope it extends has one).
+        #[arg(long, conflicts_with = "no_registry")]
         registry: bool,
+        /// Build no registry for the scope.
+        #[arg(long)]
+        no_registry: bool,
         /// Skills every repo in the scope gets.
         #[arg(long = "skill", value_name = "SKILL", num_args = 1.., add = ArgValueCandidates::new(complete::skills))]
         skills: Vec<String>,
@@ -298,6 +309,59 @@ pub enum Add {
         #[command(flatten)]
         dry_run: DryRun,
     },
+}
+
+/// `kipi remove`.
+#[derive(Debug, Subcommand)]
+pub enum Remove {
+    /// Delete a repo entry, its machine.toml path and what kipi wrote into its checkout.
+    Repo {
+        /// The entry name.
+        #[arg(add = ArgValueCandidates::new(complete::repos))]
+        name: String,
+        /// Also delete its notes.md in the store.
+        #[arg(long)]
+        notes: bool,
+        #[command(flatten)]
+        dry_run: DryRun,
+    },
+}
+
+/// The arguments of `kipi scope`.
+#[derive(Debug, Args)]
+pub struct ScopeArgs {
+    /// The scope.
+    #[arg(add = ArgValueCandidates::new(complete::scopes))]
+    pub name: String,
+    /// Build a registry for the scope and render it into the block.
+    #[arg(long, conflicts_with = "no_registry")]
+    pub registry: bool,
+    /// Stop building a registry for the scope.
+    #[arg(long)]
+    pub no_registry: bool,
+    /// Add a directory holding the scope's repos.
+    #[arg(long = "add-root", value_name = "PATH", num_args = 1.., value_hint = ValueHint::DirPath)]
+    pub add_roots: Vec<PathBuf>,
+    /// Remove a root.
+    #[arg(long = "remove-root", value_name = "PATH", num_args = 1.., value_hint = ValueHint::DirPath)]
+    pub remove_roots: Vec<PathBuf>,
+    /// Set the parent scope, in the same store.
+    #[arg(long, value_name = "SCOPE", conflicts_with = "no_extends", add = ArgValueCandidates::new(complete::scopes))]
+    pub extends: Option<String>,
+    /// Drop the parent scope.
+    #[arg(long)]
+    pub no_extends: bool,
+    /// Add a skill every repo in the scope gets.
+    #[arg(long = "skill", value_name = "SKILL", num_args = 1.., add = ArgValueCandidates::new(complete::skills))]
+    pub skills: Vec<String>,
+    /// Remove a skill.
+    #[arg(long = "remove-skill", value_name = "SKILL", num_args = 1.., add = ArgValueCandidates::new(complete::skills))]
+    pub remove_skills: Vec<String>,
+    /// Add an always-on file (relative to the store root).
+    #[arg(long, value_name = "FILE", num_args = 1..)]
+    pub always: Vec<String>,
+    #[command(flatten)]
+    pub dry_run: DryRun,
 }
 
 /// The arguments of `bind` and `unbind`.
@@ -332,8 +396,10 @@ impl Command {
             | Command::Add(
                 Add::Skill { dry_run, .. } | Add::Repo { dry_run, .. } | Add::Scope { dry_run, .. },
             )
+            | Command::Remove(Remove::Repo { dry_run, .. })
             | Command::Sync { dry_run, .. }
             | Command::Doctor { dry_run, .. } => Some(*dry_run),
+            Command::Scope(s) => Some(s.dry_run),
             Command::Bind(b) | Command::Unbind(b) => Some(b.dry_run),
             Command::Hook(Hook::Install(h) | Hook::Uninstall(h)) => Some(h.dry_run),
             Command::Resolve { .. }

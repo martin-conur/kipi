@@ -174,7 +174,7 @@ fn same_value(key: &str, existing: &str, wanted: &str) -> bool {
     }
 }
 
-fn dedup(values: &[String]) -> Vec<&str> {
+pub(super) fn dedup(values: &[String]) -> Vec<&str> {
     let mut seen = Vec::new();
     for v in values {
         if !seen.contains(&v.as_str()) {
@@ -184,17 +184,23 @@ fn dedup(values: &[String]) -> Vec<&str> {
     seen
 }
 
+/// Every value of `flag` parses as a skill ref.
+pub(super) fn check_skill_refs(flag: &str, values: &[String]) -> Result<()> {
+    for v in values {
+        v.parse::<SkillRef>().map_err(|why| {
+            Error::usage(
+                format!("invalid {flag} `{v}`: {why}"),
+                "name a skill of the store (`code-review`) or a shared skill of another \
+                 store (`personal/commit-style`)",
+            )
+        })?;
+    }
+    Ok(())
+}
+
 fn validate(b: &Binding) -> Result<()> {
     for (flag, values) in [("--skill", b.skills), ("--exclude", b.exclude)] {
-        for v in values {
-            v.parse::<SkillRef>().map_err(|why| {
-                Error::usage(
-                    format!("invalid {flag} `{v}`: {why}"),
-                    "name a skill of the repo's store (`code-review`) or a shared skill of \
-                     another store (`personal/commit-style`)",
-                )
-            })?;
-        }
+        check_skill_refs(flag, values)?;
     }
     for v in b.related {
         check_name(v).map_err(|why| {

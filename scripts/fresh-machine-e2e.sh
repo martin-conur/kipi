@@ -56,8 +56,9 @@ store=$HOME/work/.kipi-acme
 test -f "$store/bindings.toml" || fail "init wrote no bindings.toml"
 
 step "kipi add scope"
-kipi add scope acme --root "$HOME/work/acme" --registry
+kipi add scope acme --root "$HOME/work/acme"
 has "$store/bindings.toml" 'roots = \["~/work/acme"\]'
+has "$store/bindings.toml" 'registry = true'
 
 step "kipi scan"
 kipi scan

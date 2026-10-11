@@ -11,6 +11,8 @@ Commands:
   stores       List mounted stores, or unmount one
   scan         Find git repos under scope roots (or PATHs) and record them
   add          Add a skill, a repo entry or a scope
+  remove       Remove a repo entry
+  scope        Change a scope: its registry, roots, parent, skills or always-on files
   bind         Add skills, relations, exclusions or aliases to a repo entry
   unbind       Remove skills, relations, exclusions or aliases from a repo entry
   resolve      Print the resolved plan (no side effects)

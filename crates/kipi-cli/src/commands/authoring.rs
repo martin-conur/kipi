@@ -1,12 +1,13 @@
-//! The authoring commands: `init`, `stores --unmount`, `add skill|repo|scope`, `bind`, `unbind`
-//! (roadmap §7). Each computes a [`kipi_core::authoring::Outcome`], then writes it under
+//! The authoring commands: `init`, `stores --unmount`, `add skill|repo|scope`, `scope`,
+//! `remove repo`, `bind`, `unbind` (roadmap §7). Each computes a [`kipi_core::authoring::Outcome`], then writes it under
 //! the lock, or with `--dry-run` prints it as a unified diff.
 
 use std::path::PathBuf;
 
 use kipi_core::apply::Lock;
 use kipi_core::authoring::{
-    self, Binding, InitOptions, Op, Outcome, RepoOptions, ScopeOptions, SkillOptions,
+    self, Binding, InitOptions, Op, Outcome, RemoveOptions, RepoOptions, ScopeEdit, ScopeOptions,
+    SkillOptions,
 };
 use kipi_core::config::{self, Env};
 use kipi_core::model::{Config, Machine, StoreSet};
@@ -84,6 +85,34 @@ pub fn add_scope(
     let outcome = authoring::add_scope(&stores, &machine, env, opts)?;
     let title = format!("add scope {}", opts.name);
     finish("add scope", title, &outcome, env, dry_run, out)
+}
+
+/// `kipi scope`.
+pub fn edit_scope(
+    env: &Env,
+    store_flags: &[PathBuf],
+    edit: &ScopeEdit,
+    dry_run: bool,
+    out: &Output,
+) -> Result<(), Failure> {
+    let (_, stores, machine) = load(env, store_flags)?;
+    let outcome = authoring::edit_scope(&stores, &machine, env, edit)?;
+    let title = format!("scope {}", edit.name);
+    finish("scope", title, &outcome, env, dry_run, out)
+}
+
+/// `kipi remove repo`.
+pub fn remove_repo(
+    env: &Env,
+    store_flags: &[PathBuf],
+    opts: &RemoveOptions,
+    dry_run: bool,
+    out: &Output,
+) -> Result<(), Failure> {
+    let (_, stores, machine) = load(env, store_flags)?;
+    let outcome = authoring::remove_repo(&stores, &machine, env, opts)?;
+    let title = format!("remove repo {}", opts.name);
+    finish("remove repo", title, &outcome, env, dry_run, out)
 }
 
 /// `kipi bind` (`adding`) or `kipi unbind`.
@@ -204,6 +233,14 @@ fn human(title: &str, outcome: &Outcome, dry_run: bool, out: &Output) -> String 
     if let Some(dir) = &outcome.git_init {
         let verb = if dry_run { "Would run" } else { "Ran" };
         text.push_str(&format!("{verb} git init in {}\n", out.path(dir)));
+    }
+    for dir in &outcome.clean {
+        let verb = if dry_run { "Would remove" } else { "Removed" };
+        text.push_str(&format!("{verb} kipi's files from {}\n", out.path(dir)));
+    }
+    for path in &outcome.removes {
+        let verb = if dry_run { "Would delete" } else { "Deleted" };
+        text.push_str(&format!("{verb} {}\n", out.path(path)));
     }
     text
 }

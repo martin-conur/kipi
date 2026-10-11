@@ -1,0 +1,12 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: out
+---
+scope acme-ml (store acme)
+  = extends: acme  (already so)
+  + roots: ~/work/acme/data
+  + skills: stream-recipes
+  - skills: dbt-conventions
+  + always: conventions/acme.md
+
+Wrote ~/stores/acme-store/bindings.toml

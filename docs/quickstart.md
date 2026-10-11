@@ -34,16 +34,19 @@ A scope says which directories hold its repos. Declare each one with `add scope`
 store's `bindings.toml` in place, keeping its comments, and checks the result before writing:
 
 ```bash
-kipi add scope acme --store acme --root ~/work/acme --registry
+kipi add scope acme --store acme --root ~/work/acme
 kipi add scope acme-ml --extends acme --root ~/work/acme/ml   # goes in acme's store
-kipi add scope personal --store personal --root ~/code --registry
+kipi add scope personal --store personal --root ~/code
 ```
 
-`--extends` names a scope of the same store (nothing crosses stores); with it, `--store` can be
-left out. `--skill <name>...` binds skills to the scope as it is created. With a single store,
-`kipi init --scope personal --root ~/code` creates the store and its first scope in one step.
+Each scope gets a registry (the "Known repos" list in every repo's block) unless you pass
+`--no-registry`, or it extends a scope that already has one: `acme-ml`'s repos are listed in
+`acme`'s registry. `--extends` names a scope of the same store (nothing crosses stores); with it,
+`--store` can be left out. `--skill <name>...` binds skills to the scope as it is created. With a
+single store, `kipi init --scope personal --root ~/code` creates the store and its first scope in
+one step.
 
-The result, which you can also write by hand (`always` and `remote_patterns` have no flag yet):
+The result, which you can also write by hand (`remote_patterns` has no flag yet):
 
 ```toml
 # ~/work/.kipi-acme/bindings.toml
@@ -67,6 +70,15 @@ registry = true
 
 Nested roots are fine: `events-pipeline` sits under both roots and lands in `acme-ml`, the deepest.
 
+Change a scope later with `kipi scope`, which edits the table in place the same way:
+
+```bash
+kipi scope personal --no-registry            # or --registry
+kipi scope acme --add-root ~/src/acme --remove-root ~/work/acme
+kipi scope acme --always conventions/acme.md --skill code-review --remove-skill old-skill
+kipi scope acme-ml --no-extends              # or --extends <scope>
+```
+
 ## 3. Scan
 
 ```bash
@@ -89,6 +101,12 @@ than relying on it.
 
 Two repos named `api` — `~/work/acme/acme-api` is fine, but if both were cloned as `api`, the
 second entry would be named `<owner>-api` and matched by its remote.
+
+A repo outside every root can be registered by hand: `kipi add repo <name> --scope <s>
+[--path <checkout>]`. An entry without a checkout here shows as `· not cloned`; once you clone it,
+`kipi add repo <name> --path <checkout>` records it. `kipi remove repo <name>` deletes an entry,
+its `machine.toml` line and what kipi wrote into its checkout (`--notes` also deletes its
+`notes.md`); it is refused while another entry lists it in `related`.
 
 ## 4. Review the registry
 
