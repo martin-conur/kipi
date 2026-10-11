@@ -247,10 +247,12 @@ pub struct ScopeEdit<'a> {
     pub remove_skills: &'a [String],
     /// `--always`: always-on files, relative to the store root.
     pub always: &'a [String],
+    /// `--remove-always`.
+    pub remove_always: &'a [String],
 }
 
 /// Change the existing `[scopes.<name>]` in place (toml_edit, comments kept): toggle its
-/// registry, add or remove roots and skills, set or drop `extends`, add always-on files.
+/// registry, add or remove roots, skills and always-on files, set or drop `extends`.
 /// Values already as asked are reported as kept. The edited store set is validated
 /// before anything is written.
 pub fn edit_scope(
@@ -266,13 +268,14 @@ pub fn edit_scope(
         && edit.extends.is_none()
         && edit.skills.is_empty()
         && edit.remove_skills.is_empty()
-        && edit.always.is_empty();
+        && edit.always.is_empty()
+        && edit.remove_always.is_empty();
     if nothing {
         return Err(Error::usage(
             format!("nothing to change in scope `{name}`"),
             format!(
                 "pass at least one of --registry, --no-registry, --add-root, --remove-root, \
-                 --extends, --no-extends, --skill, --remove-skill or --always, e.g. \
+                 --extends, --no-extends, --skill, --remove-skill, --always or --remove-always, e.g. \
                  `kipi scope {name} --registry`"
             ),
         ));
@@ -343,6 +346,22 @@ pub fn edit_scope(
     for value in &always {
         changes.push(array_edit(table, "always", value, true));
     }
+    let mut removed: Vec<PathBuf> = Vec::new();
+    for raw in edit.remove_always {
+        let wanted = store_relative(raw, store);
+        if removed.contains(&wanted) {
+            continue;
+        }
+        let same = |v: &str| store_relative(v, store) == wanted;
+        let shown = wanted.display().to_string();
+        changes.push(if contains(table, "always", same) {
+            remove(table, "always", same);
+            Change::new(Op::Remove, "always", shown)
+        } else {
+            Change::new(Op::Keep, "always", shown).note("not there")
+        });
+        removed.push(wanted);
+    }
 
     let text = doc.to_string();
     revalidate(stores, machine, env, &[(&store.name, text.clone())], None)?;
@@ -380,13 +399,11 @@ fn check_roots(raw: &[PathBuf], env: &Env) -> Result<Vec<(PathBuf, String)>> {
 fn check_always(raw: &[String], store: &Store, scope: &str) -> Result<Vec<String>> {
     let mut out: Vec<String> = Vec::with_capacity(raw.len());
     for r in raw {
-        let rel = Path::new(r)
-            .strip_prefix(&store.root)
-            .unwrap_or(Path::new(r));
+        let rel = store_relative(r, store);
         let inside = rel
             .components()
             .all(|c| matches!(c, std::path::Component::Normal(_)));
-        if !inside || rel.as_os_str().is_empty() || !store.root.join(rel).is_file() {
+        if !inside || rel.as_os_str().is_empty() || !store.root.join(&rel).is_file() {
             return Err(Error::usage(
                 format!("--always `{r}` is not a file of store `{}`", store.name),
                 format!(
@@ -402,6 +419,17 @@ fn check_always(raw: &[String], store: &Store, scope: &str) -> Result<Vec<String
         }
     }
     Ok(out)
+}
+
+/// `raw` relative to the store root: an absolute path inside the store loses the root,
+/// and `.` components go, so `./conventions/a.md` and `conventions/a.md` are one file.
+fn store_relative(raw: &str, store: &Store) -> PathBuf {
+    Path::new(raw)
+        .strip_prefix(&store.root)
+        .unwrap_or(Path::new(raw))
+        .components()
+        .filter(|c| !matches!(c, std::path::Component::CurDir))
+        .collect()
 }
 
 /// `--extends <parent>`: a scope of the same store, other than the scope itself.

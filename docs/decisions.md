@@ -1075,8 +1075,9 @@ The spec wins wherever it is explicit.
   expansion and need not exist; removing the last root is refused. `--extends` must name another
   scope of the same store (a cycle or a leak-rule break fails revalidation); `--no-extends`
   removes the key. `--always` takes a file of the store, relative to its root (an absolute path
-  inside the store is made relative), and refuses one that does not exist. There is no
-  `--remove-always` yet; the spec does not ask for one.
+  inside the store is made relative), and refuses one that does not exist. `--remove-always`
+  matches the same way (`./` and the store root ignored) and need not exist, so a list entry
+  whose file was deleted can still be dropped.
 - **Registry by default.** `add scope` and `init --scope` write `registry = true` unless
   `--no-registry`. The exception is a scope whose `extends` chain already has a registry: the
   nearest registry wins (§6), so a registry of its own would narrow its repos' map to just its

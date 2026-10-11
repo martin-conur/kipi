@@ -332,6 +332,7 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
                 skills: &s.skills,
                 remove_skills: &s.remove_skills,
                 always: &s.always,
+                remove_always: &s.remove_always,
             },
             s.dry_run.dry_run,
             out,

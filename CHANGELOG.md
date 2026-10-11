@@ -11,7 +11,7 @@ the stable interface; human-readable output may change in any release.
 
 - **`kipi scope <name>`** changes an existing scope in place, keeping comments and checking the
   result before writing: `--registry` / `--no-registry`, `--add-root` / `--remove-root`,
-  `--extends <s>` / `--no-extends`, `--skill` / `--remove-skill`, `--always <file>`.
+  `--extends <s>` / `--no-extends`, `--skill` / `--remove-skill`, `--always` / `--remove-always`.
 - **`kipi remove repo <name> [--notes]`** deletes a repo entry and its `machine.toml` line, and
   removes what kipi wrote into its checkout (and linked worktrees); the next `kipi sync --all`
   drops it from the registries. Refused while another entry lists it in `related`. Its

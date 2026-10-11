@@ -360,6 +360,9 @@ pub struct ScopeArgs {
     /// Add an always-on file (relative to the store root).
     #[arg(long, value_name = "FILE", num_args = 1..)]
     pub always: Vec<String>,
+    /// Remove an always-on file.
+    #[arg(long = "remove-always", value_name = "FILE", num_args = 1..)]
+    pub remove_always: Vec<String>,
     #[command(flatten)]
     pub dry_run: DryRun,
 }

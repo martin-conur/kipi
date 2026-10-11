@@ -76,7 +76,8 @@ the table itself with `kipi edit scope:<name>`):
 ```bash
 kipi scope personal --no-registry            # or --registry
 kipi scope acme --add-root ~/src/acme --remove-root ~/work/acme
-kipi scope acme --always conventions/acme.md --skill code-review --remove-skill old-skill
+kipi scope acme --always conventions/acme.md --remove-always conventions/old.md
+kipi scope acme --skill code-review --remove-skill old-skill
 kipi scope acme-ml --no-extends              # or --extends <scope>
 ```
 

@@ -149,8 +149,12 @@ pub(super) fn remove_table(doc: &mut DocumentMut, parent: &str, name: &str) -> b
     });
     match next.and_then(|(_, keys)| table_at(doc, &keys)) {
         Some(next) => {
+            // The moved comment already carries the blank line before it, so the next
+            // table's own blank lines go; its own comment keeps them, so the two comment
+            // blocks stay apart.
             let own = next.decor().prefix().and_then(|p| p.as_str()).unwrap_or("");
-            let joined = format!("{prefix}{}", own.trim_start_matches('\n'));
+            let own = if own.contains('#') { own } else { "" };
+            let joined = format!("{prefix}{own}");
             next.decor_mut().set_prefix(joined);
         }
         None => {
@@ -280,6 +284,30 @@ mod tests {
         );
         let mut doc: DocumentMut = "[repos.a]\n".parse().unwrap();
         assert!(!remove_table(&mut doc, "repos", "z"));
+    }
+
+    #[test]
+    fn remove_table_keeps_sections_apart() {
+        let remove = |text: &str| {
+            let mut doc: DocumentMut = text.parse().unwrap();
+            assert!(remove_table(&mut doc, "repos", "a"));
+            doc.to_string()
+        };
+        // The next table's prefix is only blank lines: the moved comment block keeps its
+        // blank line above and sits right on the next header, as it sat on the removed one.
+        assert_eq!(
+            remove(
+                "[store]\nname = \"s\"\n\n# the repos\n# (by hand)\n[repos.a]\nx = 1\n\n\n[repos.b]\ny = 2\n"
+            ),
+            "[store]\nname = \"s\"\n\n# the repos\n# (by hand)\n[repos.b]\ny = 2\n"
+        );
+        // The next table has its own comment: both blocks keep their spacing.
+        assert_eq!(
+            remove(
+                "[store]\nname = \"s\"\n\n# the repos\n[repos.a]\nx = 1\n\n# b, mostly\n[repos.b]\ny = 2\n"
+            ),
+            "[store]\nname = \"s\"\n\n# the repos\n\n# b, mostly\n[repos.b]\ny = 2\n"
+        );
     }
 
     #[test]

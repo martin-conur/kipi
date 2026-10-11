@@ -1571,6 +1571,34 @@ fn scope_edits_roots_skills_and_parent() {
         "{edited}"
     );
 
+    // `--remove-always` is the inverse of `--always`: the same bytes come back, and a
+    // file not in the list (which need not exist) is a `keep`.
+    let out = stdout_of(
+        &home,
+        home.kipi().args([
+            "scope",
+            "acme-ml",
+            "--remove-always",
+            "./conventions/acme.md",
+            "conventions/gone.md",
+        ]),
+    );
+    assert!(out.contains("- always: conventions/acme.md\n"), "{out}");
+    assert!(
+        out.contains("= always: conventions/gone.md  (not there)"),
+        "{out}"
+    );
+    let without = fs::read_to_string(&bindings).unwrap();
+    assert_eq!(
+        without,
+        edited.replace("always = [\"conventions/acme.md\"]\n", "")
+    );
+    home.kipi()
+        .args(["scope", "acme-ml", "--always", "conventions/acme.md"])
+        .assert()
+        .success();
+    assert_eq!(fs::read_to_string(&bindings).unwrap(), edited);
+
     // `--no-extends` on a scope with no repos; on `acme-ml` it would break the leak rule.
     stdout_of(
         &home,
