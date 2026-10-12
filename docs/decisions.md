@@ -758,7 +758,9 @@ The spec wins wherever it is explicit.
   prefix). A repo opens its store's `bindings.toml` at the `[repos.<name>]` line; a skill its
   `SKILL.md`. Missing notes are created from `templates/notes.md`; a missing conventions file is
   created empty, at the scope's first `always` entry under `conventions/` or else
-  `conventions/<scope>.md`, with a note when no `always` lists it.
+  `conventions/<scope>.md`, with a note when no `always` lists it. `scope:<name>` (#55) opens
+  the owning store's `bindings.toml` at the `[scopes.<name>]` line, like a repo entry; it always
+  needs the prefix, since a bare name means a repo entry or a skill.
 - **Editor**: `$EDITOR`, else `config.toml` `editor`, else a user error. The command may carry
   arguments (`code -w`). Line syntax by program name: `file:line` for `hx`/`helix`, `subl`, `zed`,
   `micro`; `+line file` for vi-likes, `nano`, `emacs`, `kak`; `--goto file:line` for VS Code-likes;
@@ -1057,3 +1059,43 @@ The spec wins wherever it is explicit.
   prefix, name, roots, `extends`) puts `always-on: N tok` two spaces after itself instead of
   pushing the right-hand column, so repo rows stay readable at 100 columns. Every scope line in
   the example stores is under the cap, so the §7 layout is unchanged.
+
+## Authoring gaps: change a scope, remove a repo entry, registry by default (#55)
+
+- **`kipi scope <name> ...`, not `bind` / `unbind` on scopes.** `bind` takes a repo entry and
+  its flags are repo keys (`--related`, `--exclude`, `--alias`); a scope has other keys, some of
+  them scalars (`registry`, `extends`), so one command with explicit add/remove flags per key
+  reads better than overloading `bind` with a target type. A spec addition to §7. It edits the
+  existing table through toml_edit and re-validates the mounted stores before writing, as `bind`
+  does; with no flag it is a usage error. Values already as asked are reported as `keep`.
+- **What each flag writes.** `--registry` writes `registry = true` (an existing line keeps its
+  comment). `--no-registry` removes the line (the default is off), unless the line carries a
+  comment, which is then kept as `registry = false`. `--add-root` must be an existing directory
+  and is written `~/…` under home, as `add scope` does; `--remove-root` matches a root after `~`
+  expansion and need not exist; removing the last root is refused. `--extends` must name another
+  scope of the same store (a cycle or a leak-rule break fails revalidation); `--no-extends`
+  removes the key. `--always` takes a file of the store, relative to its root (an absolute path
+  inside the store is made relative), and refuses one that does not exist. `--remove-always`
+  matches the same way (`./` and the store root ignored) and need not exist, so a list entry
+  whose file was deleted can still be dropped.
+- **Registry by default.** `add scope` and `init --scope` write `registry = true` unless
+  `--no-registry`. The exception is a scope whose `extends` chain already has a registry: the
+  nearest registry wins (§6), so a registry of its own would narrow its repos' map to just its
+  own subtree. There the default is off and the report says which scope's registry it
+  inherits; `--registry` still forces one. `--registry` and `--no-registry` conflict.
+- **`remove repo` cleans the checkout itself.** `sync --all` finds orphaned checkouts through
+  `machine.toml`, so once `remove repo` deletes the entry's line there, no later sync would find
+  it. The command therefore removes what the checkout's (and each linked worktree's) manifest
+  lists right away, as `sync --all` does for an orphan, and before the TOML is written: a failure
+  in between leaves an entry whose files the next sync writes again, never kipi files nothing
+  records. The registries and the other repos' blocks that list it are updated by the next
+  `sync --all`, as the report says. It is refused while another entry's `related` names it, with
+  an `unbind` hint. Its table goes with its header comment, but a comment above the header may be
+  about the section, so it moves to the next table (or the end of the file). `notes.md` is kept
+  (reported as `keep`) unless `--notes`; an emptied `repos/<name>/` goes with it.
+- **`add repo <existing> --path <dir>`** records the checkout when `machine.toml` has none for
+  the entry, or its recorded one is gone; the same path again is a no-op, another path while the
+  recorded one exists is refused (edit `machine.toml` if it moved). The checkout's remote fills a
+  missing `remote`; a different one is refused. `--summary` must equal the entry's summary and
+  `--scope` must be the scope the entry resolves to with the new path, else the call is refused:
+  it never edits other fields.

@@ -191,23 +191,24 @@ work tree), `share_skills` (bool), `scopes` ([string], file order), `repos` (num
 
 ## Authoring
 
-`kipi init`, `kipi stores --unmount`, `kipi add skill`, `kipi add repo`, `kipi add scope`, `kipi bind` and
-`kipi unbind` with `--json` (with or without `--dry-run`) print what they changed (or would).
+`kipi init`, `kipi stores --unmount`, `kipi add skill`, `kipi add repo`, `kipi add scope`,
+`kipi scope`, `kipi remove repo`, `kipi bind` and `kipi unbind` with `--json` (with or without `--dry-run`) print what they changed (or would).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `version` | number | Schema version, currently `1` |
 | `dry_run` | bool | `true` when nothing was written |
-| `command` | string | `init`, `unmount`, `add skill`, `add repo`, `add scope`, `bind` or `unbind` |
+| `command` | string | `init`, `unmount`, `add skill`, `add repo`, `add scope`, `scope`, `remove repo`, `bind` or `unbind` |
 | `store` | string \| null | The store the command created, mounted, unmounted or edited |
 | `changes` | [Edit] | What changed, in order |
-| `files` | [string] | Directories created, the skill directory installed, files written and the link-back symlink (or, with `dry_run`, that would be) |
+| `files` | [string] | Directories created, the skill directory installed, files written, the link-back symlink, working trees cleaned of kipi's files and files deleted (or, with `dry_run`, that would be) |
 | `git_init` | string \| null | The directory `init --git` ran (or would run) `git init` in |
 
 **Edit**: `op` (`add`, `remove`, `keep`: already as asked, nothing changed), `what` (the list or
 thing changed: `skills`, `related`, `exclude`, `aliases`, `scopes.<scope>.skills`, `store`,
-`store <name>` (a new `[scopes.<scope>]` or `[repos.<name>]` table), `extends`, `roots`, `registry`,
-`config.toml stores`, `machine.toml`, ...), `value`, `note` (string \| null: why nothing changed,
+`store <name>` (a new or removed `[scopes.<scope>]` or `[repos.<name>]` table), `extends`, `roots`,
+`registry`, `always`, `notes`, `kipi files` (a working tree cleaned), `config.toml stores`,
+`machine.toml`, ...), `value`, `note` (string \| null: why nothing changed,
 or what follows).
 
 ## Where

@@ -1,5 +1,5 @@
 //! The authoring commands (roadmap §7 `init`, `stores --unmount`, `add skill|repo|scope`,
-//! `bind`, `unbind`): edits to `bindings.toml`, `config.toml` and `machine.toml` that keep
+//! `scope`, `remove repo`, `bind`, `unbind`): edits to `bindings.toml`, `config.toml` and `machine.toml` that keep
 //! comments, ordering and blank lines (toml_edit, roadmap §1 principle 6).
 //!
 //! Every command computes an [`Outcome`] first and writes nothing. Before an edited
@@ -17,8 +17,8 @@ mod toml;
 
 pub use bind::{Binding, bind, unbind};
 pub use init::{InitOptions, default_store_name, init, unmount};
-pub use repo::{RepoOptions, add_repo};
-pub use scope::{ScopeOptions, add_scope};
+pub use repo::{RemoveOptions, RepoOptions, add_repo, remove_repo};
+pub use scope::{ScopeEdit, ScopeOptions, add_scope, edit_scope};
 pub use skill::{SkillOptions, add_skill, is_git_url};
 
 use std::fs;
@@ -50,6 +50,11 @@ pub struct Outcome {
     pub link_back: Option<LinkBack>,
     /// A directory to `git init`.
     pub git_init: Option<PathBuf>,
+    /// Working trees whose kipi-written files (everything their manifest lists) are
+    /// removed, as `sync` does for an orphaned checkout.
+    pub clean: Vec<PathBuf>,
+    /// Files to delete (a removed entry's `notes.md`); an emptied parent goes too.
+    pub removes: Vec<PathBuf>,
     /// Keeps a cloned skill's temp dir alive until it is installed.
     scratch: Option<TempDir>,
 }
@@ -183,6 +188,8 @@ impl Outcome {
         paths.extend(self.skill.as_ref().map(|s| s.to.as_path()));
         paths.extend(self.writes.iter().map(|w| w.path.as_path()));
         paths.extend(self.link_back.as_ref().map(|l| l.original.as_path()));
+        paths.extend(self.clean.iter().map(PathBuf::as_path));
+        paths.extend(self.removes.iter().map(PathBuf::as_path));
         paths
     }
 
@@ -193,10 +200,23 @@ impl Outcome {
             && self.writes.is_empty()
             && self.link_back.is_none()
             && self.git_init.is_none()
+            && self.clean.is_empty()
+            && self.removes.is_empty()
     }
 
-    /// Apply the outcome: directories, the skill, the files, the link-back, `git init`.
+    /// Apply the outcome: cleaned working trees, directories, the skill, the files, the
+    /// link-back, `git init`, deleted files.
     pub fn write(&self) -> Result<()> {
+        // Before the TOML: a failure in between leaves an entry whose files the next sync
+        // writes again, never kipi files in a checkout nothing records any more.
+        for dir in &self.clean {
+            crate::apply::run(
+                &crate::apply::Target::repo(dir),
+                &[],
+                crate::apply::Options::default(),
+                &crate::git::TrackedCache::default(),
+            )?;
+        }
         for dir in &self.dirs {
             fs::create_dir_all(dir)
                 .map_err(|e| Error::io(dir, e, "check that the parent directory is writable"))?;
@@ -221,6 +241,13 @@ impl Outcome {
         }
         if let Some(dir) = &self.git_init {
             crate::git::init(dir)?;
+        }
+        for path in &self.removes {
+            fs::remove_file(path).map_err(|e| Error::io(path, e, "delete it by hand"))?;
+            if let Some(dir) = path.parent() {
+                // Only an empty directory is removed; anything else stays.
+                let _ = fs::remove_dir(dir);
+            }
         }
         Ok(())
     }

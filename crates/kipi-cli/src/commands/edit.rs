@@ -1,5 +1,5 @@
-//! `kipi edit <repo|skill|notes:<repo>|conventions:<scope>>`: open the right file in
-//! `$EDITOR` (else config.toml `editor`), at the entry's line for a repo; create notes or
+//! `kipi edit <repo|skill|scope:<name>|notes:<repo>|conventions:<scope>>`: open the right
+//! file in `$EDITOR` (else config.toml `editor`), at the table's line for a repo or scope; create notes or
 //! conventions that do not exist yet; after the editor exits, mark every drafted value
 //! the user changed as reviewed and reload the stores to report what no longer
 //! validates (roadmap §7, §9).
@@ -12,7 +12,7 @@ use kipi_core::apply::write_atomic;
 use kipi_core::config::Env;
 use kipi_core::edit::{editor_command, review_changed_drafts};
 use kipi_core::error::{Error, closest};
-use kipi_core::model::{SkillRef, StoreSet};
+use kipi_core::model::{Scope, SkillRef, Store, StoreSet};
 use kipi_core::templates::NOTES_MD;
 
 use super::Loaded;
@@ -20,7 +20,8 @@ use crate::error::Failure;
 use crate::output::Output;
 
 /// The forms `edit` accepts, for hints.
-const FORMS: &str = "pass a repo entry, a skill, `notes:<repo>` or `conventions:<scope>` \
+const FORMS: &str = "pass a repo entry, a skill, `scope:<name>`, `notes:<repo>` or \
+                     `conventions:<scope>` \
                      (`repo:<name>` / `skill:<name>` when a name is both)";
 
 /// The file to open.
@@ -138,14 +139,12 @@ fn resolve(stores: &StoreSet, raw: &str) -> Result<Target, Failure> {
             ..file(store.join("repos").join(name).join("notes.md"), None)
         });
     }
+    if let Some(name) = raw.strip_prefix("scope:") {
+        let (store, scope) = scope(stores, name)?;
+        return Ok(file(store.bindings.path.clone(), scope.at.line));
+    }
     if let Some(name) = raw.strip_prefix("conventions:") {
-        let Some((store, scope)) = stores.scope(name) else {
-            let names = stores
-                .stores()
-                .iter()
-                .flat_map(|s| s.scopes.iter().map(|s| s.name.as_str()));
-            return Err(unknown("scope", name, closest(name, names)));
-        };
+        let (store, scope) = scope(stores, name)?;
         let listed = scope.always.iter().find(|p| p.starts_with("conventions"));
         let rel = listed
             .cloned()
@@ -182,6 +181,17 @@ fn resolve(stores: &StoreSet, raw: &str) -> Result<Target, Failure> {
             Err(unknown("repo entry or skill", raw, closest(raw, names)))
         }
     }
+}
+
+/// The scope `name` and the store declaring it.
+fn scope<'a>(stores: &'a StoreSet, name: &str) -> Result<(&'a Store, &'a Scope), Failure> {
+    stores.scope(name).ok_or_else(|| {
+        let names = stores
+            .stores()
+            .iter()
+            .flat_map(|s| s.scopes.iter().map(|s| s.name.as_str()));
+        unknown("scope", name, closest(name, names))
+    })
 }
 
 /// The repo entry `name`: its store's root, and its `[repos.<name>]` line.

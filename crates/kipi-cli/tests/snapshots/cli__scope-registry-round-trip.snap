@@ -1,0 +1,60 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: after
+---
+# Example work store (roadmap §5.1). Mounted on the work machine only.
+
+[store]
+name = "acme"                      # unique among mounted stores; used in qualified refs and output
+version = 1                        # schema version; bump on breaking change
+share_skills = false               # true lets other mounted stores reference this store's skills as "<store>/<skill>"
+
+[defaults]
+budget_tokens = 4000               # always-on cap per repo
+agents = ["claude", "generic"]     # adapters to render by default
+grant = "related"                  # related | registry | none
+
+[scopes.acme]
+roots = ["~/work/acme"]            # path membership; nested roots allowed
+skills = ["code-review", "pr-conventions", "personal/commit-style"]   # last one: shared skill from the personal store
+always = ["conventions/acme.md"]   # rendered into the generated block
+remote_patterns = ["github.com/acme-org/"]   # for doctor's leak check
+registry = true
+
+[scopes.acme-ml]
+extends = "acme"
+roots = ["~/work/acme/ml"]
+skills = ["dbt-conventions"]
+
+[repos.billing-api]
+remote = "github.com/acme-org/billing-api"   # normalized origin URL; filled by scan; primary match key
+summary = "Invoicing and payment orchestration; OpenAPI in api/openapi.yaml"  # kipi:draft
+aliases = ["billing", "invoices"]
+
+[repos.acme-api]                   # entry name differs from the dir name `api` to stay unique across stores
+remote = "github.com/acme-org/api"
+summary = "Public REST gateway"
+
+[repos.events-pipeline]
+remote = "github.com/acme-org/events-pipeline"
+scope = "acme-ml"                  # optional; explicit beats path
+summary = "Kafka consumers that turn raw events into billing and ML features"
+aliases = ["events", "pipeline"]
+related = ["billing-api", "ml-platform"]
+skills = ["stream-recipes"]
+exclude = ["pr-conventions"]
+agents = ["claude"]                # per-repo override
+grant = "registry"                 # per-repo override
+
+[repos.ml-platform]
+remote = "github.com/acme-org/ml-platform"
+summary = "Shared training and feature tooling"
+aliases = ["ml"]
+
+[repos.feature-store]
+remote = "github.com/acme-org/feature-store"
+summary = "Online and offline feature serving; dbt models in models/"  # kipi:draft
+aliases = ["feature", "store"]  # kipi:draft
+
+[repos.web-dashboard]              # no summary yet: listed by name only, doctor reports it
+remote = "github.com/acme-org/web-dashboard"

@@ -7,6 +7,7 @@ add scope acme-data (store acme)
   + extends: acme
   + roots: ~/work/acme/data
   + skills: dbt-conventions
+  = registry: false  (inherits the registry of scope `acme`)
 
 Dry run: would write 1 file:
 --- ~/stores/acme-store/bindings.toml

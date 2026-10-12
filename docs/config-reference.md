@@ -23,7 +23,9 @@ loaders accept must have a row here, and every row must be a key they accept.
 
 One per store. Scope and repo names are unique across all mounted stores. `kipi add scope` (or
 `kipi init --scope`) writes a `[scopes.<scope>]` table with `extends`, `roots`, `skills` and
-`registry`; `kipi add repo` and `kipi scan` write `[repos.<name>]` tables.
+`registry` (on unless `--no-registry`, or a scope it extends already has one); `kipi scope`
+changes `registry`, `roots`, `extends`, `skills` and `always` of an existing one. `kipi add repo`
+and `kipi scan` write `[repos.<name>]` tables; `kipi remove repo` deletes one.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |

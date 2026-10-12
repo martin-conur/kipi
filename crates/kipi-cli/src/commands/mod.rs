@@ -25,7 +25,7 @@ use kipi_core::plan::{Plan, RepoPlan};
 use kipi_core::resolve::resolve as resolve_plan;
 use kipi_core::tokens::Tokenizer;
 
-use crate::cli::{Add, Command, Global, Hook};
+use crate::cli::{Add, Command, Global, Hook, Remove};
 use crate::error::Failure;
 use crate::output::Output;
 
@@ -222,6 +222,7 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
             git,
             scope,
             roots,
+            no_registry,
             dry_run,
         } => authoring::init(
             &env()?,
@@ -231,6 +232,7 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
                 git: *git,
                 scope: scope.as_deref(),
                 roots,
+                registry: no_registry.then_some(false),
             },
             dry_run.dry_run,
             out,
@@ -282,6 +284,7 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
             roots,
             extends,
             registry,
+            no_registry,
             skills,
             store,
             dry_run,
@@ -292,11 +295,46 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
                 name,
                 roots,
                 extends: extends.as_deref(),
-                registry: *registry,
+                registry: flag(*registry, *no_registry),
                 skills,
                 store: store.as_deref(),
             },
             dry_run.dry_run,
+            out,
+        ),
+        Command::Remove(Remove::Repo {
+            name,
+            notes,
+            dry_run,
+        }) => authoring::remove_repo(
+            &env()?,
+            &global.stores,
+            &kipi_core::authoring::RemoveOptions {
+                name,
+                notes: *notes,
+            },
+            dry_run.dry_run,
+            out,
+        ),
+        Command::Scope(s) => authoring::edit_scope(
+            &env()?,
+            &global.stores,
+            &kipi_core::authoring::ScopeEdit {
+                name: &s.name,
+                registry: flag(s.registry, s.no_registry),
+                add_roots: &s.add_roots,
+                remove_roots: &s.remove_roots,
+                extends: match (&s.extends, s.no_extends) {
+                    (Some(p), _) => Some(Some(p.as_str())),
+                    (None, true) => Some(None),
+                    (None, false) => None,
+                },
+                skills: &s.skills,
+                remove_skills: &s.remove_skills,
+                always: &s.always,
+                remove_always: &s.remove_always,
+            },
+            s.dry_run.dry_run,
             out,
         ),
         Command::Bind(b) | Command::Unbind(b) => authoring::bind(
@@ -323,6 +361,15 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
             hook::run(&load(&env()?)?, &args, out)
         }
         Command::Completions { shell } => crate::complete::run(shell),
+    }
+}
+
+/// A `--x` / `--no-x` pair (clap rejects both): `Some(true)`, `Some(false)` or unset.
+fn flag(on: bool, off: bool) -> Option<bool> {
+    match (on, off) {
+        (true, _) => Some(true),
+        (_, true) => Some(false),
+        _ => None,
     }
 }
 

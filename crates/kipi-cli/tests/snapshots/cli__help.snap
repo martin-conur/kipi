@@ -11,6 +11,8 @@ Commands:
   stores       List mounted stores, or unmount one
   scan         Find git repos under scope roots (or PATHs) and record them
   add          Add a skill, a repo entry or a scope
+  remove       Remove a repo entry
+  scope        Change a scope: its registry, roots, parent, skills or always-on files
   bind         Add skills, relations, exclusions or aliases to a repo entry
   unbind       Remove skills, relations, exclusions or aliases from a repo entry
   resolve      Print the resolved plan (no side effects)
@@ -20,7 +22,7 @@ Commands:
   tree         Stores → scopes → repos → skills, with provenance markers
   where        Resolve an alias to a repo, its summary and paths
   grep         Search skills, notes and conventions (and checkouts with --repos)
-  edit         Open a repo entry, skill, notes:<repo> or conventions:<scope> in $EDITOR
+  edit         Open a repo entry, skill, scope:<name>, notes:<repo> or conventions:<scope> in $EDITOR
   doctor       Check stores, repos and grants for problems
   hook         Install or remove the git hook that syncs each new worktree
   completions  Print shell completions

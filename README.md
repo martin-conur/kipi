@@ -48,7 +48,7 @@ curl --proto '=https' --tlsv1.2 -LsSf \
 # 2. Create a store (a plain directory, by default ~/.agents/store) and a scope:
 #    the directories whose repos it covers
 kipi init
-kipi add scope personal --root ~/code --registry
+kipi add scope personal --root ~/code
 
 # 3. Find your checkouts and draft a summary and aliases for each one
 kipi scan

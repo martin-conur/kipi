@@ -32,6 +32,8 @@ pub struct InitOptions<'a> {
     pub scope: Option<&'a str>,
     /// `--root`: the roots of `--scope`.
     pub roots: &'a [PathBuf],
+    /// `--no-registry` (`Some(false)`); `None` gives `--scope` a registry.
+    pub registry: Option<bool>,
 }
 
 /// The name a new store at `root` gets without `--name`: `personal` for the default store,
@@ -59,6 +61,7 @@ pub fn init(env: &Env, cfg: &Config, machine: &Machine, opts: &InitOptions) -> R
     let scope_opts = opts.scope.map(|name| ScopeOptions {
         name,
         roots: opts.roots,
+        registry: opts.registry,
         ..ScopeOptions::default()
     });
     let roots = scope_opts
@@ -102,8 +105,13 @@ pub fn init(env: &Env, cfg: &Config, machine: &Machine, opts: &InitOptions) -> R
                 );
             } else {
                 let mut doc = store.bindings.doc.clone();
-                out.changes
-                    .extend(scope::declare(&mut doc, &store.name, s, roots));
+                out.changes.extend(scope::declare(
+                    &mut doc,
+                    &store.name,
+                    s,
+                    roots,
+                    s.registry.unwrap_or(true),
+                ));
                 let text = doc.to_string();
                 out.writes
                     .extend(file_write(bindings.clone(), text.clone()));
@@ -132,7 +140,7 @@ pub fn init(env: &Env, cfg: &Config, machine: &Machine, opts: &InitOptions) -> R
         let mut scope_changes = Vec::new();
         if let (Some(s), Some(roots)) = (&scope_opts, &roots) {
             let mut doc: DocumentMut = text.parse().expect("the skeleton is valid TOML");
-            scope_changes = scope::declare(&mut doc, &name, s, roots);
+            scope_changes = scope::declare(&mut doc, &name, s, roots, s.registry.unwrap_or(true));
             text = doc.to_string();
         }
         // A store name clash with a mounted store is caught when mounting below.

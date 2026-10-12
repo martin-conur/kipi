@@ -1,7 +1,8 @@
 //! String-array edits on a toml_edit table that keep the array's own formatting, so that
-//! adding values and then removing the same values gives back the original bytes.
+//! adding values and then removing the same values gives back the original bytes; and
+//! removing a whole table without losing the comments above it.
 
-use toml_edit::{Array, Item, TableLike, Value};
+use toml_edit::{Array, DocumentMut, Item, Table, TableLike, Value};
 
 use crate::scan::DRAFT_MARK;
 
@@ -117,6 +118,77 @@ pub(super) fn clear_draft(table: &mut dyn TableLike, key: &str) {
     }
 }
 
+/// Remove the table `[<parent>.<name>]` from `doc`; returns whether it was there. Its own
+/// lines go (header comment and body included), but a comment above its header may be
+/// about the section rather than the entry, so it moves to the next table (or the end of
+/// the document): removing what `add repo` appended gives back the original bytes.
+pub(super) fn remove_table(doc: &mut DocumentMut, parent: &str, name: &str) -> bool {
+    let Some(gone) = doc
+        .get_mut(parent)
+        .and_then(Item::as_table_like_mut)
+        .and_then(|t| t.remove(name))
+    else {
+        return false;
+    };
+    let Some(table) = gone.as_table() else {
+        return true;
+    };
+    let prefix = table
+        .decor()
+        .prefix()
+        .and_then(|p| p.as_str())
+        .unwrap_or("");
+    if !prefix.contains('#') {
+        return true;
+    }
+    let prefix = prefix.to_owned();
+    let next = table.position().and_then(|pos| {
+        let mut found = Vec::new();
+        positions(doc.as_table(), &mut Vec::new(), &mut found);
+        found.into_iter().filter(|(p, _)| *p > pos).min()
+    });
+    match next.and_then(|(_, keys)| table_at(doc, &keys)) {
+        Some(next) => {
+            // The moved comment already carries the blank line before it, so the next
+            // table's own blank lines go; its own comment keeps them, so the two comment
+            // blocks stay apart.
+            let own = next.decor().prefix().and_then(|p| p.as_str()).unwrap_or("");
+            let own = if own.contains('#') { own } else { "" };
+            let joined = format!("{prefix}{own}");
+            next.decor_mut().set_prefix(joined);
+        }
+        None => {
+            let trailing = doc.trailing().as_str().unwrap_or("").to_owned();
+            doc.set_trailing(format!("{prefix}{trailing}"));
+        }
+    }
+    true
+}
+
+/// The position and key path of every table under `table` that has a header.
+fn positions(table: &Table, keys: &mut Vec<String>, out: &mut Vec<(isize, Vec<String>)>) {
+    for (key, item) in table.iter() {
+        let Some(t) = item.as_table() else { continue };
+        keys.push(key.to_owned());
+        if !t.is_implicit()
+            && let Some(p) = t.position()
+        {
+            out.push((p, keys.clone()));
+        }
+        positions(t, keys, out);
+        keys.pop();
+    }
+}
+
+/// The table at `keys` of `doc`.
+fn table_at<'a>(doc: &'a mut DocumentMut, keys: &[String]) -> Option<&'a mut Table> {
+    let mut table = doc.as_table_mut();
+    for key in keys {
+        table = table.get_mut(key)?.as_table_mut()?;
+    }
+    Some(table)
+}
+
 #[cfg(test)]
 mod tests {
     use toml_edit::DocumentMut;
@@ -186,6 +258,55 @@ mod tests {
                 assert_eq!(remove(t, "a", |_| true), 0);
             }),
             "[t]\nb = 1\n"
+        );
+    }
+
+    #[test]
+    fn remove_table_keeps_the_comments_above_it() {
+        let remove = |text: &str, name: &str| {
+            let mut doc: DocumentMut = text.parse().unwrap();
+            assert!(remove_table(&mut doc, "repos", name));
+            doc.to_string()
+        };
+        let text = "[store]\nname = \"s\"\n\n# the repos\n[repos.a]  # mine\nx = 1\n\n\
+                    [repos.b]\ny = 2\n";
+        assert_eq!(
+            remove(text, "a"),
+            "[store]\nname = \"s\"\n\n# the repos\n[repos.b]\ny = 2\n"
+        );
+        assert_eq!(
+            remove(text, "b"),
+            "[store]\nname = \"s\"\n\n# the repos\n[repos.a]  # mine\nx = 1\n"
+        );
+        assert_eq!(
+            remove("[repos.a]\nx = 1\n\n# last\n[repos.b]\ny = 2\n# end\n", "b"),
+            "[repos.a]\nx = 1\n\n# last\n# end\n"
+        );
+        let mut doc: DocumentMut = "[repos.a]\n".parse().unwrap();
+        assert!(!remove_table(&mut doc, "repos", "z"));
+    }
+
+    #[test]
+    fn remove_table_keeps_sections_apart() {
+        let remove = |text: &str| {
+            let mut doc: DocumentMut = text.parse().unwrap();
+            assert!(remove_table(&mut doc, "repos", "a"));
+            doc.to_string()
+        };
+        // The next table's prefix is only blank lines: the moved comment block keeps its
+        // blank line above and sits right on the next header, as it sat on the removed one.
+        assert_eq!(
+            remove(
+                "[store]\nname = \"s\"\n\n# the repos\n# (by hand)\n[repos.a]\nx = 1\n\n\n[repos.b]\ny = 2\n"
+            ),
+            "[store]\nname = \"s\"\n\n# the repos\n# (by hand)\n[repos.b]\ny = 2\n"
+        );
+        // The next table has its own comment: both blocks keep their spacing.
+        assert_eq!(
+            remove(
+                "[store]\nname = \"s\"\n\n# the repos\n[repos.a]\nx = 1\n\n# b, mostly\n[repos.b]\ny = 2\n"
+            ),
+            "[store]\nname = \"s\"\n\n# the repos\n\n# b, mostly\n[repos.b]\ny = 2\n"
         );
     }
 

@@ -1,0 +1,23 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: out
+---
+remove repo dotfiles (store personal)
+  - store personal: [repos.dotfiles]  (the next `kipi sync --all` drops it from the registries)
+  - machine.toml: /srv/code/dotfiles
+
+Dry run: would write 2 files:
+--- ~/stores/personal-store/bindings.toml
++++ ~/stores/personal-store/bindings.toml
+@@ -33,5 +33,2 @@
+ summary = "Static site; posts in content/, theme in themes/plain"
+ aliases = ["site"]
+-
+-[repos.dotfiles]                   # no summary yet
+-remote = "github.com/example-user/dotfiles"
+--- ~/.config/kipi/machine.toml
++++ ~/.config/kipi/machine.toml
+@@ -19,3 +19,2 @@
+ "api"             = "/srv/code/api"
+ "blog"            = "/srv/code/blog"
+-"dotfiles"        = "/srv/code/dotfiles"

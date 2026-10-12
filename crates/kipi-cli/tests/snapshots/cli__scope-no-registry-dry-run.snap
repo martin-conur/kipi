@@ -1,0 +1,15 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: out
+---
+scope acme (store acme)
+  - registry: true
+
+Dry run: would write 1 file:
+--- ~/stores/acme-store/bindings.toml
++++ ~/stores/acme-store/bindings.toml
+@@ -15,5 +15,4 @@
+ skills = ["code-review", "pr-conventions", "personal/commit-style"]   # last one: shared skill from the personal store
+ always = ["conventions/acme.md"]   # rendered into the generated block
+-registry = true
+ remote_patterns = ["github.com/acme-org/"]   # for doctor's leak check

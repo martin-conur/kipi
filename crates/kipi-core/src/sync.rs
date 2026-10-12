@@ -388,7 +388,7 @@ fn sync_repo(
 
 /// The working trees of the checkout `dir`: itself, then (with `linked`) its linked
 /// worktrees, each flagged as one. A worktree git cannot list is left out.
-fn trees(dir: &Path, linked: bool) -> Vec<(PathBuf, bool)> {
+pub(crate) fn trees(dir: &Path, linked: bool) -> Vec<(PathBuf, bool)> {
     let mut trees = vec![(dir.to_path_buf(), false)];
     if linked {
         let found = git::worktrees(dir).unwrap_or_default();
@@ -444,6 +444,6 @@ fn parallel_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Ve
     })
 }
 
-fn exists(path: &Path) -> bool {
+pub(crate) fn exists(path: &Path) -> bool {
     fs::symlink_metadata(path).is_ok()
 }

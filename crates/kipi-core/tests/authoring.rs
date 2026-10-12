@@ -6,7 +6,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use kipi_core::authoring::{self, Binding, InitOptions, Op, Outcome, RepoOptions, SkillOptions};
+use kipi_core::authoring::{
+    self, Binding, InitOptions, Op, Outcome, RemoveOptions, RepoOptions, SkillOptions,
+};
 use kipi_core::config::{self, Env};
 use kipi_core::model::{Machine, StoreSet};
 use kipi_test_support::repos::{FakeRepo, ManifestKind};
@@ -495,6 +497,108 @@ fn add_repo_goes_to_the_store_owning_its_scope() {
             .after
             .ends_with("[repos.notes-site]\nscope = \"personal\"\n")
     );
+}
+
+#[test]
+fn add_repo_records_the_checkout_of_an_existing_entry() {
+    let home = Home::new();
+    let checkout = |dir: &str, url: &str| {
+        FakeRepo {
+            entry: String::new(),
+            dir: dir.into(),
+            origin_url: Some(url.into()),
+            readme: None,
+            manifest: ManifestKind::None,
+            description: None,
+        }
+        .create_under(home.path())
+        .unwrap()
+    };
+    let right = checkout(
+        "work/acme/feature-store",
+        "https://github.com/acme-org/feature-store.git",
+    );
+    let wrong = checkout("work/acme/other", "https://github.com/acme-org/other.git");
+    let add = |path: &Path, scope: Option<&str>, summary: Option<&str>| {
+        let opts = RepoOptions {
+            name: "feature-store",
+            path: Some(path),
+            scope,
+            summary,
+        };
+        authoring::add_repo(&home.stores(), &home.machine(), &home.env(), &opts)
+    };
+    let refused = |r: kipi_core::error::Result<Outcome>| r.unwrap_err().report();
+
+    assert!(refused(add(&wrong, None, None)).contains("is not the remote"));
+    assert!(refused(add(&right, None, Some("Other"))).contains("--summary differs"));
+    assert!(
+        refused(add(&right, Some("acme-ml"), None))
+            .contains("resolves to scope `acme`, not scope `acme-ml`")
+    );
+    let summary = "Online and offline feature serving; dbt models in models/";
+    let outcome = add(&right, Some("acme"), Some(summary)).unwrap();
+    assert_eq!(
+        outcome.writes.len(),
+        1,
+        "only machine.toml: the remote is there"
+    );
+    outcome.write().unwrap();
+    assert_eq!(
+        home.machine().repo_path("feature-store"),
+        Some(right.as_path())
+    );
+
+    assert!(
+        add(&right, None, None).unwrap().is_empty(),
+        "already recorded"
+    );
+    assert!(refused(add(&wrong, None, None)).contains("is already cloned at"));
+}
+
+#[test]
+fn remove_repo_deletes_the_entry_and_its_notes_only_when_asked() {
+    let home = Home::new();
+    let notes = home
+        .store(ExampleStore::Personal)
+        .join("repos/side-tool/notes.md");
+    let remove = |notes: bool| {
+        let opts = RemoveOptions {
+            name: "side-tool",
+            notes,
+        };
+        authoring::remove_repo(&home.stores(), &home.machine(), &home.env(), &opts)
+    };
+    let kept = remove(false).unwrap();
+    assert!(kept.removes.is_empty());
+    assert!(
+        kept.changes
+            .iter()
+            .any(|c| c.what == "notes" && c.op == Op::Keep)
+    );
+    let outcome = remove(true).unwrap();
+    assert_eq!(outcome.removes, std::slice::from_ref(&notes));
+    outcome.write().unwrap();
+    assert!(!notes.exists());
+    assert!(
+        !notes.parent().unwrap().exists(),
+        "the emptied directory goes too"
+    );
+    assert!(
+        !home
+            .bindings(ExampleStore::Personal)
+            .contains("[repos.side-tool]")
+    );
+    let err = authoring::remove_repo(
+        &home.stores(),
+        &home.machine(),
+        &home.env(),
+        &RemoveOptions {
+            name: "photos",
+            notes: false,
+        },
+    );
+    assert!(err.unwrap_err().report().contains("no repo entry `photos`"));
 }
 
 #[test]

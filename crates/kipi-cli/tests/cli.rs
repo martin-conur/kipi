@@ -364,7 +364,12 @@ fn completions_offer_repo_skill_alias_scope_and_store_names() {
     );
     has(
         &["edit", ""],
-        &["billing-api", "notes:billing-api", "conventions:acme"],
+        &[
+            "billing-api",
+            "notes:billing-api",
+            "scope:acme-ml",
+            "conventions:acme",
+        ],
     );
     has(&["completions", ""], &["bash", "zsh", "fish", "elvish"]);
 }
@@ -1314,7 +1319,7 @@ fn authoring_from_an_empty_home_to_a_synced_repo() {
     let out = stdout_of(
         &home,
         home.bare()
-            .args(["add", "scope", "personal", "--registry", "--root"])
+            .args(["add", "scope", "personal", "--root"])
             .arg(home.path().join("code")),
     );
     assert!(out.contains("+ roots: ~/code"), "{out}");
@@ -1381,6 +1386,302 @@ fn authoring_from_an_empty_home_to_a_synced_repo() {
     );
     home.bare().args(["sync", "--all"]).assert().success();
     assert!(!settings().contains(&lib), "{}", settings());
+}
+
+/// A fake checkout under `home` with a GitHub origin of the same name.
+fn fake_checkout(home: &Home, dir: &str) -> PathBuf {
+    let name = Path::new(dir).file_name().unwrap().to_string_lossy();
+    FakeRepo {
+        entry: String::new(),
+        dir: dir.into(),
+        origin_url: Some(format!("https://github.com/example-user/{name}.git")),
+        readme: Some("A small example project.\n".into()),
+        manifest: ManifestKind::None,
+        description: None,
+    }
+    .create_under(home.path())
+    .unwrap()
+}
+
+#[test]
+fn a_scope_and_its_repos_can_be_changed_after_the_fact() {
+    let home = Home::empty();
+    for dir in ["code/app", "code/lib-core"] {
+        fake_checkout(&home, dir);
+    }
+    home.bare().arg("init").assert().success();
+    let store = home.path().join(".agents/store");
+    let bindings = store.join("bindings.toml");
+    let machine = home.path().join(".config/kipi/machine.toml");
+    // No `--registry`: a scope gets one by default.
+    let out = stdout_of(
+        &home,
+        home.bare()
+            .args(["add", "scope", "personal", "--root"])
+            .arg(home.path().join("code")),
+    );
+    assert!(out.contains("+ registry: true"), "{out}");
+    home.bare().arg("scan").assert().success();
+    home.bare().args(["sync", "--all"]).assert().success();
+    let app = home.path().join("code/app");
+    let block = || fs::read_to_string(app.join("CLAUDE.md")).unwrap();
+    assert!(block().contains("## Known repos (personal)"), "{}", block());
+
+    // `kipi scope` toggles the registry; sync follows.
+    let out = stdout_of(
+        &home,
+        home.bare().args(["scope", "personal", "--no-registry"]),
+    );
+    assert!(out.contains("- registry: true"), "{out}");
+    assert!(
+        fs::read_to_string(&bindings)
+            .unwrap()
+            .contains("[scopes.personal]\nroots = [\"~/code\"]\n\n"),
+        "the `registry` line is gone"
+    );
+    home.bare().args(["sync", "--all"]).assert().success();
+    assert!(!block().contains("Known repos"), "{}", block());
+    let out = stdout_of(&home, home.bare().args(["scope", "personal", "--registry"]));
+    assert!(out.contains("+ registry: true"), "{out}");
+    home.bare().args(["sync", "--all"]).assert().success();
+    assert!(block().contains("## Known repos (personal)"), "{}", block());
+    let out = stdout_of(&home, home.bare().args(["scope", "personal", "--registry"]));
+    assert!(out.contains("= registry: true  (already so)"), "{out}");
+    assert!(out.contains("Nothing to write."), "{out}");
+
+    // An entry added before its checkout existed gets one with `add repo --path`.
+    home.bare()
+        .args(["add", "repo", "ghost", "--scope", "personal"])
+        .assert()
+        .success();
+    let tree = || stdout_of(&home, home.bare().arg("tree"));
+    let line = |text: String| {
+        text.lines()
+            .find(|l| l.contains("ghost"))
+            .map(str::to_owned)
+            .unwrap_or_default()
+    };
+    assert!(line(tree()).contains("not cloned"), "{}", tree());
+    let ghost = fake_checkout(&home, "code/ghost");
+    let out = stdout_of(
+        &home,
+        home.bare()
+            .args(["add", "repo", "ghost", "--path"])
+            .arg(&ghost),
+    );
+    assert!(
+        out.contains("+ remote: github.com/example-user/ghost"),
+        "{out}"
+    );
+    assert!(out.contains("+ machine.toml: ~/code/ghost"), "{out}");
+    assert!(!line(tree()).contains("not cloned"), "{}", tree());
+    assert!(!line(tree()).is_empty(), "{}", tree());
+    home.bare().args(["sync", "--all"]).assert().success();
+    assert!(ghost.join("CLAUDE.md").is_file());
+    assert!(block().contains("ghost"), "{}", block());
+
+    // `remove repo` drops the entry, its machine.toml line and what kipi wrote for it;
+    // the next sync drops it from the registry.
+    fs::create_dir_all(store.join("repos/ghost")).unwrap();
+    fs::write(store.join("repos/ghost/notes.md"), "- spooky\n").unwrap();
+    let out = stdout_of(&home, home.bare().args(["remove", "repo", "ghost"]));
+    assert!(out.contains("- store personal: [repos.ghost]"), "{out}");
+    assert!(out.contains("pass --notes to delete it"), "{out}");
+    assert!(!fs::read_to_string(&bindings).unwrap().contains("ghost"));
+    assert!(!fs::read_to_string(&machine).unwrap().contains("ghost"));
+    assert!(!ghost.join("CLAUDE.md").exists());
+    assert!(!ghost.join(".kipi").exists());
+    assert!(
+        store.join("repos/ghost/notes.md").is_file(),
+        "notes are kept"
+    );
+    home.bare().args(["sync", "--all"]).assert().success();
+    assert!(!block().contains("ghost"), "{}", block());
+    let sync = stdout_of(&home, home.bare().args(["sync", "--all", "--dry-run"]));
+    assert!(
+        sync.contains("nothing to do") || !sync.contains("ghost"),
+        "{sync}"
+    );
+}
+
+#[test]
+fn scope_toggles_keep_the_comments() {
+    let home = Home::new();
+    let bindings = home.store(ExampleStore::Acme).join("bindings.toml");
+    let before = fs::read_to_string(&bindings).unwrap();
+    let out = stdout_of(
+        &home,
+        home.kipi()
+            .args(["scope", "acme", "--no-registry", "--dry-run"]),
+    );
+    insta::assert_snapshot!("scope-no-registry-dry-run", out);
+    assert_eq!(fs::read_to_string(&bindings).unwrap(), before);
+
+    for flag in ["--no-registry", "--registry"] {
+        home.kipi().args(["scope", "acme", flag]).assert().success();
+    }
+    let after = fs::read_to_string(&bindings).unwrap();
+    for line in before.lines().filter(|l| l.contains('#')) {
+        assert!(after.contains(line), "{line:?} survives:\n{after}");
+    }
+    insta::assert_snapshot!("scope-registry-round-trip", after);
+}
+
+#[test]
+fn scope_edits_roots_skills_and_parent() {
+    let home = Home::new();
+    let data = home.path().join("work/acme/data");
+    fs::create_dir_all(&data).unwrap();
+    let bindings = home.store(ExampleStore::Acme).join("bindings.toml");
+    let before = fs::read_to_string(&bindings).unwrap();
+    let out = stdout_of(
+        &home,
+        home.kipi()
+            .args([
+                "scope",
+                "acme-ml",
+                "--extends",
+                "acme",
+                "--skill",
+                "stream-recipes",
+            ])
+            .args([
+                "--remove-skill",
+                "dbt-conventions",
+                "--always",
+                "conventions/acme.md",
+            ])
+            .arg("--add-root")
+            .arg(&data),
+    );
+    insta::assert_snapshot!("scope-edit", out);
+    let table = "[scopes.acme-ml]\nextends = \"acme\"\nroots = [\"~/work/acme/ml\", \
+                 \"~/work/acme/data\"]\nskills = [\"stream-recipes\"]\n\
+                 always = [\"conventions/acme.md\"]\n";
+    let after = fs::read_to_string(&bindings).unwrap();
+    assert!(after.contains(table), "{after}");
+    home.kipi()
+        .args(["scope", "acme-ml", "--remove-root"])
+        .arg(&data)
+        .assert()
+        .success();
+    let edited = fs::read_to_string(&bindings).unwrap();
+    assert!(
+        edited.contains(&table.replace(", \"~/work/acme/data\"", "")),
+        "{edited}"
+    );
+
+    // `--remove-always` is the inverse of `--always`: the same bytes come back, and a
+    // file not in the list (which need not exist) is a `keep`.
+    let out = stdout_of(
+        &home,
+        home.kipi().args([
+            "scope",
+            "acme-ml",
+            "--remove-always",
+            "./conventions/acme.md",
+            "conventions/gone.md",
+        ]),
+    );
+    assert!(out.contains("- always: conventions/acme.md\n"), "{out}");
+    assert!(
+        out.contains("= always: conventions/gone.md  (not there)"),
+        "{out}"
+    );
+    let without = fs::read_to_string(&bindings).unwrap();
+    assert_eq!(
+        without,
+        edited.replace("always = [\"conventions/acme.md\"]\n", "")
+    );
+    home.kipi()
+        .args(["scope", "acme-ml", "--always", "conventions/acme.md"])
+        .assert()
+        .success();
+    assert_eq!(fs::read_to_string(&bindings).unwrap(), edited);
+
+    // `--no-extends` on a scope with no repos; on `acme-ml` it would break the leak rule.
+    stdout_of(
+        &home,
+        home.kipi()
+            .args(["add", "scope", "acme-data", "--extends", "acme", "--root"])
+            .arg(&data),
+    );
+    let out = stdout_of(
+        &home,
+        home.kipi().args(["scope", "acme-data", "--no-extends"]),
+    );
+    assert!(out.contains("- extends: acme"), "{out}");
+    assert!(
+        fs::read_to_string(&bindings)
+            .unwrap()
+            .contains("[scopes.acme-data]\nroots = [\"~/work/acme/data\"]\n"),
+    );
+
+    let fail = |args: &[&str]| {
+        let mut cmd = home.kipi();
+        cmd.arg("scope").args(args);
+        failure_of(&home, &mut cmd)
+    };
+    let edited = fs::read_to_string(&bindings).unwrap();
+    let (code, err) = fail(&["acme-ml"]);
+    assert_eq!(code, 1);
+    assert!(
+        err.starts_with("error: nothing to change in scope `acme-ml`\n"),
+        "{err}"
+    );
+    let (_, err) = fail(&["acme-m", "--registry"]);
+    assert!(err.contains("did you mean `acme-ml`?"), "{err}");
+    let (_, err) = fail(&["acme-ml", "--extends", "personal"]);
+    assert!(err.contains("is in store `personal`, not `acme`"), "{err}");
+    let (_, err) = fail(&["acme", "--extends", "acme"]);
+    assert!(err.contains("cannot extend itself"), "{err}");
+    let (_, err) = fail(&["acme-ml", "--always", "conventions/missing.md"]);
+    assert!(err.contains("is not a file of store `acme`"), "{err}");
+    let (_, err) = fail(&["acme-ml", "--remove-root", "~/work/acme/ml"]);
+    assert!(err.contains("would be left without a root"), "{err}");
+    for args in [
+        &["acme-ml", "--no-extends"][..],
+        &["acme", "--extends", "acme-ml"],
+    ] {
+        let (_, err) = fail(args);
+        assert!(
+            err.contains("(rejected: nothing was written)"),
+            "{args:?}: {err}"
+        );
+    }
+    assert_eq!(fs::read_to_string(&bindings).unwrap(), edited);
+    assert_ne!(edited, before);
+}
+
+#[test]
+fn remove_repo_refuses_a_related_entry() {
+    let home = Home::new();
+    let files = files_under(&home.path().join("stores"));
+    let (code, err) = failure_of(&home, home.kipi().args(["remove", "repo", "api"]));
+    assert_eq!(code, 1);
+    assert_eq!(
+        err,
+        "error: repo entry `api` is related to by `side-tool`\n  hint: unbind it first: \
+         `kipi unbind side-tool --related api`\n"
+    );
+    assert_eq!(files_under(&home.path().join("stores")), files);
+
+    let machine = home.path().join(".config/kipi/machine.toml");
+    let out = stdout_of(
+        &home,
+        home.kipi()
+            .args(["remove", "repo", "dotfiles", "--dry-run"]),
+    );
+    insta::assert_snapshot!("remove-repo-dry-run", out);
+    let doc = json_of(
+        &home,
+        home.kipi().args(["remove", "repo", "dotfiles", "--json"]),
+    );
+    assert_eq!(doc["command"], "remove repo");
+    assert!(!fs::read_to_string(&machine).unwrap().contains("dotfiles"));
+    let text =
+        fs::read_to_string(home.store(ExampleStore::Personal).join("bindings.toml")).unwrap();
+    assert!(!text.contains("dotfiles"), "{text}");
 }
 
 #[test]
@@ -1584,7 +1885,9 @@ fn init_with_a_scope_needs_no_hand_edit() {
     let bindings = home.path().join(".agents/store/bindings.toml");
     let text = fs::read_to_string(&bindings).unwrap();
     assert!(
-        text.contains("\n[scopes.personal]\nroots = [\"~/code\"]\n\n# [scopes.<scope>]"),
+        text.contains(
+            "\n[scopes.personal]\nroots = [\"~/code\"]\nregistry = true\n\n# [scopes.<scope>]"
+        ),
         "{text}"
     );
     let again = stdout_of(&home, &mut init());
@@ -2119,6 +2422,58 @@ fn edit_creates_notes_from_the_template_and_reports_invalid_edits() {
         "{err}"
     );
     assert!(err.contains("hint: did you mean `summary`?"), "{err}");
+}
+
+#[test]
+fn edit_scope_opens_the_table_and_validates() {
+    let home = Home::new();
+    let hx = fake_hx(&home, "^skills = \\[\"dbt-conventions\"\\]", "skills = []");
+    let out = stdout_of(
+        &home,
+        home.kipi()
+            .args(["edit", "scope:acme-ml"])
+            .env("EDITOR", &hx),
+    );
+    insta::assert_snapshot!("edit-scope", out);
+    let args = fs::read_to_string(home.path().join("editor-args")).unwrap();
+    assert_eq!(
+        home.scrub(args.as_bytes()),
+        "[HOME]/stores/acme-store/bindings.toml:20\n",
+        "opened at the `[scopes.acme-ml]` line"
+    );
+    let bindings = home.store(ExampleStore::Acme).join("bindings.toml");
+    assert!(
+        fs::read_to_string(&bindings)
+            .unwrap()
+            .contains("roots = [\"~/work/acme/ml\"]\nskills = []\n")
+    );
+
+    let (_, err) = failure_of(
+        &home,
+        home.kipi()
+            .args(["edit", "scope:acme-m"])
+            .env("EDITOR", "true"),
+    );
+    assert!(
+        err.starts_with(
+            "error: no scope `acme-m` in the mounted stores\n  hint: did you mean `acme-ml`?"
+        ),
+        "{err}"
+    );
+
+    // An invalid edit is reported (and left in the file for the user to fix).
+    let hx = fake_hx(&home, "^extends = \"acme\"", "extends = \"nope\"");
+    let (code, err) = failure_of(
+        &home,
+        home.kipi()
+            .args(["edit", "scope:acme-ml"])
+            .env("EDITOR", &hx),
+    );
+    assert_eq!(code, 1);
+    assert!(
+        err.contains("scope `acme-ml` extends `nope`, which is not a scope in store `acme`"),
+        "{err}"
+    );
 }
 
 /// An onboarded home after `kipi sync --all`.

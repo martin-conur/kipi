@@ -125,7 +125,8 @@ pub fn stores() -> Vec<CompletionCandidate> {
     })
 }
 
-/// `kipi edit` targets: repo entries, skills, `notes:<repo>` and `conventions:<scope>`.
+/// `kipi edit` targets: repo entries, skills, `scope:<name>`, `notes:<repo>` and
+/// `conventions:<scope>`.
 pub fn edit_targets() -> Vec<CompletionCandidate> {
     candidates(|stores, out| {
         repo_names(stores, out);
@@ -137,6 +138,7 @@ pub fn edit_targets() -> Vec<CompletionCandidate> {
                 out.push(CompletionCandidate::new(format!("notes:{}", repo.name)));
             }
             for scope in &store.scopes {
+                out.push(CompletionCandidate::new(format!("scope:{}", scope.name)));
                 out.push(CompletionCandidate::new(format!(
                     "conventions:{}",
                     scope.name

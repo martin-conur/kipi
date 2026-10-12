@@ -9,7 +9,18 @@ the stable interface; human-readable output may change in any release.
 
 ### Added
 
-- **`kipi add scope <name> --root <path>... [--extends <s>] [--registry] [--skill <s>...]
+- **`kipi scope <name>`** changes an existing scope in place, keeping comments and checking the
+  result before writing: `--registry` / `--no-registry`, `--add-root` / `--remove-root`,
+  `--extends <s>` / `--no-extends`, `--skill` / `--remove-skill`, `--always` / `--remove-always`.
+- **`kipi remove repo <name> [--notes]`** deletes a repo entry and its `machine.toml` line, and
+  removes what kipi wrote into its checkout (and linked worktrees); the next `kipi sync --all`
+  drops it from the registries. Refused while another entry lists it in `related`. Its
+  `notes.md` is kept unless `--notes`.
+- **`kipi edit scope:<name>`** opens the store's `bindings.toml` at the `[scopes.<name>]` line
+  and validates on exit, like a repo entry.
+- **`kipi add repo <name> --path <dir>`** on an existing entry with no checkout on this machine
+  records the checkout (and fills a missing `remote`) instead of refusing.
+- **`kipi add scope <name> --root <path>... [--extends <s>] [--no-registry] [--skill <s>...]
   [--store <n>]`** declares a scope in a store's `bindings.toml`, keeping its comments, and
   checks the result before writing (`--dry-run` prints the diff). `kipi init --scope <name>
   --root <path>...` creates a store and its first scope in one step. Onboarding (`init`, `add
@@ -26,6 +37,13 @@ the stable interface; human-readable output may change in any release.
   `kipi sync` in each new worktree, so it has the block, skill links and read grant as soon as
   `git worktree add` returns. An existing hook is kept as `post-checkout.pre-kipi` and still
   runs; uninstall puts it back unchanged. No migration; run `kipi hook install --all` to opt in.
+
+### Changed
+
+- **A new scope gets a registry by default.** `kipi add scope` and `kipi init --scope` write
+  `registry = true` unless `--no-registry` is passed, or the scope extends one that already has a
+  registry (its repos are listed there). Existing scopes are unchanged; turn one on with
+  `kipi scope <name> --registry`. No migration.
 
 ### Fixed
 
