@@ -62,18 +62,40 @@ kipi sync --all --dry-run # see what changes first
 kipi sync --all
 ```
 
-Keep `roots` narrow on a machine that also holds work checkouts: a personal root that
-covers them would place them in the personal store. `kipi scan` refuses to add a repo whose remote
-matches another mounted store's `remote_patterns`, but with only the personal store mounted there
-is no pattern to check against.
-
 Every repo under `~/code` now has a generated block in `CLAUDE.md` and `AGENTS.md`, skill
 links in `.claude/skills/` and `.agents/skills/`, and a read grant in
 `.claude/settings.local.json`. Everything kipi wrote is recorded in `.kipi/manifest.toml` and
 listed in `.git/info/exclude`, so your tracked files stay clean. Running `sync` again changes
-nothing. Working in `git worktree`s? `kipi hook install --all` syncs each new one as it is
-created. The [quickstart](docs/quickstart.md) walks through ten repos split across a personal
-store and a work store.
+nothing.
+
+## Work and personal: two stores
+
+Keep work knowledge in its own store, so nothing in it can reach a personal repo:
+
+```bash
+kipi init --store ~/work/.kipi-acme --name acme
+kipi add scope acme --store acme --root ~/work/acme --remote-pattern github.com/acme-org/
+kipi scan && kipi sync --all
+```
+
+`--remote-pattern` marks repos whose remote starts with that prefix as the work store's: `scan`
+never writes one into the personal store, and `doctor` reports any that landed there. That check
+only works while the work store is mounted, so keep personal `roots` narrow (`~/code`, not a
+directory that also holds work checkouts). The [quickstart](docs/quickstart.md) walks through
+ten repos split across the two stores.
+
+## Worktrees
+
+A `git worktree` is the same repo entry as its checkout: `kipi sync --all` syncs it too, and a
+bare `kipi sync` inside one syncs just that working tree. To have each new worktree synced as
+`git worktree add` creates it, install a `post-checkout` hook once:
+
+```bash
+kipi hook install --all     # an existing hook is kept and still runs; `uninstall` restores it
+```
+
+As in the checkout, kipi's files in a worktree are untracked and excluded, so nothing gets
+committed.
 
 ## See what every repo gets
 

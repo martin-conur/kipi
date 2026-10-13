@@ -27,16 +27,16 @@ pub struct Global {
     #[arg(long = "store", value_name = "PATH", value_hint = ValueHint::DirPath)]
     pub stores: Vec<PathBuf>,
     /// Print machine-readable JSON (see docs/json.md).
-    #[arg(long, global = true)]
+    #[arg(long, global = true, help_heading = "Global options")]
     pub json: bool,
     /// Never color output (NO_COLOR is respected too).
-    #[arg(long, global = true)]
+    #[arg(long, global = true, help_heading = "Global options")]
     pub no_color: bool,
     /// Say more on stderr (repeatable).
-    #[arg(short, long, action = ArgAction::Count, global = true, conflicts_with = "quiet")]
+    #[arg(short, long, action = ArgAction::Count, global = true, help_heading = "Global options", conflicts_with = "quiet")]
     pub verbose: u8,
     /// Say nothing on stderr but errors.
-    #[arg(short, long, global = true)]
+    #[arg(short, long, global = true, help_heading = "Global options")]
     pub quiet: bool,
 }
 
@@ -105,7 +105,7 @@ pub enum Command {
     /// Remove a repo entry.
     #[command(subcommand)]
     Remove(Remove),
-    /// Change a scope: its registry, roots, parent, skills or always-on files.
+    /// Change a scope: its registry, roots, parent, remote patterns, skills or always-on files.
     Scope(ScopeArgs),
     /// Add skills, relations, exclusions or aliases to a repo entry.
     Bind(Binding),
@@ -236,7 +236,7 @@ pub enum Hook {
 /// The repos `kipi hook` acts on.
 #[derive(Debug, Args)]
 pub struct HookTargets {
-    /// Repo entries.
+    /// Repo entries (name at least one, or pass --all).
     #[arg(add = ArgValueCandidates::new(complete::repos))]
     pub repos: Vec<String>,
     /// Every repo cloned on this machine.
