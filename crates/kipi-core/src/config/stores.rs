@@ -4,34 +4,29 @@ use std::path::PathBuf;
 
 use super::BINDINGS_FILE;
 use super::bindings::load_store;
-use super::paths::{ENV_CONFIG_DIR, ENV_STORE, Env, store_paths};
+use super::paths::{DEFAULT_STORE, ENV_CONFIG_DIR, ENV_STORE, Env, store_paths};
 use crate::error::{Error, Result};
 use crate::model::{Config, StoreSet};
 
 /// The stores to mount ([`store_paths`]), loaded ([`load_stores`]); see [`check_config`].
 pub fn mount(flags: &[PathBuf], env: &Env, config: &Config) -> Result<StoreSet> {
-    let paths = store_paths(flags, env, config);
-    check_config(flags, env, config, &paths)?;
-    load_stores(&paths, env)
+    check_config(flags, env, config)?;
+    load_stores(&store_paths(flags, env, config), env)
 }
 
-/// With no `--store`, no `KIPI_STORE` and no `config.toml`, the default store is all that
-/// is left; when it is not a store either, the missing config is the real problem (a
-/// first run, or a shell without `KIPI_CONFIG_DIR`), so say that rather than "not a kipi
-/// store". `paths` is what [`store_paths`] returned.
-pub fn check_config(
-    flags: &[PathBuf],
-    env: &Env,
-    config: &Config,
-    paths: &[PathBuf],
-) -> Result<()> {
+/// With no `--store`, no `KIPI_STORE` and no `config.toml`, the default store is the only
+/// one [`store_paths`] can return; when it is not a store either, the missing config is the
+/// real problem (a first run, or a shell without `KIPI_CONFIG_DIR`), so say that rather
+/// than "not a kipi store".
+pub fn check_config(flags: &[PathBuf], env: &Env, config: &Config) -> Result<()> {
     let defaulted = flags.is_empty() && env.stores.is_empty() && config.source.is_none();
-    if defaulted && paths.iter().any(|p| !p.join(BINDINGS_FILE).is_file()) {
+    let default = env.home.join(DEFAULT_STORE);
+    if defaulted && !default.join(BINDINGS_FILE).is_file() {
         return Err(Error::usage(
             format!(
                 "no kipi config at {}, and no store at the default {}",
                 env.config_file().display(),
-                paths[0].display()
+                default.display()
             ),
             format!(
                 "create a store and its config with `kipi init --store <path>`; if the config \
