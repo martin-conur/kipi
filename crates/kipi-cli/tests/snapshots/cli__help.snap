@@ -12,7 +12,7 @@ Commands:
   scan         Find git repos under scope roots (or PATHs) and record them
   add          Add a skill, a repo entry or a scope
   remove       Remove a repo entry
-  scope        Change a scope: its registry, roots, parent, skills or always-on files
+  scope        Change a scope: its registry, roots, parent, remote patterns, skills or always-on files
   bind         Add skills, relations, exclusions or aliases to a repo entry
   unbind       Remove skills, relations, exclusions or aliases from a repo entry
   resolve      Print the resolved plan (no side effects)
@@ -30,9 +30,11 @@ Commands:
 
 Options:
       --store <PATH>  Mount this store instead of the configured ones (repeatable; before the subcommand)
-      --json          Print machine-readable JSON (see docs/json.md)
-      --no-color      Never color output (NO_COLOR is respected too)
-  -v, --verbose...    Say more on stderr (repeatable)
-  -q, --quiet         Say nothing on stderr but errors
   -h, --help          Print help
   -V, --version       Print version
+
+Global options:
+      --json        Print machine-readable JSON (see docs/json.md)
+      --no-color    Never color output (NO_COLOR is respected too)
+  -v, --verbose...  Say more on stderr (repeatable)
+  -q, --quiet       Say nothing on stderr but errors
