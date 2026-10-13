@@ -18,7 +18,7 @@ use crate::output::{Output, diff, json};
 /// `config.toml`, the mounted stores and `machine.toml`.
 fn load(env: &Env, store_flags: &[PathBuf]) -> Result<(Config, StoreSet, Machine), Failure> {
     let cfg = config::load_config(env)?;
-    let stores = config::load_stores(&config::store_paths(store_flags, env, &cfg), env)?;
+    let stores = config::mount(store_flags, env, &cfg)?;
     let machine = config::load_machine(env)?;
     Ok((cfg, stores, machine))
 }

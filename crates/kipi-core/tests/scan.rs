@@ -170,6 +170,56 @@ fn the_example_stores_drafts_are_what_scan_drafts() {
 }
 
 #[test]
+fn attaching_a_checkout_drafts_only_what_the_entry_lacks() {
+    let m = Machine::new(&[ExampleStore::Personal]);
+    // Entries as `kipi add repo <name> --scope personal` leaves them, with no checkout yet.
+    let file = m.store(ExampleStore::Personal).join("bindings.toml");
+    let mut text = m.bindings(ExampleStore::Personal);
+    text.push_str(
+        "\n[repos.photo-sorter]\nscope = \"personal\"\n\
+         \n[repos.recipe-book]\nsummary = \"Reviewed by hand\"\n\
+         \n[repos.tide-chart]\nsummary = \"Old draft\"  # kipi:draft\n",
+    );
+    fs::write(&file, &text).unwrap();
+    for dir in ["code/photo-sorter", "code/recipe-book", "code/tide-chart"] {
+        m.checkout(fake(dir, None, Some("Describes itself.\n")));
+    }
+
+    let out = m.apply(&ScanOptions::default());
+    assert!(out.added.is_empty(), "{:?}", out.added);
+    let drafted: Vec<(&str, &str, &str)> = out
+        .drafted
+        .iter()
+        .map(|r| (r.entry.as_str(), r.field, r.value.as_str()))
+        .collect();
+    assert_eq!(
+        drafted,
+        [
+            ("photo-sorter", "summary", "\"Describes itself\""),
+            ("photo-sorter", "aliases", "[\"photo\", \"sorter\"]"),
+            // The draft summary stays as it is (that is --refresh-drafts' job).
+            ("tide-chart", "aliases", "[\"tide\", \"chart\"]"),
+        ]
+    );
+    let after = m.bindings(ExampleStore::Personal);
+    assert!(
+        after.ends_with(
+            "[repos.photo-sorter]\nscope = \"personal\"\n\
+             summary = \"Describes itself\"  # kipi:draft\n\
+             aliases = [\"photo\", \"sorter\"]  # kipi:draft\n\
+             \n[repos.recipe-book]\nsummary = \"Reviewed by hand\"\n\
+             \n[repos.tide-chart]\nsummary = \"Old draft\"  # kipi:draft\n\
+             aliases = [\"tide\", \"chart\"]  # kipi:draft\n"
+        ),
+        "a reviewed summary is untouched and gets no aliases:\n{after}"
+    );
+    assert!(
+        m.scan(&ScanOptions::default()).writes.is_empty(),
+        "once recorded, nothing more is drafted"
+    );
+}
+
+#[test]
 fn refresh_rewrites_drafts_and_never_reviewed_values() {
     let m = Machine::new(&ExampleStore::ALL);
     m.apply(&ScanOptions::default());

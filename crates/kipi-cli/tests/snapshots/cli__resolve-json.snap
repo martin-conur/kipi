@@ -1553,15 +1553,18 @@ expression: out
         },
         {
           "name": "web-dashboard",
-          "aliases": [],
-          "aliases_draft": false,
+          "aliases": [
+            "dashboard"
+          ],
+          "aliases_draft": true,
           "summary": null,
           "summary_draft": false,
           "scope": "acme",
           "local": "/Volumes/work/acme/web-dashboard",
           "notes": null,
           "keys": [
-            "web-dashboard"
+            "web-dashboard",
+            "dashboard"
           ],
           "source": {
             "rule": "repos.web-dashboard",

@@ -107,6 +107,7 @@ rules: `version` is shared with the plan document, paths are absolute, lists are
 | `recorded` | [{`entry`, `path`, `previous`}] | `machine.toml [repos]` lines written; `previous` is the vanished path a moved checkout replaced, else `null` |
 | `remotes_filled` | [{`entry`, `store`, `remote`}] | `remote` filled on entries that lacked one |
 | `refreshed` | [{`entry`, `store`, `field`, `value`}] | Drafts rewritten by `--refresh-drafts`; `field` is `summary` or `aliases`, `value` as written in TOML |
+| `drafted` | [{`entry`, `store`, `field`, `value`}] | Drafts written on an existing entry whose first checkout this scan recorded and which set no `summary` / `aliases`; same shape as `refreshed` |
 | `warnings` | [Warning] | Things scan did not act on |
 | `not_found` | [string] | Entries of the mounted stores with no checkout on this machine, sorted |
 | `files` | [string] | Files written (or, with `dry_run`, that would be) |

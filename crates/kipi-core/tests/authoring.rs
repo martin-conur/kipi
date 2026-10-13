@@ -557,6 +557,60 @@ fn add_repo_records_the_checkout_of_an_existing_entry() {
 }
 
 #[test]
+fn add_repo_path_drafts_what_a_bare_entry_lacks() {
+    let home = Home::new();
+    let bare = RepoOptions {
+        name: "photo-sorter",
+        scope: Some("personal"),
+        ..RepoOptions::default()
+    };
+    let outcome = authoring::add_repo(&home.stores(), &home.machine(), &home.env(), &bare);
+    outcome.unwrap().write().unwrap();
+    let path = FakeRepo {
+        entry: String::new(),
+        dir: "code/photo-sorter".into(),
+        origin_url: Some("https://github.com/example-user/photo-sorter.git".into()),
+        readme: Some("# photo-sorter\n\nSorts photos by date.\n".into()),
+        manifest: ManifestKind::None,
+        description: None,
+    }
+    .create_under(home.path())
+    .unwrap();
+    let opts = RepoOptions {
+        name: "photo-sorter",
+        path: Some(&path),
+        ..RepoOptions::default()
+    };
+    let outcome = authoring::add_repo(&home.stores(), &home.machine(), &home.env(), &opts).unwrap();
+    let drafted: Vec<(&str, &str, Option<&str>)> = outcome
+        .changes
+        .iter()
+        .filter(|c| c.op == Op::Add)
+        .map(|c| (c.what.as_str(), c.value.as_str(), c.note.as_deref()))
+        .filter(|(what, _, _)| *what != "machine.toml")
+        .collect();
+    assert_eq!(
+        drafted,
+        [
+            ("remote", "github.com/example-user/photo-sorter", None),
+            ("summary", "Sorts photos by date", Some("draft")),
+            ("aliases", "photo, sorter", Some("draft")),
+        ]
+    );
+    outcome.write().unwrap();
+    assert!(
+        home.bindings(ExampleStore::Personal).ends_with(
+            "[repos.photo-sorter]\nscope = \"personal\"\n\
+             remote = \"github.com/example-user/photo-sorter\"\n\
+             summary = \"Sorts photos by date\"  # kipi:draft\n\
+             aliases = [\"photo\", \"sorter\"]  # kipi:draft\n"
+        ),
+        "{}",
+        home.bindings(ExampleStore::Personal)
+    );
+}
+
+#[test]
 fn remove_repo_deletes_the_entry_and_its_notes_only_when_asked() {
     let home = Home::new();
     let notes = home

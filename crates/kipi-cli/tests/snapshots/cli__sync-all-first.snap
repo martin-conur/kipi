@@ -3,25 +3,25 @@ source: crates/kipi-cli/tests/cli.rs
 expression: first
 ---
 acme-api  ~/work/acme/api
-  +6 links, 2 blocks written, +3 grants, exclude updated · always-on ~397/4000 tok
+  +6 links, 2 blocks written, +3 grants, exclude updated · always-on ~400/4000 tok
 api  ~/code/api
   +4 links, 2 blocks written, +2 grants, exclude updated · always-on ~264/4000 tok
 billing-api  ~/work/acme/billing-api
-  +6 links, 2 blocks written, +3 grants, exclude updated · always-on ~397/4000 tok
+  +6 links, 2 blocks written, +3 grants, exclude updated · always-on ~400/4000 tok
 blog  ~/code/blog
   +4 links, 2 blocks written, +2 grants, exclude updated · always-on ~264/4000 tok
 dotfiles  ~/code/dotfiles
   +4 links, 2 blocks written, +2 grants, exclude updated · always-on ~264/4000 tok
 events-pipeline  ~/work/acme/ml/events-pipeline
-  +4 links, 1 block written, +8 grants, exclude updated · always-on ~430/4000 tok
+  +4 links, 1 block written, +8 grants, exclude updated · always-on ~433/4000 tok
 feature-store  ~/work/acme/ml/feature-store
-  +8 links, 2 blocks written, +3 grants, exclude updated · always-on ~415/4000 tok
+  +8 links, 2 blocks written, +3 grants, exclude updated · always-on ~418/4000 tok
 ml-platform  ~/work/acme/ml/ml-platform
-  +8 links, 2 blocks written, +3 grants, exclude updated · always-on ~415/4000 tok
+  +8 links, 2 blocks written, +3 grants, exclude updated · always-on ~418/4000 tok
 side-tool  ~/code/side-tool
   +4 links, 2 blocks written, +3 grants, exclude updated · always-on ~272/4000 tok
 web-dashboard  ~/work/acme/web-dashboard
-  +6 links, 2 blocks written, +3 grants, exclude updated · always-on ~397/4000 tok
+  +6 links, 2 blocks written, +3 grants, exclude updated · always-on ~400/4000 tok
 store personal  ~/stores/personal-store/generated  1 registry written
 store acme  ~/stores/acme-store/generated  1 registry written
 

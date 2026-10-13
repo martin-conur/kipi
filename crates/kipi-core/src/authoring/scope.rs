@@ -13,7 +13,7 @@ use super::{
 };
 use crate::config::{self, Env};
 use crate::error::{Error, Result};
-use crate::model::{Machine, Scope, Store, StoreSet, check_name};
+use crate::model::{Machine, RemoteUrl, Scope, Store, StoreSet, check_name};
 use crate::scan::write::string_array;
 
 /// The arguments of `add scope`.
@@ -30,6 +30,8 @@ pub struct ScopeOptions<'a> {
     pub registry: Option<bool>,
     /// `--skill`: skill refs every repo in the scope gets.
     pub skills: &'a [String],
+    /// `--remote-pattern`: `remote_patterns` prefixes (`host/owner/`).
+    pub remote_patterns: &'a [String],
     /// `--store`: the store to declare it in (by name).
     pub store: Option<&'a str>,
 }
@@ -44,6 +46,7 @@ pub fn add_scope(
     opts: &ScopeOptions,
 ) -> Result<Outcome> {
     let roots = check(opts, env)?;
+    let patterns = check_patterns(opts.remote_patterns, "--remote-pattern")?;
     let name = opts.name;
     if let Some((store, _)) = stores.scope(name) {
         return Err(Error::usage(
@@ -55,7 +58,7 @@ pub fn add_scope(
     let mut doc = store.bindings.doc.clone();
     let inherited = registry_default(opts, store);
     let registry = opts.registry.unwrap_or(inherited.is_none());
-    let mut changes = declare(&mut doc, &store.name, opts, &roots, registry);
+    let mut changes = declare(&mut doc, &store.name, opts, &roots, &patterns, registry);
     if let Some(parent) = inherited {
         changes.push(
             Change::new(Op::Keep, "registry", "false")
@@ -137,6 +140,25 @@ pub(super) fn check(opts: &ScopeOptions, env: &Env) -> Result<Vec<String>> {
     Ok(roots)
 }
 
+/// Each remote pattern normalized ([`RemoteUrl::pattern`]), duplicates dropped; `flag`
+/// names the option in the error.
+fn check_patterns(raw: &[String], flag: &str) -> Result<Vec<String>> {
+    let mut out: Vec<String> = Vec::with_capacity(raw.len());
+    for r in raw {
+        let pattern = RemoteUrl::pattern(r).map_err(|why| {
+            Error::usage(
+                format!("{flag}: {why}"),
+                "pass a remote prefix without a scheme, ending at the owner: \
+                 `github.com/<owner>/`",
+            )
+        })?;
+        if !out.contains(&pattern) {
+            out.push(pattern);
+        }
+    }
+    Ok(out)
+}
+
 /// Without `--registry` / `--no-registry`, a scope gets a registry, unless a scope it
 /// extends already builds one: its repos are listed there, and a registry of its own
 /// would show them only each other (the nearest registry wins, roadmap §6). Returns that
@@ -159,12 +181,13 @@ fn registry_default<'a>(opts: &ScopeOptions, store: &'a Store) -> Option<&'a str
 }
 
 /// [`insert`], reported as a new table of store `store`. `registry` is the flag after
-/// defaults.
+/// defaults; `roots` and `patterns` are checked ([`check`], [`check_patterns`]).
 pub(super) fn declare(
     doc: &mut DocumentMut,
     store: &str,
     opts: &ScopeOptions,
     roots: &[String],
+    patterns: &[String],
     registry: bool,
 ) -> Vec<Change> {
     let header = Change::new(
@@ -173,16 +196,18 @@ pub(super) fn declare(
         format!("[scopes.{}]", opts.name),
     );
     std::iter::once(header)
-        .chain(insert(doc, opts, roots, registry))
+        .chain(insert(doc, opts, roots, patterns, registry))
         .collect()
 }
 
-/// Add `[scopes.<name>]` (`extends`, `roots`, `skills`, `registry`, in that order) to
-/// `doc`, after its last scope, else before its first repo entry. Returns what it added.
+/// Add `[scopes.<name>]` (`extends`, `roots`, `remote_patterns`, `skills`, `registry`, in
+/// that order) to `doc`, after its last scope, else before its first repo entry. Returns
+/// what it added.
 fn insert(
     doc: &mut DocumentMut,
     opts: &ScopeOptions,
     roots: &[String],
+    patterns: &[String],
     registry: bool,
 ) -> Vec<Change> {
     let mut changes = Vec::new();
@@ -194,6 +219,14 @@ fn insert(
     }
     table.insert("roots", Item::Value(string_array(roots)));
     changes.extend(roots.iter().map(|r| Change::new(Op::Add, "roots", r)));
+    if !patterns.is_empty() {
+        table.insert("remote_patterns", Item::Value(string_array(patterns)));
+        changes.extend(
+            patterns
+                .iter()
+                .map(|p| Change::new(Op::Add, "remote_patterns", p)),
+        );
+    }
     if !opts.skills.is_empty() {
         table.insert("skills", Item::Value(string_array(opts.skills)));
         changes.extend(
@@ -249,10 +282,15 @@ pub struct ScopeEdit<'a> {
     pub always: &'a [String],
     /// `--remove-always`.
     pub remove_always: &'a [String],
+    /// `--add-remote-pattern`.
+    pub add_remote_patterns: &'a [String],
+    /// `--remove-remote-pattern`.
+    pub remove_remote_patterns: &'a [String],
 }
 
 /// Change the existing `[scopes.<name>]` in place (toml_edit, comments kept): toggle its
-/// registry, add or remove roots, skills and always-on files, set or drop `extends`.
+/// registry, add or remove roots, remote patterns, skills and always-on files, set or drop
+/// `extends`.
 /// Values already as asked are reported as kept. The edited store set is validated
 /// before anything is written.
 pub fn edit_scope(
@@ -269,13 +307,16 @@ pub fn edit_scope(
         && edit.skills.is_empty()
         && edit.remove_skills.is_empty()
         && edit.always.is_empty()
-        && edit.remove_always.is_empty();
+        && edit.remove_always.is_empty()
+        && edit.add_remote_patterns.is_empty()
+        && edit.remove_remote_patterns.is_empty();
     if nothing {
         return Err(Error::usage(
             format!("nothing to change in scope `{name}`"),
             format!(
                 "pass at least one of --registry, --no-registry, --add-root, --remove-root, \
-                 --extends, --no-extends, --skill, --remove-skill, --always or --remove-always, e.g. \
+                 --add-remote-pattern, --remove-remote-pattern, --extends, --no-extends, \
+                 --skill, --remove-skill, --always or --remove-always, e.g. \
                  `kipi scope {name} --registry`"
             ),
         ));
@@ -284,6 +325,7 @@ pub fn edit_scope(
     check_skill_refs("--skill", edit.skills)?;
     check_skill_refs("--remove-skill", edit.remove_skills)?;
     let add_roots = check_roots(edit.add_roots, env)?;
+    let add_patterns = check_patterns(edit.add_remote_patterns, "--add-remote-pattern")?;
     let always = check_always(edit.always, store, name)?;
     if let Some(Some(parent)) = edit.extends {
         check_parent(stores, store, name, parent)?;
@@ -334,6 +376,28 @@ pub fn edit_scope(
             format!("scope `{name}` would be left without a root"),
             "add another with --add-root before removing the last one",
         ));
+    }
+    // Compared normalized, so `github.com/o` written by hand is `github.com/o/`; a
+    // `--remove-remote-pattern` that does not normalize can still match a value verbatim.
+    let normal = |v: &str| RemoteUrl::pattern(v).unwrap_or_else(|_| v.to_owned());
+    for pattern in &add_patterns {
+        let same = |v: &str| normal(v) == *pattern;
+        changes.push(if contains(table, "remote_patterns", same) {
+            Change::new(Op::Keep, "remote_patterns", pattern).note("already there")
+        } else {
+            push(table, "remote_patterns", pattern);
+            Change::new(Op::Add, "remote_patterns", pattern)
+        });
+    }
+    for raw in dedup(edit.remove_remote_patterns) {
+        let wanted = normal(raw);
+        let same = |v: &str| normal(v) == wanted;
+        changes.push(if contains(table, "remote_patterns", same) {
+            remove(table, "remote_patterns", same);
+            Change::new(Op::Remove, "remote_patterns", &wanted)
+        } else {
+            Change::new(Op::Keep, "remote_patterns", &wanted).note("not there")
+        });
     }
     for (key, values, adding) in [
         ("skills", edit.skills, true),
@@ -534,7 +598,7 @@ mod tests {
     fn add(text: &str, opts: &ScopeOptions, roots: &[&str]) -> String {
         let mut doc: DocumentMut = text.parse().unwrap();
         let roots: Vec<String> = roots.iter().map(|r| (*r).to_owned()).collect();
-        insert(&mut doc, opts, &roots, opts.registry.unwrap_or(false));
+        insert(&mut doc, opts, &roots, &[], opts.registry.unwrap_or(false));
         doc.to_string()
     }
 

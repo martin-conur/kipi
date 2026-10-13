@@ -200,7 +200,7 @@ fn colliding_scope_names() {
     });
     assert_two_locations(&fx);
     insta::assert_snapshot!(error_of(&fx), @r"
-    error: <dir>/acme-store/bindings.toml:58: scope `personal` is declared in stores `personal` and `acme`
+    error: <dir>/acme-store/bindings.toml:59: scope `personal` is declared in stores `personal` and `acme`
       also at: <dir>/personal-store/bindings.toml:13
       hint: scope names are unique across mounted stores (machine.toml [roots] is keyed by them); rename one of the scopes
     ");

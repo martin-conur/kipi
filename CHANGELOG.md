@@ -11,7 +11,17 @@ the stable interface; human-readable output may change in any release.
 
 - **`kipi scope <name>`** changes an existing scope in place, keeping comments and checking the
   result before writing: `--registry` / `--no-registry`, `--add-root` / `--remove-root`,
-  `--extends <s>` / `--no-extends`, `--skill` / `--remove-skill`, `--always` / `--remove-always`.
+  `--extends <s>` / `--no-extends`, `--skill` / `--remove-skill`, `--always` / `--remove-always`,
+  `--add-remote-pattern` / `--remove-remote-pattern`.
+- **`remote_patterns` from the CLI.** `kipi add scope --remote-pattern <prefix>...` and `kipi scope
+  --add-remote-pattern` / `--remove-remote-pattern` set the prefixes the work-store leak guard
+  (`scan`'s `foreign-remote`, doctor `K013`) relies on, normalized like a remote (`https://GitHub.com/o`
+  is written `github.com/o/`). No migration.
+- **`kipi scan` drafts for an attached entry.** When scan (or `kipi add repo <name> --path`)
+  records the first checkout of an existing entry that sets no `summary` and/or no `aliases`, it
+  drafts them as for a new entry, marked `# kipi:draft` (aliases only when the summary is not a
+  reviewed one). Present values are never touched. `kipi scan --json` gains `drafted` (same shape
+  as `refreshed`). No migration.
 - **`kipi remove repo <name> [--notes]`** deletes a repo entry and its `machine.toml` line, and
   removes what kipi wrote into its checkout (and linked worktrees); the next `kipi sync --all`
   drops it from the registries. Refused while another entry lists it in `related`. Its
@@ -46,6 +56,11 @@ the stable interface; human-readable output may change in any release.
   `kipi scope <name> --registry`. No migration.
 
 ### Fixed
+
+- **A missing config is reported as such.** With no `--store`, no `KIPI_STORE`, no
+  `config.toml` and no store at `~/.agents/store`, commands now say `no kipi config at
+  <dir>/config.toml` with a hint naming `kipi init`, `KIPI_CONFIG_DIR` and `--store` /
+  `KIPI_STORE`, instead of `not a kipi store`.
 
 - **`kipi tree` keeps a scope with many roots on one short line.** A scope with several roots
   shows the first and a count (`(~/code/maps +3)`) instead of every root inline; `--machine`

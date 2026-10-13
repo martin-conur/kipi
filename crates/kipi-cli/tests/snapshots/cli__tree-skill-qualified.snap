@@ -3,15 +3,15 @@ source: crates/kipi-cli/tests/cli.rs
 expression: out
 ---
 [store acme  ~/stores/acme-store  no git]
-acme  (~/work/acme)                         always-on: 343 tok
+acme  (~/work/acme)                         always-on: 346 tok
 |- code-review ● pr-conventions ● personal/commit-style ●  [scope]
-|- registry (6 repos, 205 tok)
-`- acme-ml  (~/work/acme/ml)  extends acme  always-on: 359 tok
+|- registry (6 repos, 208 tok)
+`- acme-ml  (~/work/acme/ml)  extends acme  always-on: 362 tok
    |- dbt-conventions ●                     [scope]
-   |- events-pipeline                       430 tok  ✓ synced  notes
+   |- events-pipeline                       433 tok  ✓ synced  notes
    |  |- skills: code-review ○ pr-conventions ✗ personal/commit-style ○ dbt-conventions ○ stream-recipes ●
    |  `- related: billing-api ✓ granted   ml-platform ✓ granted
-   |- feature-store                         415 tok  ✓ synced  draft summary
+   |- feature-store                         418 tok  ✓ synced  draft summary
    |  `- skills: code-review ○ pr-conventions ○ personal/commit-style ○ dbt-conventions ○
-   `- ml-platform                           415 tok  ✓ synced
+   `- ml-platform                           418 tok  ✓ synced
       `- skills: code-review ○ pr-conventions ○ personal/commit-style ○ dbt-conventions ○

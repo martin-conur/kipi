@@ -22,7 +22,7 @@ pub use paths::{
 };
 pub use settings::{TOKENIZERS, load_config, parse_config_text};
 pub use skills::SKILL_FILE;
-pub use stores::load_stores;
+pub use stores::{check_config, load_stores, mount};
 
 /// A store's bindings file.
 pub const BINDINGS_FILE: &str = "bindings.toml";

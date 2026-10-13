@@ -68,6 +68,32 @@ impl RemoteUrl {
         Ok(RemoteUrl(format!("{host}/{}", segments.join("/"))))
     }
 
+    /// Normalize a `remote_patterns` prefix the way [`RemoteUrl::parse`] normalizes a
+    /// remote, so it can match one: scheme, user, port and `.git` dropped, host lowercased,
+    /// always ending in `/` (so `github.com/acme` cannot match `github.com/acme-labs/x`).
+    /// A bare `host/owner/` (no scheme) and a bare host are accepted.
+    pub fn pattern(raw: &str) -> Result<String, String> {
+        let s = raw.trim().trim_end_matches('/');
+        if s.is_empty() {
+            return Err("empty remote pattern".to_owned());
+        }
+        let not_prefix = || format!("`{raw}` is not a remote prefix like `github.com/<owner>/`");
+        if s.starts_with(['.', '/', '~']) {
+            return Err(not_prefix());
+        }
+        let scp_like = s
+            .split_once(':')
+            .is_some_and(|(left, _)| !left.contains('/'));
+        let url = if s.contains("://") || scp_like {
+            s.to_owned()
+        } else {
+            format!("https://{s}")
+        };
+        // A placeholder last segment lets a host or `host/owner` prefix parse as a remote.
+        let parsed = RemoteUrl::parse(&format!("{url}/x")).map_err(|_| not_prefix())?;
+        Ok(parsed.0.strip_suffix('x').unwrap_or(&parsed.0).to_owned())
+    }
+
     /// The normalized form, `host/owner/name`.
     pub fn as_str(&self) -> &str {
         &self.0
@@ -197,6 +223,32 @@ mod tests {
     use super::*;
     use crate::error::Location;
     use crate::model::Drafted;
+
+    #[test]
+    fn patterns_normalize_like_remotes() {
+        for (raw, want) in [
+            ("github.com/acme-org/", "github.com/acme-org/"),
+            ("github.com/acme-org", "github.com/acme-org/"),
+            ("https://GitHub.com/acme-org/", "github.com/acme-org/"),
+            ("git@github.com:acme-org", "github.com/acme-org/"),
+            (
+                "ssh://git@gitlab.example.com:22/group/sub/",
+                "gitlab.example.com/group/sub/",
+            ),
+            ("git.example.com", "git.example.com/"),
+        ] {
+            assert_eq!(RemoteUrl::pattern(raw).as_deref(), Ok(want), "{raw}");
+        }
+        for raw in [
+            "",
+            "/",
+            "file:///srv/git/",
+            "./local/dir",
+            "github.com/../x",
+        ] {
+            assert!(RemoteUrl::pattern(raw).is_err(), "{raw}");
+        }
+    }
 
     #[test]
     fn normalization_table() {

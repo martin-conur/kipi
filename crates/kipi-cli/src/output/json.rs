@@ -340,16 +340,8 @@ pub fn scan(scan: &kipi_core::scan::Scan, dry_run: bool) -> serde_json::Result<S
                 remote: r.remote.as_str(),
             })
             .collect(),
-        refreshed: scan
-            .refreshed
-            .iter()
-            .map(|r| RefreshedJson {
-                entry: &r.entry,
-                store: &r.store,
-                field: r.field,
-                value: &r.value,
-            })
-            .collect(),
+        refreshed: scan.refreshed.iter().map(RefreshedJson::from).collect(),
+        drafted: scan.drafted.iter().map(RefreshedJson::from).collect(),
         warnings: scan
             .warnings
             .iter()
@@ -380,6 +372,7 @@ struct ScanJson<'a> {
     recorded: Vec<RecordedJson<'a>>,
     remotes_filled: Vec<RemoteFilledJson<'a>>,
     refreshed: Vec<RefreshedJson<'a>>,
+    drafted: Vec<RefreshedJson<'a>>,
     warnings: Vec<WarningJson<'a>>,
     not_found: &'a [String],
     files: Vec<&'a Path>,
@@ -417,6 +410,17 @@ struct RefreshedJson<'a> {
     store: &'a str,
     field: &'a str,
     value: &'a str,
+}
+
+impl<'a> From<&'a kipi_core::scan::Refreshed> for RefreshedJson<'a> {
+    fn from(r: &'a kipi_core::scan::Refreshed) -> Self {
+        RefreshedJson {
+            entry: &r.entry,
+            store: &r.store,
+            field: r.field,
+            value: &r.value,
+        }
+    }
 }
 
 #[derive(Serialize)]

@@ -1099,3 +1099,29 @@ The spec wins wherever it is explicit.
   missing `remote`; a different one is refused. `--summary` must equal the entry's summary and
   `--scope` must be the scope the entry resolves to with the new path, else the call is refused:
   it never edits other fields.
+
+## Onboarding polish: drafts for attached entries, no-config hint, `remote_patterns` flags (#57)
+
+- **Drafts for an attached entry.** When `scan` records the *first* checkout of an existing entry
+  (no `machine.toml` line before), or `add repo <existing> --path` does, a `summary` / `aliases`
+  key the entry does not set at all is drafted exactly as for a new entry, with `# kipi:draft`.
+  A present key is never touched, whatever its value (an explicit `aliases = []` counts as
+  present); re-drafting a draft stays `--refresh-drafts`' job. A moved checkout or a later scan
+  drafts nothing: attaching is when the entry is new to this machine. Aliases are drafted only when
+  the summary is absent or still a draft: a reviewed summary means someone looked at the entry and
+  left its aliases out. The example store's `web-dashboard` (no summary) therefore ships with its
+  drafted `aliases = ["dashboard"]`, keeping the examples equal to what scan drafts. Like a new
+  entry, nothing is drafted when another store's `remote_patterns` claim the checkout. `scan`
+  reports them under `drafted` (JSON) / "Drafted:"; `add repo` as `add` changes noted `draft`.
+- **A missing config.** Only when nothing names a store — no `--store`, no `KIPI_STORE`, no
+  `config.toml` — and the default `~/.agents/store` is not a store either, the error is about the
+  config (`no kipi config at <dir>/config.toml, and no store at the default …`), with a hint naming
+  `kipi init`, `KIPI_CONFIG_DIR` and `--store` / `KIPI_STORE`. A store named outright that is not
+  one keeps the `not a kipi store` error. `doctor` checks the same before loading.
+- **`remote_patterns` flags.** `add scope --remote-pattern <prefix>...`, `kipi scope
+  --add-remote-pattern` / `--remove-remote-pattern`. A prefix is normalized as a remote is
+  (scheme, user, port and `.git` dropped, host lowercased, a bare `host/owner` accepted) and always
+  written ending in `/`, so `github.com/acme` cannot match `github.com/acme-labs/…`. A bare host
+  (`git.example.com/`) is accepted for a self-hosted forge; a local path is refused. Removal and
+  the "already there" check compare normalized values, so a hand-written `github.com/o` matches.
+  The key is written after `roots`. `init --scope` has no such flag; add it with `kipi scope`.

@@ -28,7 +28,7 @@ pub struct Args<'a> {
 /// Scan, write (unless `--dry-run`) and report.
 pub fn run(env: &Env, store_flags: &[PathBuf], args: &Args, out: &Output) -> Result<(), Failure> {
     let cfg = config::load_config(env)?;
-    let stores = config::load_stores(&config::store_paths(store_flags, env, &cfg), env)?;
+    let stores = config::mount(store_flags, env, &cfg)?;
     let machine = config::load_machine(env)?;
     if let Some(scope) = args.scope {
         check_target(&stores, args.store, scope)?;
@@ -160,6 +160,18 @@ fn human(scan: &Scan, dry_run: bool, out: &Output) -> String {
                 r.entry,
                 r.remote,
                 p.dim(&r.store)
+            ));
+        }
+    }
+    if !scan.drafted.is_empty() {
+        text.push_str(&p.heading("\nDrafted:\n"));
+        for r in &scan.drafted {
+            text.push_str(&format!(
+                "  {}.{} = {}  {}\n",
+                r.entry,
+                r.field,
+                r.value,
+                p.dim("(draft)")
             ));
         }
     }

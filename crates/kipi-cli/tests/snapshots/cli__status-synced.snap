@@ -3,16 +3,16 @@ source: crates/kipi-cli/tests/cli.rs
 expression: out
 ---
 REPO             SCOPE     STATE   ALWAYS-ON  CHECKOUT
-acme-api         acme      synced  ~397/4000  ~/work/acme/api
+acme-api         acme      synced  ~400/4000  ~/work/acme/api
 api              personal  synced  ~264/4000  ~/code/api
-billing-api      acme      synced  ~397/4000  ~/work/acme/billing-api
+billing-api      acme      synced  ~400/4000  ~/work/acme/billing-api
 blog             personal  synced  ~264/4000  ~/code/blog
 dotfiles         personal  synced  ~264/4000  ~/code/dotfiles
-events-pipeline  acme-ml   synced  ~430/4000  ~/work/acme/ml/events-pipeline
-feature-store    acme-ml   synced  ~415/4000  ~/work/acme/ml/feature-store
-ml-platform      acme-ml   synced  ~415/4000  ~/work/acme/ml/ml-platform
+events-pipeline  acme-ml   synced  ~433/4000  ~/work/acme/ml/events-pipeline
+feature-store    acme-ml   synced  ~418/4000  ~/work/acme/ml/feature-store
+ml-platform      acme-ml   synced  ~418/4000  ~/work/acme/ml/ml-platform
 side-tool        personal  synced  ~272/4000  ~/code/side-tool
-web-dashboard    acme      synced  ~397/4000  ~/work/acme/web-dashboard
+web-dashboard    acme      synced  ~400/4000  ~/work/acme/web-dashboard
 
 3 draft summaries: api, billing-api, feature-store
   hint: review each and remove its `# kipi:draft` marker

@@ -397,13 +397,17 @@ fn completions_stay_silent_without_stores() {
 fn exit_1_on_an_invalid_store() {
     let home = Home::new();
     let (code, err) = failure_of(&home, home.bare().arg("resolve"));
-    assert_eq!(code, 1, "the default store does not exist");
-    assert_eq!(
-        err,
-        "error: [HOME]/.agents/store/bindings.toml: no bindings.toml: not a kipi store\n  \
-         hint: create a store with `kipi init --store <path>`, or point --store / KIPI_STORE at \
-         an existing one\n"
+    assert_eq!(code, 1, "no config, and the default store does not exist");
+    insta::assert_snapshot!("no-config", err);
+    let (code, err) = failure_of(
+        &home,
+        home.bare()
+            .args(["--store"])
+            .arg(home.path().join("nowhere"))
+            .arg("resolve"),
     );
+    assert_eq!(code, 1, "a store named outright is not about the config");
+    assert!(err.contains("no bindings.toml: not a kipi store"), "{err}");
     let (code, err) = failure_of(&home, home.mounting(&[ExampleStore::Acme]).arg("resolve"));
     assert_eq!(
         code, 1,
@@ -1388,6 +1392,121 @@ fn authoring_from_an_empty_home_to_a_synced_repo() {
     assert!(!settings().contains(&lib), "{}", settings());
 }
 
+#[test]
+fn a_work_scope_with_remote_patterns_keeps_misplaced_checkouts_out_of_the_personal_store() {
+    let home = Home::empty();
+    fake_checkout(&home, "code/app");
+    let payroll = FakeRepo {
+        entry: String::new(),
+        dir: "code/payroll".into(),
+        origin_url: Some("git@github.com:acme-org/payroll.git".into()),
+        readme: Some("Pays the people.\n".into()),
+        manifest: ManifestKind::None,
+        description: None,
+    }
+    .create_under(home.path())
+    .unwrap();
+    fs::create_dir_all(home.path().join("work")).unwrap();
+    home.bare()
+        .args(["init", "--scope", "personal", "--root"])
+        .arg(home.path().join("code"))
+        .assert()
+        .success();
+    home.bare()
+        .args(["init", "--name", "work", "--store"])
+        .arg(home.path().join("stores/work"))
+        .assert()
+        .success();
+    // No TOML is edited by hand: the pattern comes from the flag, normalized.
+    let out = stdout_of(
+        &home,
+        home.bare()
+            .args(["add", "scope", "work", "--store", "work", "--root"])
+            .arg(home.path().join("work"))
+            .args(["--remote-pattern", "https://GitHub.com/acme-org"]),
+    );
+    assert!(
+        out.contains("+ remote_patterns: github.com/acme-org/"),
+        "{out}"
+    );
+    let work = fs::read_to_string(home.path().join("stores/work/bindings.toml")).unwrap();
+    assert!(
+        work.contains("roots = [\"~/work\"]\nremote_patterns = [\"github.com/acme-org/\"]\n"),
+        "{work}"
+    );
+
+    let personal = home.path().join(".agents/store/bindings.toml");
+    let out = stdout_of(&home, home.bare().arg("scan"));
+    assert!(
+        out.contains(
+            "~/code/payroll: its remote github.com/acme-org/payroll matches \
+             scopes.work.remote_patterns of store `work`, so nothing was added to store \
+             `personal`"
+        ),
+        "{out}"
+    );
+    assert!(out.contains("+ app"), "{out}");
+    let text = fs::read_to_string(&personal).unwrap();
+    assert!(
+        !text.contains("payroll") && !text.contains("acme-org"),
+        "{text}"
+    );
+
+    // The hint's own command files it under the work scope.
+    home.bare()
+        .arg("scan")
+        .arg(&payroll)
+        .args(["--store", "work", "--scope", "work"])
+        .assert()
+        .success();
+    let work = fs::read_to_string(home.path().join("stores/work/bindings.toml")).unwrap();
+    assert!(work.contains("[repos.payroll]"), "{work}");
+
+    // `kipi scope` adds and removes patterns, compared normalized.
+    let out = stdout_of(
+        &home,
+        home.bare().args([
+            "scope",
+            "work",
+            "--add-remote-pattern",
+            "github.com/acme-org/",
+            "gitlab.com/acme-org",
+        ]),
+    );
+    assert!(
+        out.contains("= remote_patterns: github.com/acme-org/  (already there)"),
+        "{out}"
+    );
+    assert!(
+        out.contains("+ remote_patterns: gitlab.com/acme-org/"),
+        "{out}"
+    );
+    let out = stdout_of(
+        &home,
+        home.bare().args([
+            "scope",
+            "work",
+            "--remove-remote-pattern",
+            "git@gitlab.com:acme-org",
+        ]),
+    );
+    assert!(
+        out.contains("- remote_patterns: gitlab.com/acme-org/"),
+        "{out}"
+    );
+    let (code, err) = failure_of(
+        &home,
+        home.bare()
+            .args(["scope", "work", "--add-remote-pattern", "./not/a/remote"]),
+    );
+    assert_eq!(code, 1);
+    assert!(
+        err.contains("--add-remote-pattern: `./not/a/remote` is not a remote prefix"),
+        "{err}"
+    );
+    assert!(err.contains("hint: "), "{err}");
+}
+
 /// A fake checkout under `home` with a GitHub origin of the same name.
 fn fake_checkout(home: &Home, dir: &str) -> PathBuf {
     let name = Path::new(dir).file_name().unwrap().to_string_lossy();
@@ -1474,6 +1593,10 @@ fn a_scope_and_its_repos_can_be_changed_after_the_fact() {
         "{out}"
     );
     assert!(out.contains("+ machine.toml: ~/code/ghost"), "{out}");
+    assert!(
+        out.contains("+ summary: A small example project  (draft)"),
+        "the bare entry gets a drafted summary: {out}"
+    );
     assert!(!line(tree()).contains("not cloned"), "{}", tree());
     assert!(!line(tree()).is_empty(), "{}", tree());
     home.bare().args(["sync", "--all"]).assert().success();

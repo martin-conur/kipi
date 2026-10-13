@@ -110,6 +110,7 @@ pub fn init(env: &Env, cfg: &Config, machine: &Machine, opts: &InitOptions) -> R
                     &store.name,
                     s,
                     roots,
+                    &[],
                     s.registry.unwrap_or(true),
                 ));
                 let text = doc.to_string();
@@ -140,7 +141,8 @@ pub fn init(env: &Env, cfg: &Config, machine: &Machine, opts: &InitOptions) -> R
         let mut scope_changes = Vec::new();
         if let (Some(s), Some(roots)) = (&scope_opts, &roots) {
             let mut doc: DocumentMut = text.parse().expect("the skeleton is valid TOML");
-            scope_changes = scope::declare(&mut doc, &name, s, roots, s.registry.unwrap_or(true));
+            scope_changes =
+                scope::declare(&mut doc, &name, s, roots, &[], s.registry.unwrap_or(true));
             text = doc.to_string();
         }
         // A store name clash with a mounted store is caught when mounting below.
