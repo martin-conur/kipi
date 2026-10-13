@@ -303,6 +303,10 @@ pub enum Add {
         /// Skills every repo in the scope gets.
         #[arg(long = "skill", value_name = "SKILL", num_args = 1.., add = ArgValueCandidates::new(complete::skills))]
         skills: Vec<String>,
+        /// Remote prefixes (`github.com/<owner>/`) whose repos belong to the scope; scan and
+        /// doctor keep them out of other stores.
+        #[arg(long = "remote-pattern", value_name = "PREFIX", num_args = 1..)]
+        remote_patterns: Vec<String>,
         /// The store to declare it in (by name).
         #[arg(long, value_name = "NAME", add = ArgValueCandidates::new(complete::stores))]
         store: Option<String>,
@@ -345,6 +349,12 @@ pub struct ScopeArgs {
     /// Remove a root.
     #[arg(long = "remove-root", value_name = "PATH", num_args = 1.., value_hint = ValueHint::DirPath)]
     pub remove_roots: Vec<PathBuf>,
+    /// Add a remote prefix (`github.com/<owner>/`) whose repos belong to the scope.
+    #[arg(long = "add-remote-pattern", value_name = "PREFIX", num_args = 1..)]
+    pub add_remote_patterns: Vec<String>,
+    /// Remove a remote prefix.
+    #[arg(long = "remove-remote-pattern", value_name = "PREFIX", num_args = 1..)]
+    pub remove_remote_patterns: Vec<String>,
     /// Set the parent scope, in the same store.
     #[arg(long, value_name = "SCOPE", conflicts_with = "no_extends", add = ArgValueCandidates::new(complete::scopes))]
     pub extends: Option<String>,

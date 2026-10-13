@@ -47,8 +47,7 @@ impl Loaded {
     /// `config::load` → `resolve::resolve` (roadmap §12, data flow).
     pub fn load(env: &Env, store_flags: &[PathBuf], out: &Output) -> Result<Self, Failure> {
         let cfg = config::load_config(env)?;
-        let paths = config::store_paths(store_flags, env, &cfg);
-        let stores = config::load_stores(&paths, env)?;
+        let stores = config::mount(store_flags, env, &cfg)?;
         for store in stores.stores() {
             out.info(&format!(
                 "mounted store `{}` at {}",
@@ -286,6 +285,7 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
             registry,
             no_registry,
             skills,
+            remote_patterns,
             store,
             dry_run,
         }) => authoring::add_scope(
@@ -297,6 +297,7 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
                 extends: extends.as_deref(),
                 registry: flag(*registry, *no_registry),
                 skills,
+                remote_patterns,
                 store: store.as_deref(),
             },
             dry_run.dry_run,
@@ -333,6 +334,8 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
                 remove_skills: &s.remove_skills,
                 always: &s.always,
                 remove_always: &s.remove_always,
+                add_remote_patterns: &s.add_remote_patterns,
+                remove_remote_patterns: &s.remove_remote_patterns,
             },
             s.dry_run.dry_run,
             out,

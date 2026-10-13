@@ -30,7 +30,7 @@ pub struct Row {
 /// List every mounted store.
 pub fn run(env: &Env, store_flags: &[PathBuf], out: &Output) -> Result<(), Failure> {
     let cfg = config::load_config(env)?;
-    let stores = config::load_stores(&config::store_paths(store_flags, env, &cfg), env)?;
+    let stores = config::mount(store_flags, env, &cfg)?;
     let rows: Vec<Row> = stores
         .stores()
         .iter()

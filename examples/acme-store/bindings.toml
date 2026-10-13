@@ -54,3 +54,4 @@ aliases = ["feature", "store"]  # kipi:draft
 
 [repos.web-dashboard]              # no summary yet: listed by name only, doctor reports it
 remote = "github.com/acme-org/web-dashboard"
+aliases = ["dashboard"]  # kipi:draft

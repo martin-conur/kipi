@@ -14,7 +14,7 @@ use crate::config::{self, Env};
 use crate::error::{Error, Result};
 use crate::model::{Machine, RemoteUrl, RepoEntry, Store, StoreSet, check_name};
 use crate::scan::write::{add_repo as add_entry, set_machine_repo, set_repo_key};
-use crate::scan::{Placement, place};
+use crate::scan::{Placement, draft_missing, foreign_pattern, place, taken_keys};
 
 /// The arguments of `add repo`.
 #[derive(Debug, Clone, Copy, Default)]
@@ -141,8 +141,9 @@ pub fn add_repo(
 }
 
 /// `add repo <existing> --path <dir>`: record the checkout of an entry that has none on
-/// this machine, filling its `remote` when it lacks one. Every other flag must agree with
-/// the entry as it is; a conflict is refused.
+/// this machine, filling its `remote` when it lacks one and drafting the `summary` /
+/// `aliases` it does not set (as `scan` does). Every other flag must agree with the entry
+/// as it is; a conflict is refused.
 fn fill_path(
     stores: &StoreSet,
     machine: &Machine,
@@ -222,6 +223,21 @@ fn fill_path(
             changes.push(Change::new(Op::Add, "remote", found.as_str()));
         }
         _ => {}
+    }
+    // Like `scan`: never copy a README summary into the entry when another store's
+    // `remote_patterns` claim the checkout.
+    let foreign = remote
+        .as_ref()
+        .is_some_and(|r| foreign_pattern(stores, store, r).is_some());
+    if !foreign {
+        let remote = entry.remote.as_ref().or(remote.as_ref());
+        let drafts = draft_missing(&mut doc, entry, remote, &path, &taken_keys(stores, name));
+        if let Some(summary) = drafts.summary {
+            changes.push(Change::new(Op::Add, "summary", summary).note("draft"));
+        }
+        if !drafts.aliases.is_empty() {
+            changes.push(Change::new(Op::Add, "aliases", drafts.aliases.join(", ")).note("draft"));
+        }
     }
     let text = doc.to_string();
     let (machine_text, edited) = record(machine, env, name, &path)?;

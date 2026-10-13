@@ -34,7 +34,7 @@ A scope says which directories hold its repos. Declare each one with `add scope`
 store's `bindings.toml` in place, keeping its comments, and checks the result before writing:
 
 ```bash
-kipi add scope acme --store acme --root ~/work/acme
+kipi add scope acme --store acme --root ~/work/acme --remote-pattern github.com/acme-org/
 kipi add scope acme-ml --extends acme --root ~/work/acme/ml   # goes in acme's store
 kipi add scope personal --store personal --root ~/code
 ```
@@ -42,11 +42,14 @@ kipi add scope personal --store personal --root ~/code
 Each scope gets a registry (the "Known repos" list in every repo's block) unless you pass
 `--no-registry`, or it extends a scope that already has one: `acme-ml`'s repos are listed in
 `acme`'s registry. `--extends` names a scope of the same store (nothing crosses stores); with it,
-`--store` can be left out. `--skill <name>...` binds skills to the scope as it is created. With a
+`--store` can be left out. `--skill <name>...` binds skills to the scope as it is created.
+`--remote-pattern <prefix>...` marks repos whose remote starts with the prefix (`host/owner/`; a
+URL such as `https://github.com/acme-org` is normalized to `github.com/acme-org/`) as the scope's:
+`scan` keeps them out of every other store and `doctor` reports any that landed elsewhere. With a
 single store, `kipi init --scope personal --root ~/code` creates the store and its first scope in
 one step.
 
-The result, which you can also write by hand (`remote_patterns` has no flag yet):
+The result, which you can also write by hand (`always` comes from `kipi scope --always`):
 
 ```toml
 # ~/work/.kipi-acme/bindings.toml
@@ -76,6 +79,7 @@ the table itself with `kipi edit scope:<name>`):
 ```bash
 kipi scope personal --no-registry            # or --registry
 kipi scope acme --add-root ~/src/acme --remove-root ~/work/acme
+kipi scope acme --add-remote-pattern gitlab.com/acme-org/ --remove-remote-pattern github.com/old-org/
 kipi scope acme --always conventions/acme.md --remove-always conventions/old.md
 kipi scope acme --skill code-review --remove-skill old-skill
 kipi scope acme-ml --no-extends              # or --extends <scope>
@@ -92,7 +96,10 @@ kipi scan
 `~/.config/kipi/machine.toml` (this machine only, never in a store), and adds a
 `[repos.<name>]` entry to the store that owns its scope, with the normalized `remote`, a drafted
 `summary` (from `Cargo.toml` / `pyproject.toml` / `package.json` or the README) and drafted
-`aliases`. Drafted values carry a `# kipi:draft` marker.
+`aliases`. Drafted values carry a `# kipi:draft` marker. An entry added by hand before its
+checkout existed (`kipi add repo <name> --scope <s>`) gets the same drafts when `scan` (or `kipi
+add repo <name> --path <dir>`) first records its checkout, for whichever of `summary` / `aliases`
+it does not set; a value already there, drafted or reviewed, is never touched.
 
 A checkout under a personal root whose remote matches another store's `remote_patterns` (an
 `acme-org` repo cloned into `~/code`) is never added to the personal store: `scan` reports it

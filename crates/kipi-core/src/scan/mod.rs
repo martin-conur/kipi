@@ -5,8 +5,9 @@
 //! git checkouts, identifies each against the mounted stores' entries, and computes the
 //! edits: `machine.toml [repos]` lines, new `[repos.<name>]` entries (with `remote` and
 //! drafted `summary` / `aliases`) in the store owning the inferred scope, `remote` filled
-//! on entries lacking one, and with `--refresh-drafts` re-drafted values still marked
-//! `# kipi:draft`. It returns the edits as [`FileWrite`]s (comment-preserving, nothing
+//! on entries lacking one, drafted `summary` / `aliases` on an existing entry that gets its
+//! first checkout here and sets neither, and with `--refresh-drafts` re-drafted values
+//! still marked `# kipi:draft`. It returns the edits as [`FileWrite`]s (comment-preserving, nothing
 //! written yet) and a report; [`write_files`] applies them. Nothing is ever removed and
 //! reviewed values are never touched. Ambiguity is reported, never guessed.
 
@@ -66,6 +67,9 @@ pub struct Scan {
     pub remotes_filled: Vec<RemoteFilled>,
     /// Drafted values rewritten by `--refresh-drafts`.
     pub refreshed: Vec<Refreshed>,
+    /// `summary` / `aliases` drafted on an existing entry whose first checkout this scan
+    /// recorded and which set neither (never over a present value).
+    pub drafted: Vec<Refreshed>,
     /// Things a human should look at; nothing was written for them.
     pub warnings: Vec<Warning>,
     /// Entries of the mounted stores with no checkout on this machine, by name.
@@ -117,7 +121,7 @@ pub struct RemoteFilled {
     pub remote: RemoteUrl,
 }
 
-/// A drafted value that `--refresh-drafts` rewrote.
+/// A drafted value that `--refresh-drafts` rewrote, or that was drafted where it was missing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Refreshed {
     /// Entry name.
@@ -612,7 +616,7 @@ fn pattern_scope<'a>(stores: &'a StoreSet, remote: &RemoteUrl) -> Option<(&'a St
 /// entry matching `remote`: a checkout with that remote must not be written into
 /// `store`. A tie that includes another store's scope counts too (when in doubt, keep
 /// it out). `None` when no pattern matches or every best match is `store`'s own.
-fn foreign_pattern<'a>(
+pub(crate) fn foreign_pattern<'a>(
     stores: &'a StoreSet,
     store: &Store,
     remote: &RemoteUrl,
@@ -671,6 +675,90 @@ fn within(store: &Store, scope: &str, ancestor: &str) -> bool {
     false
 }
 
+/// Alias keys (name plus aliases) of every mounted entry, by entry name.
+fn alias_keys(stores: &StoreSet) -> BTreeMap<String, BTreeSet<String>> {
+    stores
+        .repos()
+        .map(|(_, r)| {
+            let mut k: BTreeSet<String> = r.aliases.value.iter().map(|a| alias_key(a)).collect();
+            k.insert(alias_key(&r.name));
+            (r.name.clone(), k)
+        })
+        .collect()
+}
+
+/// Alias keys of every mounted entry but `except`: what its drafted aliases must avoid.
+pub(crate) fn taken_keys(stores: &StoreSet, except: &str) -> BTreeSet<String> {
+    alias_keys(stores)
+        .into_iter()
+        .filter(|(name, _)| name != except)
+        .flat_map(|(_, k)| k)
+        .collect()
+}
+
+/// What [`draft_missing`] drafted.
+#[derive(Debug, Default)]
+pub(crate) struct Drafts {
+    /// The summary, when `summary` was unset and the checkout describes itself.
+    pub summary: Option<String>,
+    /// The aliases, when `aliases` was unset and the name yields any.
+    pub aliases: Vec<String>,
+}
+
+impl Drafts {
+    /// Each drafted field with its value as written in TOML.
+    pub fn fields(&self) -> Vec<(&'static str, String)> {
+        let mut out = Vec::new();
+        if let Some(s) = &self.summary {
+            out.push((
+                "summary",
+                Value::from(s.as_str()).to_string().trim().to_owned(),
+            ));
+        }
+        if !self.aliases.is_empty() {
+            let value = write::string_array(&self.aliases);
+            out.push(("aliases", value.to_string().trim().to_owned()));
+        }
+        out
+    }
+}
+
+/// Draft into `[repos.<name>]` of `doc` the `summary` and `aliases` it does not set at
+/// all, from the checkout at `path`, marked `# kipi:draft` exactly as for a new entry.
+/// A present value, drafted or reviewed, is never touched (`--refresh-drafts` handles
+/// drafts), and an entry with a reviewed summary gets no aliases: someone reviewed it and
+/// left them out. `taken` holds the alias keys of the other entries.
+pub(crate) fn draft_missing(
+    doc: &mut DocumentMut,
+    repo: &RepoEntry,
+    remote: Option<&RemoteUrl>,
+    path: &Path,
+    taken: &BTreeSet<String>,
+) -> Drafts {
+    let name = repo.name.as_str();
+    let reviewed = repo.summary.as_ref().is_some_and(|s| !s.is_draft);
+    let mut out = Drafts::default();
+    if !write::has_repo_key(doc, name, "summary")
+        && let Some(summary) = draft_summary(path)
+    {
+        write::set_repo_item(doc, name, "summary", write::drafted(summary.as_str()));
+        out.summary = Some(summary);
+    }
+    if !write::has_repo_key(doc, name, "aliases") && !reviewed {
+        let aliases = draft_aliases(alias_base(name, remote), taken);
+        if !aliases.is_empty() {
+            write::set_repo_item(
+                doc,
+                name,
+                "aliases",
+                write::drafted(write::string_array(&aliases)),
+            );
+            out.aliases = aliases;
+        }
+    }
+    out
+}
+
 struct Ctx<'a> {
     stores: &'a StoreSet,
     machine: &'a Machine,
@@ -686,19 +774,13 @@ struct Ctx<'a> {
 
 impl<'a> Ctx<'a> {
     fn new(stores: &'a StoreSet, machine: &'a Machine) -> Self {
-        let mut keys = BTreeMap::new();
-        for (_, r) in stores.repos() {
-            let mut k: BTreeSet<String> = r.aliases.value.iter().map(|a| alias_key(a)).collect();
-            k.insert(alias_key(&r.name));
-            keys.insert(r.name.clone(), k);
-        }
         Ctx {
             stores,
             machine,
             bindings: BTreeMap::new(),
             machine_doc: None,
             names: stores.repos().map(|(_, r)| r.name.clone()).collect(),
-            keys,
+            keys: alias_keys(stores),
             out: Scan::default(),
         }
     }
@@ -740,6 +822,7 @@ impl<'a> Ctx<'a> {
     fn known(&mut self, name: &str, checkouts: &[&Found], opts: &ScanOptions) {
         let (store, repo) = self.stores.repo(name).expect("identified entries exist");
         let recorded = self.machine.repo_path(name);
+        let attached = matches!((checkouts, recorded), ([_], None));
         let chosen: Option<&Found> = match (checkouts, recorded) {
             ([f], Some(p)) if f.path == p => Some(f),
             ([f], Some(p)) if !p.is_dir() => {
@@ -797,6 +880,9 @@ impl<'a> Ctx<'a> {
         if opts.refresh_drafts && !foreign {
             self.refresh(store, repo, &f.path);
         }
+        if attached && !foreign {
+            self.draft_missing(store, repo, f);
+        }
 
         let scope = repo.scope.clone().or_else(|| {
             match place(std::iter::once(store), self.machine, &f.path) {
@@ -805,6 +891,26 @@ impl<'a> Ctx<'a> {
             }
         });
         self.check_patterns(f, name, store, scope.as_deref());
+    }
+
+    /// Draft the `summary` / `aliases` that `repo` does not set, from its checkout `f`.
+    fn draft_missing(&mut self, store: &Store, repo: &RepoEntry, f: &Found) {
+        let taken = self.taken(&repo.name);
+        let remote = repo.remote.as_ref().or(f.remote.as_ref());
+        let drafts = draft_missing(self.bindings(store), repo, remote, &f.path, &taken);
+        if !drafts.aliases.is_empty() {
+            let mut keys: BTreeSet<String> = drafts.aliases.iter().map(|a| alias_key(a)).collect();
+            keys.insert(alias_key(&repo.name));
+            self.keys.insert(repo.name.clone(), keys);
+        }
+        for (field, value) in drafts.fields() {
+            self.out.drafted.push(Refreshed {
+                entry: repo.name.clone(),
+                store: store.name.clone(),
+                field,
+                value,
+            });
+        }
     }
 
     /// Re-draft `repo`'s values still marked draft from its checkout at `path`.

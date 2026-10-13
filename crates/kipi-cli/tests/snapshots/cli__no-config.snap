@@ -1,0 +1,6 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: err
+---
+error: no kipi config at [HOME]/.config/kipi/config.toml, and no store at the default [HOME]/.agents/store
+  hint: create a store and its config with `kipi init --store <path>`; if the config lives elsewhere, set KIPI_CONFIG_DIR to its directory; or point --store / KIPI_STORE at an existing store

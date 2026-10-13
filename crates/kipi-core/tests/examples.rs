@@ -71,6 +71,7 @@ fn acme_store_loads_with_drafts_detected() {
             ("billing-api".to_owned(), "summary"),
             ("feature-store".to_owned(), "summary"),
             ("feature-store".to_owned(), "aliases"),
+            ("web-dashboard".to_owned(), "aliases"),
         ]
     );
 

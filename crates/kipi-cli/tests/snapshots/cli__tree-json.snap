@@ -145,7 +145,7 @@ expression: "serde_json::to_string_pretty(&doc).unwrap()"
           ],
           "machine_roots": null,
           "extends": null,
-          "always_on_tokens": 343,
+          "always_on_tokens": 346,
           "skills": [
             "code-review",
             "pr-conventions",
@@ -153,7 +153,7 @@ expression: "serde_json::to_string_pretty(&doc).unwrap()"
           ],
           "registry": {
             "repos": 6,
-            "tokens": 205
+            "tokens": 208
           },
           "scopes": [
             {
@@ -163,7 +163,7 @@ expression: "serde_json::to_string_pretty(&doc).unwrap()"
               ],
               "machine_roots": null,
               "extends": "acme",
-              "always_on_tokens": 359,
+              "always_on_tokens": 362,
               "skills": [
                 "dbt-conventions"
               ],
@@ -175,7 +175,7 @@ expression: "serde_json::to_string_pretty(&doc).unwrap()"
                   "path": "[HOME]/work/acme/ml/events-pipeline",
                   "state": "synced",
                   "always_on": {
-                    "tokens": 430,
+                    "tokens": 433,
                     "budget": 4000,
                     "over": false
                   },
@@ -219,7 +219,7 @@ expression: "serde_json::to_string_pretty(&doc).unwrap()"
                   "path": "[HOME]/work/acme/ml/feature-store",
                   "state": "synced",
                   "always_on": {
-                    "tokens": 415,
+                    "tokens": 418,
                     "budget": 4000,
                     "over": false
                   },
@@ -250,7 +250,7 @@ expression: "serde_json::to_string_pretty(&doc).unwrap()"
                   "path": "[HOME]/work/acme/ml/ml-platform",
                   "state": "synced",
                   "always_on": {
-                    "tokens": 415,
+                    "tokens": 418,
                     "budget": 4000,
                     "over": false
                   },
@@ -285,7 +285,7 @@ expression: "serde_json::to_string_pretty(&doc).unwrap()"
               "path": "[HOME]/work/acme/api",
               "state": "synced",
               "always_on": {
-                "tokens": 397,
+                "tokens": 400,
                 "budget": 4000,
                 "over": false
               },
@@ -312,7 +312,7 @@ expression: "serde_json::to_string_pretty(&doc).unwrap()"
               "path": "[HOME]/work/acme/billing-api",
               "state": "synced",
               "always_on": {
-                "tokens": 397,
+                "tokens": 400,
                 "budget": 4000,
                 "over": false
               },
@@ -339,7 +339,7 @@ expression: "serde_json::to_string_pretty(&doc).unwrap()"
               "path": "[HOME]/work/acme/web-dashboard",
               "state": "synced",
               "always_on": {
-                "tokens": 397,
+                "tokens": 400,
                 "budget": 4000,
                 "over": false
               },

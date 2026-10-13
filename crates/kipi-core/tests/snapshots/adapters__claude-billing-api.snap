@@ -26,7 +26,7 @@ exclude: .claude/skills/ .claude/settings.local.json /CLAUDE.md .agents/ /AGENTS
 - events-pipeline (events, pipeline) — Kafka consumers that turn raw events into billing and ML features · /Volumes/work/acme/ml/events-pipeline · notes: ~/acme-store/repos/events-pipeline/notes.md
 - feature-store (feature, store) — Online and offline feature serving; dbt models in models/ · (not cloned here)
 - ml-platform (ml) — Shared training and feature tooling · /Volumes/work/acme/ml/ml-platform
-- web-dashboard · /Volumes/work/acme/web-dashboard
+- web-dashboard (dashboard) · /Volumes/work/acme/web-dashboard
 
 ## This repo
 Scope: acme.

@@ -2,10 +2,41 @@
 
 use std::path::PathBuf;
 
+use super::BINDINGS_FILE;
 use super::bindings::load_store;
-use super::paths::Env;
-use crate::error::Result;
-use crate::model::StoreSet;
+use super::paths::{DEFAULT_STORE, ENV_CONFIG_DIR, ENV_STORE, Env, store_paths};
+use crate::error::{Error, Result};
+use crate::model::{Config, StoreSet};
+
+/// The stores to mount ([`store_paths`]), loaded ([`load_stores`]); see [`check_config`].
+pub fn mount(flags: &[PathBuf], env: &Env, config: &Config) -> Result<StoreSet> {
+    check_config(flags, env, config)?;
+    load_stores(&store_paths(flags, env, config), env)
+}
+
+/// With no `--store`, no `KIPI_STORE` and no `config.toml`, the default store is the only
+/// one [`store_paths`] can return; when it is not a store either, the missing config is the
+/// real problem (a first run, or a shell without `KIPI_CONFIG_DIR`), so say that rather
+/// than "not a kipi store".
+pub fn check_config(flags: &[PathBuf], env: &Env, config: &Config) -> Result<()> {
+    let defaulted = flags.is_empty() && env.stores.is_empty() && config.source.is_none();
+    let default = env.home.join(DEFAULT_STORE);
+    if defaulted && !default.join(BINDINGS_FILE).is_file() {
+        return Err(Error::usage(
+            format!(
+                "no kipi config at {}, and no store at the default {}",
+                env.config_file().display(),
+                default.display()
+            ),
+            format!(
+                "create a store and its config with `kipi init --store <path>`; if the config \
+                 lives elsewhere, set {ENV_CONFIG_DIR} to its directory; or point --store / \
+                 {ENV_STORE} at an existing store"
+            ),
+        ));
+    }
+    Ok(())
+}
 
 /// Load each store in `paths` independently, then validate them as a set: names
 /// unique across stores, no reference crossing into another store except a qualified

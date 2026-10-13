@@ -35,6 +35,7 @@ pub struct Args<'a> {
 pub fn run(env: &Env, store_flags: &[PathBuf], args: &Args, out: &Output) -> Result<(), Failure> {
     let cfg = config::load_config(env)?;
     let paths = config::store_paths(store_flags, env, &cfg);
+    config::check_config(store_flags, env, &cfg)?;
     let caches = super::caches(env, &cfg);
     let first = Run::load(env, &paths, args.repo, &caches, Some(out))?;
     let mut lines = Vec::new();

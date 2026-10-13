@@ -71,13 +71,26 @@ pub fn add_repo(doc: &mut DocumentMut, name: &str, items: Vec<(&str, Item)>) {
 
 /// Set `key` in the existing `[repos.<name>]` (appended when absent).
 pub fn set_repo_key(doc: &mut DocumentMut, name: &str, key: &str, value: Value) {
+    set_repo_item(doc, name, key, Item::Value(value));
+}
+
+/// [`set_repo_key`] with an [`Item`], such as a [`drafted`] value.
+pub fn set_repo_item(doc: &mut DocumentMut, name: &str, key: &str, item: Item) {
     if let Some(repo) = doc
         .get_mut("repos")
         .and_then(|r| r.get_mut(name))
         .and_then(Item::as_table_like_mut)
     {
-        repo.insert(key, Item::Value(value));
+        repo.insert(key, item);
     }
+}
+
+/// Whether `[repos.<name>]` sets `key` at all (to any value, even an empty one).
+pub fn has_repo_key(doc: &DocumentMut, name: &str, key: &str) -> bool {
+    doc.get("repos")
+        .and_then(|r| r.get(name))
+        .and_then(Item::as_table_like)
+        .is_some_and(|t| t.contains_key(key))
 }
 
 /// Replace the drafted value at `[repos.<name>] key`, keeping its decor (and with it
