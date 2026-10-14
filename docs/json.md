@@ -207,7 +207,11 @@ entry; the command then exits 1, or 2 when `push` was refused on doctor errors.
 | `version` | number | Schema version, currently `1` |
 | `dry_run` | bool | `true` when nothing was changed (`pull --dry-run` does not fetch either) |
 | `stores` | [StoreResult] | One per selected store (`--store`, else every mounted store) |
-| `sync` | Sync \| null | `pull` only: the `sync --all` that followed (the [Sync](#sync) document); `null` with `--no-sync` or `--dry-run` |
+| `sync` | Sync \| SyncError \| null | `pull` only: the `sync --all` that followed (the [Sync](#sync) document); `null` with `--no-sync` or `--dry-run` |
+
+**SyncError**: `error` and `hint` (strings), when the `sync --all` after the pull failed, most
+often because a pulled store no longer validates. The document still lists every store; the error
+is also printed on stderr, and the command exits non-zero.
 
 **StoreResult**: `name`, `path`, `result`, `commits` (number pulled or pushed, or that would be),
 `commit_message` (string \| null: the message of the commit `push` made or would make), `reason`

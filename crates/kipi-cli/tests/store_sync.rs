@@ -598,3 +598,87 @@ fn stores_shows_each_store_s_git_state() {
     );
     assert_eq!(git_of("plain"), serde_json::Value::Null);
 }
+
+#[test]
+fn push_is_refused_when_machine_state_lies_inside_the_store() {
+    let remotes = tempfile::tempdir().unwrap();
+    let remote = bare_remote(remotes.path(), "store.git");
+    let a = first_machine(&remote);
+    let store = a.store();
+    // The cache dir, which is machine-only, points into the store.
+    let cache = store.join(".cache");
+    fs::create_dir_all(&cache).unwrap();
+    fs::write(cache.join("state"), "machine-only\n").unwrap();
+    fs::write(
+        store.join("conventions/personal.md"),
+        "Clone into ~/code.\n",
+    )
+    .unwrap();
+
+    let out = a
+        .kipi()
+        .env("KIPI_CACHE_DIR", &cache)
+        .args(["push"])
+        .assert()
+        .failure()
+        .code(1)
+        .get_output()
+        .clone();
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(
+        stdout.contains("store/.cache is machine-only state and lies inside the store"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("nothing was committed"), "{stdout}");
+    let hint = stderr.lines().find(|l| l.contains("hint:")).unwrap();
+    assert!(hint.contains("store/.cache out of the store"), "{hint}");
+    assert!(hint.contains("KIPI_CACHE_DIR"), "{hint}");
+    assert_eq!(commit_count(&store), 1, "nothing was committed");
+    assert_eq!(
+        git(&store, &["rev-parse", "@{u}"]),
+        git(&store, &["rev-parse", "HEAD"])
+    );
+}
+
+#[test]
+fn pull_json_keeps_every_store_row_when_the_sync_after_it_fails() {
+    let remotes = tempfile::tempdir().unwrap();
+    let remote = bare_remote(remotes.path(), "store.git");
+    let a = first_machine(&remote);
+    let b = Machine::new();
+    let b_store = b.store();
+    b.ok(&[
+        "init",
+        "--store",
+        b_store.to_str().unwrap(),
+        "--clone",
+        remote.to_str().unwrap(),
+    ]);
+
+    // A pushes, by hand, a bindings.toml that no longer validates.
+    let a_store = a.store();
+    let mut bindings = fs::read_to_string(a_store.join("bindings.toml")).unwrap();
+    bindings.push_str("\n[repos.app]\nnot_a_key = true\n");
+    fs::write(a_store.join("bindings.toml"), bindings).unwrap();
+    git(&a_store, &["commit", "--quiet", "-am", "break the store"]);
+    git(&a_store, &["push", "--quiet"]);
+
+    let out = b
+        .kipi()
+        .args(["pull", "--json"])
+        .assert()
+        .failure()
+        .code(1)
+        .get_output()
+        .clone();
+    let doc: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(doc["stores"].as_array().unwrap().len(), 1);
+    assert_eq!(doc["stores"][0]["result"], "fast_forwarded");
+    assert_eq!(doc["stores"][0]["commits"], 1);
+    let error = doc["sync"]["error"].as_str().unwrap();
+    assert!(error.contains("bindings.toml"), "{error}");
+    assert!(!doc["sync"]["hint"].as_str().unwrap().is_empty());
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(stderr.contains(error), "{stderr}");
+}

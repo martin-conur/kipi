@@ -9,7 +9,7 @@ use kipi_core::config::{self, Env};
 use kipi_core::doctor::{self, Checkouts, Finding};
 use kipi_core::error::closest;
 use kipi_core::git;
-use kipi_core::model::Store;
+use kipi_core::model::{Config, Store};
 use kipi_core::store_git::{self, Pulled, Pushed, Refusal};
 
 use super::{Loaded, sync};
@@ -70,12 +70,12 @@ impl Row {
 /// be pullable), and the ones `names` selects (all when empty).
 fn selected(
     env: &Env,
+    cfg: &Config,
     store_flags: &[PathBuf],
     names: &[String],
 ) -> Result<(Vec<Store>, Vec<usize>), Failure> {
-    let cfg = config::load_config(env)?;
-    config::check_config(store_flags, env, &cfg)?;
-    let stores = config::store_paths(store_flags, env, &cfg)
+    config::check_config(store_flags, env, cfg)?;
+    let stores = config::store_paths(store_flags, env, cfg)
         .iter()
         .map(|p| config::load_store(p, env))
         .collect::<Result<Vec<Store>, _>>()?;
@@ -109,7 +109,8 @@ pub fn pull(
     dry_run: bool,
     out: &Output,
 ) -> Result<(), Failure> {
-    let (stores, picked) = selected(env, store_flags, names)?;
+    let cfg = config::load_config(env)?;
+    let (stores, picked) = selected(env, &cfg, store_flags, names)?;
     let rows: Vec<Row> = picked
         .iter()
         .map(|&i| pull_one(&stores[i], dry_run, out))
@@ -123,24 +124,39 @@ pub fn pull(
         None
     } else {
         // Re-validate every mounted store as a set, as any command would, then sync.
-        let loaded = Loaded::load(env, store_flags, out)?;
-        let args = sync::Args {
-            repos: &[],
-            all: true,
-            agents: &[],
-            force: false,
-            allow_tracked: false,
-            dry_run: false,
-            hook: false,
-        };
-        sync::execute(env, &loaded, &args, out)?
+        Some(Loaded::load(env, store_flags, out).and_then(|loaded| {
+            let args = sync::Args {
+                repos: &[],
+                all: true,
+                agents: &[],
+                force: false,
+                allow_tracked: false,
+                dry_run: false,
+                hook: false,
+            };
+            sync::execute(env, &loaded, &args, out)
+        }))
     };
     if out.json {
-        let text = json::pull(&rows, synced.as_ref(), dry_run)
-            .map_err(|e| Failure::json("the pull", e))?;
+        // One document whatever happened: a failed sync still carries every store's row.
+        let parts = match &synced {
+            Some(Err(e)) => Some(e.parts()),
+            _ => None,
+        };
+        let sync = match (&synced, &parts) {
+            (Some(Ok(Some(outcome))), _) => Some(Ok(outcome)),
+            (Some(Err(_)), Some((error, hint))) => Some(Err((error.as_str(), hint.as_str()))),
+            _ => None,
+        };
+        let text = json::pull(&rows, sync, dry_run).map_err(|e| Failure::json("the pull", e))?;
         out.print(&text)?;
-    } else if let Some(outcome) = &synced {
-        out.print(&format!("\n{}", sync::human(outcome, false, out)))?;
+    }
+    match synced {
+        Some(Err(e)) => return Err(e),
+        Some(Ok(Some(outcome))) if !out.json => {
+            out.print(&format!("\n{}", sync::human(&outcome, false, out)))?;
+        }
+        _ => {}
     }
     finish(&rows, "pull")
 }
@@ -185,7 +201,7 @@ fn pull_one(store: &Store, dry_run: bool, out: &Output) -> Row {
     match store_git::pull(root) {
         Ok(Pulled::NotGit) => not_git(),
         Ok(Pulled::NoUpstream) => no_upstream(),
-        Ok(Pulled::UpToDate { .. }) => Row::new(store, "up_to_date"),
+        Ok(Pulled::UpToDate) => Row::new(store, "up_to_date"),
         Ok(Pulled::FastForwarded { commits }) => Row {
             commits,
             ..Row::new(store, "fast_forwarded")
@@ -221,8 +237,8 @@ pub fn push(
     dry_run: bool,
     out: &Output,
 ) -> Result<(), Failure> {
-    let (stores, picked) = selected(env, store_flags, names)?;
     let cfg = config::load_config(env)?;
+    let (stores, picked) = selected(env, &cfg, store_flags, names)?;
     let machine = config::load_machine(env)?;
     let caches = super::caches(env, &cfg);
     let diagnosis = doctor::diagnose(
@@ -293,15 +309,19 @@ fn refused(store: &Store, refusal: Refusal, explicit: bool, out: &Output) -> Row
                 .because("its branch has no upstream; nothing was committed", hint);
             if explicit { row.failing() } else { row }
         }
-        Refusal::MachineState(path) => Row::new(store, "refused")
-            .because(
-                format!(
-                    "{} is machine-only state and lies inside the store; nothing was committed",
-                    out.path(&path)
-                ),
-                "move the store or KIPI_CONFIG_DIR / KIPI_CACHE_DIR so neither holds the other",
-            )
-            .failing(),
+        Refusal::MachineState(path) => {
+            let path = out.path(&path);
+            Row::new(store, "refused")
+                .because(
+                    format!(
+                        "{path} is machine-only state and lies inside the store; nothing was committed"
+                    ),
+                    format!(
+                        "move {path} out of the store: point KIPI_CONFIG_DIR / KIPI_CACHE_DIR elsewhere, or move the store"
+                    ),
+                )
+                .failing()
+        }
         Refusal::Findings(findings) => Row {
             findings,
             ..Row::new(store, "refused")

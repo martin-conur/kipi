@@ -28,7 +28,8 @@ the stable interface; human-readable output may change in any release.
     with a message listing the changed repos, skills and scopes, and pushes. Refused, with
     nothing committed, on an error-level doctor finding in the store, on machine-only state
     inside it, or (for a store named with `--store`) when it has no upstream.
-  - `--json` for `pull` and `push` (`docs/json.md`, "Pull and push").
+  - `--json` for `pull` and `push` (`docs/json.md`, "Pull and push"). When the sync after a pull
+    fails, `pull --json` still prints every store's row, with the sync's `error` and `hint`.
 
 ### Changed
 

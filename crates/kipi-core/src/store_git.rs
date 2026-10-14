@@ -20,11 +20,8 @@ pub enum Pulled {
     NotGit,
     /// Its branch has no upstream; skipped.
     NoUpstream,
-    /// Nothing new upstream (`ahead` commits of its own are still unpushed).
-    UpToDate {
-        /// Local commits the upstream lacks.
-        ahead: u32,
-    },
+    /// Nothing new upstream (commits of its own may still be unpushed).
+    UpToDate,
     /// Fast-forwarded by this many commits.
     FastForwarded {
         /// Commits pulled.
@@ -49,7 +46,7 @@ pub fn pull(root: &Path) -> Result<Pulled> {
         .and_then(|s| s.upstream)
         .unwrap_or_default();
     match tracking {
-        Tracking { behind: 0, ahead } => Ok(Pulled::UpToDate { ahead }),
+        Tracking { behind: 0, .. } => Ok(Pulled::UpToDate),
         Tracking { ahead: 0, behind } => {
             git::fast_forward(root)?;
             Ok(Pulled::FastForwarded { commits: behind })

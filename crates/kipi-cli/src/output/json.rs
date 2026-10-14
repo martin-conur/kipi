@@ -892,17 +892,21 @@ struct StoreGitJson {
 }
 
 /// `kipi pull` as pretty-printed JSON (`docs/json.md`, "Pull and push"): one entry per
-/// store, then the `sync --all` that followed (`null` with `--no-sync` or `--dry-run`).
+/// store, then the `sync --all` that followed (`null` with `--no-sync` or `--dry-run`),
+/// or the error and hint it failed with.
 pub fn pull(
     rows: &[StoreRow],
-    synced: Option<&Outcome>,
+    synced: Option<Result<&Outcome, (&str, &str)>>,
     dry_run: bool,
 ) -> serde_json::Result<String> {
     let doc = PullJson {
         version: JSON_VERSION,
         dry_run,
         stores: rows.iter().map(|r| store_row(None, r)).collect(),
-        sync: synced.map(|o| sync_doc(o, false)),
+        sync: synced.map(|r| match r {
+            Ok(o) => PullSyncJson::Synced(sync_doc(o, false)),
+            Err((error, hint)) => PullSyncJson::Failed { error, hint },
+        }),
     };
     let mut out = serde_json::to_string_pretty(&doc)?;
     out.push('\n');
@@ -939,7 +943,14 @@ struct PullJson<'a> {
     version: u32,
     dry_run: bool,
     stores: Vec<StoreRowJson<'a>>,
-    sync: Option<SyncJson<'a>>,
+    sync: Option<PullSyncJson<'a>>,
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum PullSyncJson<'a> {
+    Synced(SyncJson<'a>),
+    Failed { error: &'a str, hint: &'a str },
 }
 
 #[derive(Serialize)]
