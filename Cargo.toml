@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/kipi-core", "crates/kipi-cli", "crates/kipi-test-support"]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.92"
 license = "Apache-2.0"
@@ -14,8 +14,8 @@ homepage = "https://github.com/martin-conur/kipi"
 # with `<dep>.workspace = true`. Adding a crate outside this list needs a recorded
 # decision in docs/decisions.md; `deny.toml` bans network, libgit2 and SQLite crates.
 [workspace.dependencies]
-kipi-core = { path = "crates/kipi-core", version = "0.1.0" }
-kipi-test-support = { path = "crates/kipi-test-support", version = "0.1.0" }
+kipi-core = { path = "crates/kipi-core", version = "0.2.0" }
+kipi-test-support = { path = "crates/kipi-test-support", version = "0.2.0" }
 
 clap = { version = "4.6.7", features = ["derive"] }
 clap_complete = "4.6.11"

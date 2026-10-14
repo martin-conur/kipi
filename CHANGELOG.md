@@ -7,7 +7,13 @@ the stable interface; human-readable output may change in any release.
 
 ## [Unreleased]
 
+## [0.2.0]
+
 ### Added
+
+- **Installer check on every release.** A new workflow installs each published release with
+  `kipi-cli-installer.sh` on a bare Debian container (x86_64), Linux arm64 and macOS arm64, and
+  runs the fresh-machine end to end against the installed binary.
 
 - **Describe how related repos connect** (#62). A `related` item can be an inline table
   `{ repo = "app", via = "marts.* tables consumed by app's loaders" }`, mixed freely with plain
@@ -103,6 +109,7 @@ First public release.
 - **Releases** for Linux (static musl) and macOS, x86_64 and aarch64, with a shell installer and
   SHA-256 checksums. Homebrew is planned for a later release.
 
-[Unreleased]: https://github.com/martin-conur/kipi/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/martin-conur/kipi/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/martin-conur/kipi/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/martin-conur/kipi/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/martin-conur/kipi/releases/tag/v0.1.0
