@@ -385,7 +385,7 @@ pub fn remove_repo(
     let name = entry.name.as_str();
     let referrers: Vec<&str> = stores
         .repos()
-        .filter(|(_, e)| e.name != name && e.related.iter().any(|r| r == name))
+        .filter(|(_, e)| e.name != name && e.related.iter().any(|r| r.name == name))
         .map(|(_, e)| e.name.as_str())
         .collect();
     if let Some(first) = referrers.first() {

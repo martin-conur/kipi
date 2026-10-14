@@ -138,7 +138,7 @@ pub fn bind(
 }
 
 /// Write `outcome` (unless `dry_run`) and report it.
-fn finish(
+pub(super) fn finish(
     command: &str,
     title: String,
     outcome: &Outcome,

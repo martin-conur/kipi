@@ -51,7 +51,7 @@ pub struct DryRun {
 /// The subcommands (roadmap §7).
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Create a store and mount it, or mount an existing one.
+    /// Create a store and mount it, or mount an existing (or --clone'd) one.
     Init {
         /// Where the store lives (default: ~/.agents/store).
         #[arg(long, value_name = "PATH", value_hint = ValueHint::DirPath)]
@@ -62,6 +62,9 @@ pub enum Command {
         /// Also `git init` the store.
         #[arg(long)]
         git: bool,
+        /// `git clone` this store into the (new or empty) --store directory, then mount it.
+        #[arg(long, value_name = "GIT-URL", conflicts_with_all = ["git", "scope"])]
+        clone: Option<String>,
         /// Declare this scope in the store (see `kipi add scope`).
         #[arg(long, requires = "roots")]
         scope: Option<String>,
@@ -79,6 +82,28 @@ pub enum Command {
         /// Remove this store (by name or path) from config.toml.
         #[arg(long, value_name = "NAME", add = ArgValueCandidates::new(complete::stores))]
         unmount: Option<String>,
+        #[command(flatten)]
+        dry_run: DryRun,
+    },
+    /// Fast-forward each store from its git upstream, then sync every repo.
+    Pull {
+        /// Only this store (by name; repeatable).
+        #[arg(long = "store", value_name = "NAME", add = ArgValueCandidates::new(complete::stores))]
+        stores: Vec<String>,
+        /// Do not run `sync --all` afterwards.
+        #[arg(long)]
+        no_sync: bool,
+        #[command(flatten)]
+        dry_run: DryRun,
+    },
+    /// Commit each store's changes and push them to its git upstream.
+    Push {
+        /// Only this store (by name; repeatable).
+        #[arg(long = "store", value_name = "NAME", add = ArgValueCandidates::new(complete::stores))]
+        stores: Vec<String>,
+        /// The commit message (default: one listing the changed repos, skills and scopes).
+        #[arg(short, long)]
+        message: Option<String>,
         #[command(flatten)]
         dry_run: DryRun,
     },
@@ -395,6 +420,9 @@ pub struct Binding {
     /// Aliases.
     #[arg(long = "alias", value_name = "ALIAS", num_args = 1..)]
     pub aliases: Vec<String>,
+    /// How this repo connects to the one `--related` repo (`bind` only; "" removes it).
+    #[arg(long, value_name = "TEXT")]
+    pub via: Option<String>,
     #[command(flatten)]
     pub dry_run: DryRun,
 }
@@ -405,6 +433,8 @@ impl Command {
         match self {
             Command::Init { dry_run, .. }
             | Command::Stores { dry_run, .. }
+            | Command::Pull { dry_run, .. }
+            | Command::Push { dry_run, .. }
             | Command::Scan { dry_run, .. }
             | Command::Add(
                 Add::Skill { dry_run, .. } | Add::Repo { dry_run, .. } | Add::Scope { dry_run, .. },

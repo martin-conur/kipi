@@ -1,11 +1,11 @@
 //! `kipi bind` / `kipi unbind`: add or remove skills, related repos, exclusions and
-//! aliases on a repo entry.
+//! aliases on a repo entry, and describe a relation (`--via`).
 
-use super::toml::{clear_draft, contains, push, remove, table_mut};
+use super::toml::{clear_draft, contains, push, remove, set_via, table_mut, via};
 use super::{Change, Op, Outcome, bindings_write, find_repo, revalidate};
 use crate::config::Env;
 use crate::error::{Error, Result};
-use crate::model::{Machine, SkillRef, StoreSet, check_name};
+use crate::model::{Machine, SkillRef, StoreSet, check_name, check_via};
 use crate::plan::{SkillOrigin, alias_key};
 
 /// The arguments of `bind` and `unbind`.
@@ -21,6 +21,8 @@ pub struct Binding<'a> {
     pub exclude: &'a [String],
     /// `--alias`.
     pub aliases: &'a [String],
+    /// `--via`: the description of the one `--related` relation; `""` removes it.
+    pub via: Option<&'a str>,
 }
 
 impl Binding<'_> {
@@ -55,6 +57,7 @@ fn edit(
     adding: bool,
 ) -> Result<Outcome> {
     let command = if adding { "bind" } else { "unbind" };
+    check_via_flag(b, adding)?;
     if b.keys().iter().all(|(_, values)| values.is_empty()) {
         return Err(Error::usage(
             format!("nothing to {command}"),
@@ -103,6 +106,12 @@ fn edit(
             };
             edited |= change.op != Op::Keep;
             changes.push(change);
+            if key == "related"
+                && adding
+                && let Some(wanted) = b.via
+            {
+                changes.push(describe(table, value, wanted));
+            }
         }
         if key == "aliases" && edited {
             clear_draft(table, key);
@@ -164,6 +173,25 @@ fn edit(
     })
 }
 
+/// Set (or, for `""`, drop) the `via` of the relation to `target`.
+fn describe(table: &mut dyn toml_edit::TableLike, target: &str, wanted: &str) -> Change {
+    let old = via(table, "related", target);
+    let wanted = (!wanted.is_empty()).then_some(wanted);
+    if old.as_deref() == wanted {
+        let note = if wanted.is_some() {
+            "already there"
+        } else {
+            "not there"
+        };
+        return Change::new(Op::Keep, "via", target).note(note);
+    }
+    set_via(table, "related", target, wanted);
+    match wanted {
+        Some(text) => Change::new(Op::Add, "via", format!("{target} ({text})")),
+        None => Change::new(Op::Remove, "via", target),
+    }
+}
+
 /// Whether the array value `existing` is the same `key` value as `wanted`: aliases match
 /// after case-folding (as the registry matches them), everything else exactly.
 fn same_value(key: &str, existing: &str, wanted: &str) -> bool {
@@ -194,6 +222,43 @@ pub(super) fn check_skill_refs(flag: &str, values: &[String]) -> Result<()> {
                  store (`personal/commit-style`)",
             )
         })?;
+    }
+    Ok(())
+}
+
+/// `--via` comes with `bind` and exactly one `--related`, and is one short line (or `""`).
+fn check_via_flag(b: &Binding, adding: bool) -> Result<()> {
+    if let Some(via) = b.via {
+        if !adding {
+            return Err(Error::usage(
+                "--via only applies to `kipi bind`",
+                format!(
+                    "`kipi unbind {} --related <repo>` removes the relation with its \
+                     description; `kipi bind {} --related <repo> --via \"\"` keeps the \
+                     relation and drops the description",
+                    b.repo, b.repo
+                ),
+            ));
+        }
+        if b.related.len() != 1 {
+            return Err(Error::usage(
+                "--via describes one relation",
+                format!(
+                    "pass exactly one --related with it, e.g. `kipi bind {} --related <repo> \
+                     --via \"<how they connect>\"`",
+                    b.repo
+                ),
+            ));
+        }
+        if !via.is_empty() {
+            check_via(via).map_err(|why| {
+                Error::usage(
+                    format!("invalid --via: the description {why}"),
+                    "keep it to one short line (at most 120 characters); pass `--via \"\"` \
+                     to remove it",
+                )
+            })?;
+        }
     }
     Ok(())
 }

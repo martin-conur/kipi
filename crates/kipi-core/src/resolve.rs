@@ -561,7 +561,8 @@ impl<'a> StoreCtx<'a> {
     fn related(&self, repo: &RepoEntry, scope: Option<&str>) -> Result<Vec<RelatedRepo>> {
         let store = self.store;
         let mut out = Vec::with_capacity(repo.related.len());
-        for name in &repo.related {
+        for rel in &repo.related {
+            let name = &rel.name;
             let Some(target) = store.repo(name) else {
                 return Err(Error::invalid(
                     repo.at.clone(),
@@ -599,6 +600,7 @@ impl<'a> StoreCtx<'a> {
             }
             out.push(RelatedRepo {
                 name: name.clone(),
+                via: rel.via.clone(),
                 scope: target_scope.map(str::to_owned),
                 path: self.machine.repo_path(name).map(Path::to_path_buf),
                 notes: target.notes.clone(),

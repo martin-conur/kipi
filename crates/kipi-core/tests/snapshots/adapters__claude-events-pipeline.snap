@@ -34,7 +34,7 @@ exclude: .claude/skills/ .claude/settings.local.json /CLAUDE.md .kipi/
 - web-dashboard (dashboard) · /Volumes/work/acme/web-dashboard
 
 ## This repo
-Scope: acme-ml. Related: billing-api, ml-platform (read access granted).
+Scope: acme-ml. Related: billing-api (feeds the usage events it bills from), ml-platform — read access granted.
 For any repo above, read its code at the listed path; check its notes first if listed.
 Lookup: `kipi where <alias>`, `kipi grep <term> --repos`.
 <!-- kipi:end -->

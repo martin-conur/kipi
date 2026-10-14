@@ -23,6 +23,7 @@ pub mod render;
 pub mod resolve;
 pub mod scan;
 pub mod search;
+pub mod store_git;
 pub mod sync;
 pub mod templates;
 pub mod tokens;

@@ -123,6 +123,7 @@ expression: "serde_json::to_string_pretty(&doc).unwrap()"
               "related": [
                 {
                   "name": "api",
+                  "via": null,
                   "access": "granted"
                 }
               ]
@@ -175,7 +176,7 @@ expression: "serde_json::to_string_pretty(&doc).unwrap()"
                   "path": "[HOME]/work/acme/ml/events-pipeline",
                   "state": "synced",
                   "always_on": {
-                    "tokens": 433,
+                    "tokens": 441,
                     "budget": 4000,
                     "over": false
                   },
@@ -206,10 +207,12 @@ expression: "serde_json::to_string_pretty(&doc).unwrap()"
                   "related": [
                     {
                       "name": "billing-api",
+                      "via": "feeds the usage events it bills from",
                       "access": "granted"
                     },
                     {
                       "name": "ml-platform",
+                      "via": null,
                       "access": "granted"
                     }
                   ]

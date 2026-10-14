@@ -16,7 +16,7 @@ mod skill;
 mod toml;
 
 pub use bind::{Binding, bind, unbind};
-pub use init::{InitOptions, default_store_name, init, unmount};
+pub use init::{InitOptions, default_store_name, init, store_root, unmount};
 pub use repo::{RemoveOptions, RepoOptions, add_repo, remove_repo};
 pub use scope::{ScopeEdit, ScopeOptions, add_scope, edit_scope};
 pub use skill::{SkillOptions, add_skill, is_git_url};
@@ -95,7 +95,8 @@ impl Op {
 }
 
 impl Change {
-    fn new(op: Op, what: impl Into<String>, value: impl Into<String>) -> Self {
+    /// A change with no note.
+    pub fn new(op: Op, what: impl Into<String>, value: impl Into<String>) -> Self {
         Change {
             op,
             what: what.into(),
@@ -104,7 +105,8 @@ impl Change {
         }
     }
 
-    fn note(mut self, note: impl Into<String>) -> Self {
+    /// The same change, with a note.
+    pub fn note(mut self, note: impl Into<String>) -> Self {
         self.note = Some(note.into());
         self
     }
