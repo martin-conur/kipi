@@ -1,0 +1,67 @@
+# Install kipi from a *published* release with the shell installer, on clean machines,
+# and run the fresh-machine end to end against the installed binary. This is what a user
+# does, so it catches problems the build-from-source jobs in ci.yml cannot: a broken
+# installer, a wrong asset name, a binary that does not run on the target.
+#
+# Runs on every published release, and on demand for any tag:
+#   gh workflow run installer.yml -f version=v0.1.1
+name: Installer
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag to install (e.g. v0.1.1)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    name: install ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # A bare Debian container: no Rust, no kipi, only what the installer needs.
+          - name: linux x86_64 (container)
+            os: ubuntu-latest
+            container: debian:stable-slim
+          - name: linux arm64
+            os: ubuntu-24.04-arm
+          - name: macos arm64
+            os: macos-14
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    env:
+      VERSION: ${{ github.event.release.tag_name || inputs.version }}
+    steps:
+      - name: Install prerequisites (container)
+        if: matrix.container != ''
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates curl git xz-utils >/dev/null
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ env.VERSION }}
+
+      - name: Install ${{ env.VERSION }} with the published shell installer
+        shell: sh
+        run: |
+          export CARGO_HOME="$RUNNER_TEMP/kipi-home"
+          curl --proto '=https' --tlsv1.2 -LsSf \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/kipi-cli-installer.sh" \
+            | sh -s -- --no-modify-path
+          "$CARGO_HOME/bin/kipi" --version
+          want="kipi ${VERSION#v}"
+          test "$("$CARGO_HOME/bin/kipi" --version)" = "$want" || { echo "expected: $want"; exit 1; }
+          echo "KIPI_BIN=$CARGO_HOME/bin/kipi" >> "$GITHUB_ENV"
+
+      - name: Fresh-machine end to end against the installed binary
+        shell: sh
+        run: |
+          git config --global user.email ci@example.com
+          git config --global user.name ci
+          sh scripts/fresh-machine-e2e.sh "$KIPI_BIN"
