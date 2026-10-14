@@ -1,4 +1,3 @@
-@.claude/gh-workflow.md
 
 # kipi
 Rust workspace: kipi-core (lib, no I/O beyond fs), kipi-cli (bin), kipi-test-support.
