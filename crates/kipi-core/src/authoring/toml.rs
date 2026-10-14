@@ -71,8 +71,9 @@ pub(super) fn set_via(table: &mut dyn TableLike, key: &str, name: &str, via: Opt
             return;
         }
         (Some(Value::InlineTable(t)), None) => {
-            t.remove("via");
-            if t.len() > 1 {
+            // Keys besides `repo` and `via` keep the table; otherwise it becomes a string.
+            if t.iter().any(|(k, _)| k != "repo" && k != "via") {
+                t.remove("via");
                 return;
             }
         }

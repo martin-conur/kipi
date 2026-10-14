@@ -432,7 +432,7 @@ impl Renderer<'_> {
                         .collect();
                     // Descriptions take what is left of the line, first come first served.
                     let base = head.chars().count()
-                        + "related:".len()
+                        + "related:".chars().count()
                         + items.iter().map(|i| width(i) + 3).sum::<usize>()
                         - 2;
                     let mut spare = RELATED_LINE_CAP.saturating_sub(base);
