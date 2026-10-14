@@ -81,3 +81,5 @@ patterns in `.leak-denylist` and for absolute home paths (`/Users/<name>`, `/hom
 (newline-separated regexes; CI reads the repository secret of the same name) or in a file named by
 `$KIPI_LEAK_DENYLIST_FILE`; never commit them. Tests that need a home path build it at runtime
 (`format!("/{}/{}", "Users", name)`) so the source itself stays clean.
+
+@.claude/gh-workflow.md
