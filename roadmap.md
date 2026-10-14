@@ -23,7 +23,7 @@ kipi is a single-binary Rust CLI that gives LLM coding agents (Claude Code, Code
 7. Agent-agnostic. The core produces a tool-neutral plan; thin adapters render it into each agent's native locations.
 8. Drafted but supervised. kipi may draft summaries and aliases from READMEs and manifests, but never overwrites text a human has written or edited.
 
-**Non-goals (v1):** MCP server, retrieval server, vector search, TUI, generated repo cards and interface generators, team distribution (pull/push, committed copies), any built-in sync transport (stores are plain folders; git is optional), hosting or registry of skills, editing skill bodies in-tool, Windows support (Linux and macOS only; symlinks required). See §14 for what is deferred and why.
+**Non-goals (v1):** MCP server, retrieval server, vector search, TUI, generated repo cards and interface generators, team distribution (committed copies), any built-in sync transport beyond driving `git` for a store that already is a repo (stores are plain folders; git is optional; §11), hosting or registry of skills, editing skill bodies in-tool, Windows support (Linux and macOS only; symlinks required). See §14 for what is deferred and why.
 
 **Hard requirement for the open-source release:** no organization-specific names, paths or examples anywhere in code, docs, fixtures or tests. Examples use `acme`, `~/work/acme`, repos `billing-api`, `events-pipeline`, `ml-platform`, and personal repos under `~/code`.
 
@@ -69,7 +69,7 @@ Verify each adapter's paths and settings keys against current vendor docs at bui
 
 ## 4. Store layout
 
-A store is a plain directory. git is optional and only for history; kipi never requires a remote and has no sync transport of its own. A machine mounts one or more stores, listed in `~/.config/kipi/config.toml` (default: a single store at `~/.agents/store/`; overridable via `KIPI_STORE` or `--store`, both repeatable).
+A store is a plain directory. git is optional; kipi never requires a remote and has no sync transport of its own, though for a store that is a git repo `kipi pull` / `kipi push` drive the `git` binary (§11). A machine mounts one or more stores, listed in `~/.config/kipi/config.toml` (default: a single store at `~/.agents/store/`; overridable via `KIPI_STORE` or `--store`, both repeatable).
 
 **One store per trust boundary.** Typical setup: a personal store (`~/.agents/store`, maybe in a personal git remote) mounted on every machine, and a work store (`~/work/.kipi-acme`, kept local or in employer-approved storage) mounted only on the work laptop. Each store owns its scopes, repo entries, skills, notes and conventions; §6 defines what may cross (only explicitly shared skills).
 
@@ -245,7 +245,10 @@ Resolution is a pure function `(stores, machine) -> Plan` with no I/O beyond rea
 | Command | Purpose | Writes |
 | --- | --- | --- |
 | `init [--store <path>] [--name <n>] [--git] [--scope <s> --root <path>... [--no-registry]]` | Create a store (dirs, `bindings.toml` skeleton with its name, optional `git init`) and add it to `config.toml`; pointed at an existing store, just mounts it; `--scope` also declares a first scope (as `add scope`; `--no-registry` opts out of its registry) | store, config |
-| `stores` | List mounted stores: name, path, git status, scopes, repo count; `--unmount <name>` removes one from `config.toml` | config |
+| `init --store <path> --clone <git-url> [--name <n>]` | `git clone` a store into a new or empty `<path>`, validate it and mount it; prints the next steps (`scan`, `sync --all`) without running them (§11) | store, config |
+| `stores` | List mounted stores: name, path, git state (`clean`/`dirty`, `3 ahead`, `2 behind`, `no upstream`, `not a git repo`; as of the last fetch), scopes, repo count; `--unmount <name>` removes one from `config.toml` | config |
+| `pull [--store <name>]... [--no-sync]` | For each mounted store that is a git repo with an upstream: fetch and fast-forward; a diverged store stops with a hint and the others continue; then re-validate and `sync --all` (§11) | stores, repos |
+| `push [--store <name>]... [-m <msg>]` | For each mounted store that is a git repo with an upstream: refuse on doctor errors in the store, else commit every change but `generated/` (message lists changed repos, skills, scopes) and `git push` (§11) | stores |
 | `scan [path...] [--refresh-drafts]` | Find git repos under scope roots or given paths; write `machine.toml [repos]`; match repos by `remote` then name (§5.2); add missing `[repos.<name>]` entries (with `remote`, drafted summary, aliases) to the store that owns the inferred scope; fill `remote` on existing entries that lack it; report repos whose inferred scope conflicts with `remote_patterns` | machine.toml, bindings.toml of the owning store (new entries / drafts / remote only) |
 | `add skill <name> [--scope s] [--store n] [--from <git-url\|path>]` | Create a skill dir from template, or import an existing SKILL.md tree (e.g. from `~/.claude/skills/`) | store |
 | `add repo <name> [--scope s] [--path p] [--summary "…"]` | Register a repo by hand in the store owning its scope; reads `remote` from the checkout; on an existing entry with no checkout here, `--path` records one | store, machine |
@@ -367,10 +370,11 @@ Token counting uses `tiktoken-rs` (`cl100k_base` default) as an estimate; counts
 
 ## 11. Multiple machines
 
-kipi has no transport of its own and never requires git. Each store is a plain directory, synced however its trust boundary allows: a personal git remote, a dotfiles repo, Syncthing, employer-approved storage, or not at all. Machine-only state (`machine.toml`) never lives in any store.
+kipi has no transport of its own and never requires git. Each store is a plain directory, synced however its trust boundary allows: a personal git remote, a dotfiles repo, Syncthing, employer-approved storage, or not at all. Machine-only state (`machine.toml`, `config.toml`, caches) never lives in any store.
 
 - **Paths differ per machine by design.** Stores hold names, remotes and `~`-relative roots; `machine.toml` holds this machine's absolute paths and root overrides; `scan` rebuilds it by matching `remote` first, so a repo cloned at a different path or under a different directory name is still recognized. Registries, blocks and grants are generated per machine at sync.
-- **Second machine:** get each store it should see onto the machine by any means, then `kipi init --store <path>` per store (mounts it), `kipi scan`, `kipi sync --all`.
+- **Second machine:** get each store it should see onto the machine by any means, then `kipi init --store <path>` per store (mounts it), `kipi scan`, `kipi sync --all`. For a store in a git repo, `kipi init --store <path> --clone <git-url>` does the first step.
+- **A store in a git repo** (the easy path for a personal store shared by two laptops): `kipi push` commits the store's changes and pushes them; `kipi pull` fast-forwards it and runs `sync --all`. Each store syncs on its own, only with its own remote, through the `git` binary run in that store's directory; nothing moves across stores. Pull never merges: diverged histories stop that store with a hint (`git pull --rebase`). Push refuses a store with doctor errors or no upstream, and never commits `generated/`. No custom transports, lockfile or conflict resolution.
 - **Personal laptop vs work laptop:** the work laptop mounts both stores; the personal laptop mounts only the personal store and never holds work summaries, notes or conventions.
 - **Losing a store is cheap:** `scan` redrafts every entry from READMEs and manifests; only hand edits, notes and skills need a backup.
 - **After a store changes:** `kipi sync --all`.
@@ -482,7 +486,7 @@ Suggested first prompt for Claude Code: "Read roadmap.md and CLAUDE.md. Implemen
 
 - Repo cards (`CARD.md` / `CARD.generated.md`) and interface generators (openapi, cargo, python, dbt, sql) with gen/diff/accept supervision. Revisit only if reading the real repo proves insufficient (e.g. repos not cloned locally, very large repos).
 - Kiro adapter; `copy` mode for sandboxes that block reads outside cwd; `--commit` mode for teammates without kipi.
-- Store transport (`pull`/`push`, `init --clone`) and lockfile.
+- A lockfile, custom store transports (`pull_cmd`/`push_cmd`), auto-pull on sync and conflict resolution (git-based `pull`/`push`/`init --clone` shipped; §11).
 - Qualified sharing of anything other than skills across stores (e.g. a personal convention reused at work).
 - Mention log: an opt-in record of which registry entries agents resolve, feeding a `doctor` "promote to related" suggestion.
 - `--llm` summary drafting through the user's own agent.

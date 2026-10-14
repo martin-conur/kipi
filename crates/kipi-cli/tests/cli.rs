@@ -130,6 +130,8 @@ fn help_documents_the_whole_v1_surface() {
     for command in [
         "init",
         "stores",
+        "pull",
+        "push",
         "scan",
         "add",
         "bind",

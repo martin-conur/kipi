@@ -652,6 +652,7 @@ mod tests {
                     git: Some(DirStatus {
                         clean: true,
                         has_remote: false,
+                        upstream: None,
                     }),
                     shares_skills: false,
                     scopes: vec![team],
@@ -663,6 +664,7 @@ mod tests {
                     git: Some(DirStatus {
                         clean: false,
                         has_remote: true,
+                        upstream: None,
                     }),
                     shares_skills: true,
                     scopes: Vec::new(),

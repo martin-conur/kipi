@@ -187,9 +187,43 @@ synced), `not_cloned`, `checkout_missing`.
 | `version` | number | Schema version, currently `1` |
 | `stores` | [Store] | One per mounted store |
 
-**Store**: `name`, `path`, `git` (`{clean, remote}` \| null: `clean` when nothing under the store
-is uncommitted, `remote` when its repository has a remote; `null` when the store is not in a git
-work tree), `share_skills` (bool), `scopes` ([string], file order), `repos` (number of entries).
+**Store**: `name`, `path`, `git` (StoreGit \| null: `null` when the store is not in a git work
+tree), `share_skills` (bool), `scopes` ([string], file order), `repos` (number of entries).
+
+**StoreGit**: `clean` (bool: nothing under the store is uncommitted), `remote` (bool: its
+repository has a remote), `upstream` (bool: the current branch has an upstream that exists),
+`ahead` and `behind` (number \| null: commits the branch has that the upstream lacks, and the
+reverse; `null` without an upstream). Nothing is fetched: `ahead` and `behind` are as of the last
+fetch or pull.
+
+## Pull and push
+
+`kipi pull --json` and `kipi push --json` (with or without `--dry-run`) report each store they
+looked at, in mount order. A store that stops (`failed`, `diverged`, `refused`) still gets its
+entry; the command then exits 1, or 2 when `push` was refused on doctor errors.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `version` | number | Schema version, currently `1` |
+| `dry_run` | bool | `true` when nothing was changed (`pull --dry-run` does not fetch either) |
+| `stores` | [StoreResult] | One per selected store (`--store`, else every mounted store) |
+| `sync` | Sync \| null | `pull` only: the `sync --all` that followed (the [Sync](#sync) document); `null` with `--no-sync` or `--dry-run` |
+
+**StoreResult**: `name`, `path`, `result`, `commits` (number pulled or pushed, or that would be),
+`commit_message` (string \| null: the message of the commit `push` made or would make), `reason`
+and `hint` (string \| null: why the store was skipped, refused or failed, and what to do), and for
+`push` `findings` ([Finding], the error-level [doctor findings](doctor.md#json) that refused it).
+
+`result` is one of:
+
+- both: `not_git` (skipped: not in a git work tree), `no_upstream` (skipped: the branch has no
+  upstream), `up_to_date`, `failed` (git failed: unreachable remote, an uncommitted change in the
+  way of a fast-forward, a rejected push; `reason` carries git's message);
+- `pull`: `fast_forwarded`, `would_fast_forward`, `diverged` (both sides have commits; nothing
+  was changed);
+- `push`: `pushed`, `would_push`, `refused` (doctor errors, machine-only state inside the store,
+  or a store named with `--store` that is not a git repo or has no upstream; nothing was
+  committed).
 
 ## Authoring
 
@@ -200,7 +234,7 @@ work tree), `share_skills` (bool), `scopes` ([string], file order), `repos` (num
 | --- | --- | --- |
 | `version` | number | Schema version, currently `1` |
 | `dry_run` | bool | `true` when nothing was written |
-| `command` | string | `init`, `unmount`, `add skill`, `add repo`, `add scope`, `scope`, `remove repo`, `bind` or `unbind` |
+| `command` | string | `init` (also with `--clone`), `unmount`, `add skill`, `add repo`, `add scope`, `scope`, `remove repo`, `bind` or `unbind` |
 | `store` | string \| null | The store the command created, mounted, unmounted or edited |
 | `changes` | [Edit] | What changed, in order |
 | `files` | [string] | Directories created, the skill directory installed, files written, the link-back symlink, working trees cleaned of kipi's files and files deleted (or, with `dry_run`, that would be) |
@@ -208,7 +242,8 @@ work tree), `share_skills` (bool), `scopes` ([string], file order), `repos` (num
 
 **Edit**: `op` (`add`, `remove`, `keep`: already as asked, nothing changed), `what` (the list or
 thing changed: `skills`, `related`, `exclude`, `aliases`, `scopes.<scope>.skills`, `store`,
-`store <name>` (a new or removed `[scopes.<scope>]` or `[repos.<name>]` table), `extends`, `roots`,
+`store <name>` (a new or removed `[scopes.<scope>]` or `[repos.<name>]` table), `git clone` (`init
+--clone`: `<url> into <path>`), `extends`, `roots`,
 `registry`, `always`, `notes`, `kipi files` (a working tree cleaned), `config.toml stores`,
 `machine.toml`, ...), `value`, `note` (string \| null: why nothing changed,
 or what follows).

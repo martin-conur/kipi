@@ -10,6 +10,7 @@ mod hook;
 mod resolve;
 mod scan;
 mod status;
+pub mod store_git;
 pub mod stores;
 mod sync;
 mod tree;
@@ -219,20 +220,46 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
             store,
             name,
             git,
+            clone,
             scope,
             roots,
             no_registry,
             dry_run,
-        } => authoring::init(
-            &env()?,
-            &kipi_core::authoring::InitOptions {
+        } => {
+            let opts = kipi_core::authoring::InitOptions {
                 path: store.as_deref(),
                 name: name.as_deref(),
                 git: *git,
                 scope: scope.as_deref(),
                 roots,
                 registry: no_registry.then_some(false),
-            },
+            };
+            match clone {
+                Some(url) => store_git::init_clone(&env()?, &opts, url, dry_run.dry_run, out),
+                None => authoring::init(&env()?, &opts, dry_run.dry_run, out),
+            }
+        }
+        Command::Pull {
+            stores,
+            no_sync,
+            dry_run,
+        } => store_git::pull(
+            &env()?,
+            &global.stores,
+            stores,
+            *no_sync,
+            dry_run.dry_run,
+            out,
+        ),
+        Command::Push {
+            stores,
+            message,
+            dry_run,
+        } => store_git::push(
+            &env()?,
+            &global.stores,
+            stores,
+            message.as_deref(),
             dry_run.dry_run,
             out,
         ),

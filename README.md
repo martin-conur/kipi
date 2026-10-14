@@ -84,6 +84,18 @@ only works while the work store is mounted, so keep personal `roots` narrow (`~/
 directory that also holds work checkouts). The [quickstart](docs/quickstart.md) walks through
 ten repos split across the two stores.
 
+## Two laptops
+
+A store in a git repo syncs on its own, with its own remote:
+
+```bash
+kipi init --store ~/.agents/store --clone git@github.com:example-user/agent-store.git
+kipi push    # commit this store's changes and push them (refused on doctor errors)
+kipi pull    # fast-forward every store, then sync every repo
+```
+
+See [Two machines](docs/quickstart.md#two-machines) in the quickstart.
+
 ## Worktrees
 
 A `git worktree` is the same repo entry as its checkout: `kipi sync --all` syncs it too, and a

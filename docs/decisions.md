@@ -1153,3 +1153,53 @@ The spec wins wherever it is explicit.
   width in list order, are truncated with `…`, and one that would be cut below 12 characters is
   left out. `--json` has the full text.
 - **`explain`** adds a `via: …` column to the Related table, before the source.
+
+## Store sync over git: `init --clone`, `pull`, `push` (#16)
+
+- **Spec addition.** Roadmap §7 gains `init --clone`, `pull` and `push`; §11 describes them, §1 and
+  §4 now say kipi drives `git` for a store that already is a repo, and §15 keeps only the lockfile,
+  custom transports, auto-pull and conflict resolution deferred.
+- **Pull is fetch, then `merge --ff-only @{u}`** rather than `git pull --ff-only`: the same
+  result, but the ahead/behind count after the fetch tells a diverged store (stopped with the
+  `git pull --rebase` hint, working tree untouched) from a fast-forward git refuses because an
+  uncommitted change is in the way (`failed`, git's message kept). A store with nothing behind is
+  `up_to_date` even with unpushed commits of its own.
+- **Exit codes.** Every selected store is reported; then `pull` and `push` exit 1 when any store
+  stopped (`diverged`, `failed`, `refused`), naming them. A push refused on doctor errors exits 2,
+  like `doctor`. `pull` still runs `sync --all` when a store stopped: the stores that did pull
+  should take effect.
+- **Which stores.** With no `--store`, every mounted store. A store that is not a git repo, or
+  has no upstream, is skipped with a note by `pull` always and by `push` when not named: a local
+  work store is normal. Named with `push --store`, it is refused (exit 1) with the
+  `git push -u origin <branch>` hint. `--store` here takes a store *name* (as `tree --store`); the
+  global `--store <path>` still mounts.
+- **Push's doctor gate** runs the full `doctor` over every mounted store and blocks a store on
+  the error-level findings that are its own: located in one of its files, or about one of its
+  repo entries. The error-level checks are all config checks (K001, K003–K006, K012, K013); the
+  filesystem checks are warnings. There is no `--force` (out of scope). A `diagnose` that fails
+  outright (an `extends` cycle) fails the push before anything is committed.
+- **What push commits.** `git add --all -- .` in the store's directory, then `git reset --
+  generated` and `git commit -- . ':(exclude)generated'`, so `generated/` is never committed even
+  when the store's `.gitignore` lost the line, and a store kept in a subdirectory of a larger repo
+  (dotfiles) commits only its own files. (An exclude pathspec on `git add` fails when it names an
+  ignored directory, hence the reset.) Push also refuses when `config.toml`, `machine.toml` or the
+  cache directory lies inside the store.
+- **Commit message.** `kipi: update store <name>: repos a, b; skills c; scopes d` (at most three
+  names per kind in the subject, `…` after), then one line per kind with every name. Kinds come
+  from the changed paths: `skills/<n>/…`, `repos/<n>/…` (notes), `conventions/<scope>.md`, and for
+  `bindings.toml` the `[repos.*]` / `[scopes.*]` tables that differ from `HEAD`; anything else
+  (another `bindings.toml` table, `.gitignore`) is listed under `files`. `-m` replaces it whole.
+- **`init --clone`** clones with full history (`git clone`, not the shallow clone of
+  `add skill --from`), into a directory that does not exist or is empty; anything else is refused
+  before cloning. A clone with no `bindings.toml`, or one that fails to mount (its `[store] name`
+  collides with a mounted store: the existing check, an error rather than a warning, so nothing
+  half-mounted is left), is **kept** on disk and named in the hint; kipi never deletes it.
+  `--clone` conflicts with `--git` and `--scope`. `--dry-run` clones nothing and so validates
+  nothing; it reports the clone it would make.
+- **`stores` fetches nothing.** `ahead` / `behind` come from `git status --porcelain=v2 --branch`
+  (one git run per store, as before) and are as of the last fetch; a network call on every listing
+  would make `stores` (and `tree`, which shares the status) slow and fail offline. An upstream
+  that is configured but does not exist yet (an empty remote) counts as no upstream.
+- **Dry runs.** `push --dry-run` runs every check and prints the commit it would make and how
+  many commits it would send. `pull --dry-run` does not fetch (a fetch writes refs) and reports
+  against the last fetch; it never syncs.

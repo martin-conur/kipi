@@ -2,6 +2,6 @@
 source: crates/kipi-cli/tests/cli.rs
 expression: "stdout_of(&home, home.bare().arg(\"stores\"))"
 ---
-NAME      PATH                     GIT            SCOPES         REPOS
-personal  ~/stores/personal-store  local, no git  personal       4      shares skills
-acme      ~/stores/acme-store      local, no git  acme, acme-ml  6
+NAME      PATH                     GIT             SCOPES         REPOS
+personal  ~/stores/personal-store  not a git repo  personal       4      shares skills
+acme      ~/stores/acme-store      not a git repo  acme, acme-ml  6
