@@ -7,6 +7,18 @@ the stable interface; human-readable output may change in any release.
 
 ## [Unreleased]
 
+## [0.1.1]
+
+### Fixed
+
+- `sync` no longer writes its block into a tracked memory file whose name differs only in
+  case, such as `CLAUDE.MD`, `Claude.md` or `agents.md` (#60). On a case-insensitive
+  filesystem (the macOS default), git reported `CLAUDE.md` as untracked and kipi appended
+  its block to the tracked file. Tracked files now match case-insensitively, so the block goes
+  to `CLAUDE.local.md` (Claude Code) or is skipped with a notice (`AGENTS.md`). A repo
+  synced with 0.1.0 is repaired by the next `kipi sync`: the block moves out of the tracked
+  file and `git status` is clean again.
+
 ## [0.1.0]
 
 First public release.
@@ -61,5 +73,6 @@ First public release.
 - **Releases** for Linux (static musl) and macOS, x86_64 and aarch64, with a shell installer and
   SHA-256 checksums. Homebrew is planned for a later release.
 
-[Unreleased]: https://github.com/martin-conur/kipi/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/martin-conur/kipi/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/martin-conur/kipi/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/martin-conur/kipi/releases/tag/v0.1.0

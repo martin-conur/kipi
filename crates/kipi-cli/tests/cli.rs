@@ -1027,6 +1027,107 @@ fn a_tracked_claude_md_gets_its_block_in_claude_local_md_unless_allow_tracked() 
 }
 
 #[test]
+fn a_tracked_memory_file_in_another_case_is_still_tracked() {
+    // #60: a repo tracking `CLAUDE.MD` (or `agents.md`). On macOS that is the same file
+    // as `CLAUDE.md`, so kipi must treat it as tracked and never write into it.
+    let home = onboarded_home();
+    let dir = home.path().join("work/acme/billing-api");
+    fs::write(dir.join("CLAUDE.MD"), "# Team rules\n").unwrap();
+    fs::write(dir.join("agents.md"), "# Agent rules\n").unwrap();
+    git_in(&home, &dir, &["add", "CLAUDE.MD", "agents.md"]);
+    git_in(&home, &dir, &["commit", "--quiet", "-m", "memory files"]);
+
+    home.bare().args(["sync", "billing-api"]).assert().success();
+    assert_eq!(
+        git_in(
+            &home,
+            &dir,
+            &["status", "--porcelain", "--untracked-files=no"]
+        ),
+        "",
+        "nothing tracked is dirtied"
+    );
+    let status = git_in(&home, &dir, &["status", "--porcelain"]).to_lowercase();
+    assert!(
+        !status.contains("claude") && !status.contains("agents"),
+        "{status}"
+    );
+    assert_eq!(
+        fs::read_to_string(dir.join("CLAUDE.MD")).unwrap(),
+        "# Team rules\n"
+    );
+    assert_eq!(
+        fs::read_to_string(dir.join("agents.md")).unwrap(),
+        "# Agent rules\n"
+    );
+    let local = fs::read_to_string(dir.join("CLAUDE.local.md")).unwrap();
+    assert!(local.starts_with("<!-- kipi:begin"), "{local}");
+}
+
+/// The 0.1.0 state on a case-insensitive filesystem: the block went into a tracked
+/// `CLAUDE.MD` and the manifest recorded it as `CLAUDE.md`. One sync must move it out.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_block_written_into_a_tracked_file_by_0_1_0_moves_out() {
+    let home = onboarded_home();
+    let dir = home.path().join("work/acme/billing-api");
+    // An untracked user file in another case: kipi appends its block, as 0.1.0 did.
+    fs::write(dir.join("CLAUDE.MD"), "# Team rules\n").unwrap();
+    home.bare().args(["sync", "billing-api"]).assert().success();
+    let written = fs::read_to_string(dir.join("CLAUDE.MD")).unwrap();
+    assert!(written.contains("<!-- kipi:begin"), "{written}");
+    // Track it with only the user's text in the index: now the working file is dirty,
+    // exactly what a 0.1.0 sync left behind in a repo that tracks `CLAUDE.MD`.
+    let blob = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&dir)
+        .args(["hash-object", "-w", "--stdin"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut c| {
+            use std::io::Write;
+            c.stdin.take().unwrap().write_all(b"# Team rules\n")?;
+            c.wait_with_output()
+        })
+        .unwrap();
+    let sha = String::from_utf8(blob.stdout).unwrap();
+    git_in(
+        &home,
+        &dir,
+        &[
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            &format!("100644,{},CLAUDE.MD", sha.trim()),
+        ],
+    );
+    git_in(&home, &dir, &["commit", "--quiet", "-m", "track CLAUDE.MD"]);
+    assert!(git_in(&home, &dir, &["status", "--porcelain"]).contains("CLAUDE.MD"));
+
+    home.bare().args(["sync", "billing-api"]).assert().success();
+    assert_eq!(
+        git_in(
+            &home,
+            &dir,
+            &["status", "--porcelain", "--untracked-files=no"]
+        ),
+        ""
+    );
+    let status = git_in(&home, &dir, &["status", "--porcelain"]).to_lowercase();
+    assert!(
+        !status.contains("claude") && !status.contains("agents"),
+        "{status}"
+    );
+    assert_eq!(
+        fs::read_to_string(dir.join("CLAUDE.MD")).unwrap(),
+        "# Team rules\n"
+    );
+    let local = fs::read_to_string(dir.join("CLAUDE.local.md")).unwrap();
+    assert!(local.starts_with("<!-- kipi:begin"), "{local}");
+}
+
+#[test]
 fn sync_needs_repos_or_all() {
     let home = onboarded_home();
     let (code, err) = failure_of(&home, home.bare().arg("sync").current_dir(home.path()));

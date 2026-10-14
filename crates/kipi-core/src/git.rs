@@ -34,10 +34,15 @@ pub fn origin_url(repo: &Path) -> Result<Option<String>> {
 }
 
 /// Which of `paths` (absolute, inside `repo`) git tracks in the checkout at `repo`.
+///
+/// Names compare case-insensitively: a tracked `CLAUDE.MD` or `claude.md` counts as a
+/// tracked `CLAUDE.md`. On a case-insensitive filesystem (macOS, Windows) those are one
+/// file, so writing "`CLAUDE.md`" would dirty the tracked one (#60); on a case-sensitive
+/// one the answer only errs toward leaving the file alone.
 pub fn tracked(repo: &Path, paths: &[PathBuf]) -> Result<BTreeSet<PathBuf>> {
-    let rel: Vec<&Path> = paths
+    let rel: Vec<(&PathBuf, String)> = paths
         .iter()
-        .filter_map(|p| p.strip_prefix(repo).ok())
+        .filter_map(|p| Some((p, p.strip_prefix(repo).ok()?.to_str()?.to_owned())))
         .collect();
     if rel.is_empty() {
         return Ok(BTreeSet::new());
@@ -48,12 +53,17 @@ pub fn tracked(repo: &Path, paths: &[PathBuf]) -> Result<BTreeSet<PathBuf>> {
             .arg("-C")
             .arg(repo)
             .args(["ls-files", "-z", "--"])
-            .args(&rel),
+            .args(rel.iter().map(|(_, r)| format!(":(icase){r}"))),
     )?;
-    Ok(out
+    let listed: BTreeSet<String> = out
         .split('\0')
         .filter(|p| !p.is_empty())
-        .map(|p| repo.join(p))
+        .map(str::to_lowercase)
+        .collect();
+    Ok(rel
+        .into_iter()
+        .filter(|(_, r)| listed.contains(&r.to_lowercase()))
+        .map(|(p, _)| p.clone())
         .collect())
 }
 
@@ -78,7 +88,8 @@ struct TrackedState {
 }
 
 /// The cache file format. Bump `version` on a change; another version reads as empty.
-const TRACKED_VERSION: u32 = 1;
+/// 2: answers became case-insensitive (#60), so version-1 answers are dropped.
+const TRACKED_VERSION: u32 = 2;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct TrackedFile {
@@ -387,6 +398,26 @@ mod tests {
         let tracked = tracked(repo, &asked).unwrap();
         assert_eq!(tracked, BTreeSet::from([repo.join("CLAUDE.md")]));
         assert!(super::tracked(repo, &[]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn tracked_ignores_case_in_file_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path();
+        git(repo, &["init", "--quiet"]);
+        std::fs::write(repo.join("CLAUDE.MD"), "x").unwrap();
+        std::fs::write(repo.join("agents.md"), "x").unwrap();
+        git(repo, &["add", "CLAUDE.MD", "agents.md"]);
+        let asked = [
+            repo.join("CLAUDE.md"),
+            repo.join("AGENTS.md"),
+            repo.join("CLAUDE.local.md"),
+        ];
+        assert_eq!(
+            tracked(repo, &asked).unwrap(),
+            BTreeSet::from([repo.join("CLAUDE.md"), repo.join("AGENTS.md")]),
+            "the asked names come back, matched against any case git tracks"
+        );
     }
 
     #[test]
