@@ -1,0 +1,13 @@
+[store]
+name = "fx"
+version = 1
+
+[repos.etl]
+related = [
+  "lib",
+  { repo = "app", via = "marts.* tables consumed by app's loaders" },  # the main consumer
+]
+
+[repos.app]
+
+[repos.lib]

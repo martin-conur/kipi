@@ -110,6 +110,7 @@ enum AlwaysJson<'a> {
 #[derive(Serialize)]
 struct RelatedJson<'a> {
     name: &'a str,
+    via: Option<&'a str>,
     scope: Option<&'a str>,
     path: Option<&'a Path>,
     notes: Option<&'a Path>,
@@ -231,6 +232,7 @@ fn repo<'a>(set: &StoreSet, r: &'a RepoPlan) -> RepoJson<'a> {
             .iter()
             .map(|rel| RelatedJson {
                 name: &rel.name,
+                via: rel.via.as_deref(),
                 scope: rel.scope.as_deref(),
                 path: rel.path.as_deref(),
                 notes: rel.notes.as_deref(),
@@ -1028,6 +1030,7 @@ fn tree_repo(r: &RepoNode) -> TreeRepoJson<'_> {
             .iter()
             .map(|x| TreeRelatedJson {
                 name: &x.name,
+                via: x.via.as_deref(),
                 access: x.access.as_str(),
             })
             .collect(),
@@ -1091,6 +1094,7 @@ struct TreeSkillJson<'a> {
 #[derive(Serialize)]
 struct TreeRelatedJson<'a> {
     name: &'a str,
+    via: Option<&'a str>,
     access: &'static str,
 }
 

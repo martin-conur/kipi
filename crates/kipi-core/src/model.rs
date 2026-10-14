@@ -141,6 +141,45 @@ pub fn check_name(name: &str) -> Result<(), &'static str> {
     }
 }
 
+/// The longest `via` a `related` item may carry, in characters.
+pub const VIA_MAX_CHARS: usize = 120;
+
+/// Check a `related` item's `via`: non-empty, one line, at most [`VIA_MAX_CHARS`]
+/// characters.
+pub fn check_via(via: &str) -> Result<(), String> {
+    let len = via.chars().count();
+    if via.trim().is_empty() {
+        Err("is empty".to_owned())
+    } else if via.contains(['\n', '\r']) {
+        Err("spans several lines".to_owned())
+    } else if len > VIA_MAX_CHARS {
+        Err(format!(
+            "is {len} characters long, over the {VIA_MAX_CHARS} allowed"
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+/// One item of `repos.<repo>.related`: a repo entry name and, optionally, how the two
+/// repos connect (`via`, one direction only).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Related {
+    /// The related repo entry name.
+    pub name: String,
+    /// `via`: a one-line description of the connection.
+    pub via: Option<String>,
+}
+
+impl From<&str> for Related {
+    fn from(name: &str) -> Self {
+        Related {
+            name: name.to_owned(),
+            via: None,
+        }
+    }
+}
+
 /// A value `scan` may have drafted. `is_draft` is true while the value still carries
 /// its trailing `# kipi:draft` comment, i.e. no human has reviewed it (roadmap §5.1).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -291,8 +330,8 @@ pub struct RepoEntry {
     pub summary: Option<Drafted<String>>,
     /// `aliases`, with its draft flag (empty and not a draft when unset).
     pub aliases: Drafted<Vec<String>>,
-    /// `related` repo entry names.
-    pub related: Vec<String>,
+    /// `related` items, in declared order.
+    pub related: Vec<Related>,
     /// `skills` added on top of the scope chain's.
     pub skills: Vec<SkillRef>,
     /// `exclude`: skills removed from the effective set.

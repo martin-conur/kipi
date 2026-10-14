@@ -29,7 +29,7 @@ pub(super) fn related_removals(set: &StoreSet, machine: &Machine) -> Result<Vec<
         let Some(repo) = plan.repo(&entry.name) else {
             continue;
         };
-        for name in &entry.related {
+        for name in entry.related.iter().map(|r| &r.name) {
             let Some(target) = plan.repo(name).filter(|t| t.store == store.name) else {
                 continue;
             };

@@ -1,0 +1,14 @@
+---
+source: crates/kipi-core/tests/authoring.rs
+expression: "section(&described, \"events-pipeline\")"
+---
+[repos.events-pipeline]
+remote = "github.com/acme-org/events-pipeline"
+scope = "acme-ml"                  # optional; explicit beats path
+summary = "Kafka consumers that turn raw events into billing and ML features"
+aliases = ["events", "pipeline"]
+related = [{ repo = "billing-api", via = "feeds the usage events it bills from" }, { repo = "ml-platform", via = "reads the feature tables it trains on" }]
+skills = ["stream-recipes"]
+exclude = ["pr-conventions"]
+agents = ["claude"]                # per-repo override
+grant = "registry"                 # per-repo override

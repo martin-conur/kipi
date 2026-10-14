@@ -1,8 +1,9 @@
 //! String-array edits on a toml_edit table that keep the array's own formatting, so that
-//! adding values and then removing the same values gives back the original bytes; and
-//! removing a whole table without losing the comments above it.
+//! adding values and then removing the same values gives back the original bytes; a
+//! `related` item's `via`, switching it between a string and an inline table in place;
+//! and removing a whole table without losing the comments above it.
 
-use toml_edit::{Array, DocumentMut, Item, Table, TableLike, Value};
+use toml_edit::{Array, DocumentMut, InlineTable, Item, Table, TableLike, Value};
 
 use crate::scan::DRAFT_MARK;
 
@@ -18,12 +19,76 @@ pub(super) fn table_mut<'a>(
     Some(table)
 }
 
-/// Whether the string array `key` of `table` holds a value `same` as `value`.
+/// The name an array element stands for: a string, or the `repo` of a `related` table.
+fn element_name(value: &Value) -> Option<&str> {
+    match value {
+        Value::InlineTable(t) => t.get("repo").and_then(Value::as_str),
+        v => v.as_str(),
+    }
+}
+
+/// Whether the array `key` of `table` holds an element whose name is `same`.
 pub(super) fn contains(table: &dyn TableLike, key: &str, same: impl Fn(&str) -> bool) -> bool {
     table
         .get(key)
         .and_then(Item::as_array)
-        .is_some_and(|a| a.iter().any(|v| v.as_str().is_some_and(&same)))
+        .is_some_and(|a| a.iter().any(|v| element_name(v).is_some_and(&same)))
+}
+
+/// The `via` of the element named `name` in the array `key` of `table`.
+pub(super) fn via(table: &dyn TableLike, key: &str, name: &str) -> Option<String> {
+    let array = table.get(key).and_then(Item::as_array)?;
+    let element = array.iter().find(|v| element_name(v) == Some(name))?;
+    let via = element.as_inline_table()?.get("via")?.as_str()?;
+    Some(via.to_owned())
+}
+
+/// Set (`Some`) or drop (`None`) the `via` of the element named `name` in the array
+/// `key` of `table`. A string becomes `{ repo = "…", via = "…" }` in place, and a table
+/// left with only its `repo` becomes a string again; the element keeps its decor (its
+/// position, line and comments), so setting and then dropping gives back the original
+/// bytes.
+pub(super) fn set_via(table: &mut dyn TableLike, key: &str, name: &str, via: Option<&str>) {
+    let Some(array) = table.get_mut(key).and_then(Item::as_array_mut) else {
+        return;
+    };
+    let Some(i) = array.iter().position(|v| element_name(v) == Some(name)) else {
+        return;
+    };
+    match (array.get_mut(i), via) {
+        (Some(Value::InlineTable(t)), Some(via)) => {
+            match t.get_mut("via") {
+                Some(old) => {
+                    let decor = old.decor().clone();
+                    *old = Value::from(via);
+                    *old.decor_mut() = decor;
+                }
+                None => {
+                    t.insert("via", Value::from(via));
+                    t.fmt();
+                }
+            }
+            return;
+        }
+        (Some(Value::InlineTable(t)), None) => {
+            t.remove("via");
+            if t.len() > 1 {
+                return;
+            }
+        }
+        (Some(_), None) | (None, _) => return,
+        (Some(_), Some(_)) => {}
+    }
+    let new = match via {
+        Some(via) => {
+            let mut t = InlineTable::new();
+            t.insert("repo", Value::from(name));
+            t.insert("via", Value::from(via));
+            Value::InlineTable(t)
+        }
+        None => Value::from(name),
+    };
+    array.replace(i, new);
 }
 
 /// Append `value` to the string array `key` of `table`, creating `key = ["value"]` when
@@ -64,7 +129,7 @@ pub(super) fn push(table: &mut dyn TableLike, key: &str, value: &str) {
     }
 }
 
-/// Remove every element of the string array `key` of `table` matching `matches`;
+/// Remove every element of the array `key` of `table` whose name matches `matches`;
 /// returns how many were removed. A key left empty is removed with its line.
 pub(super) fn remove(
     table: &mut dyn TableLike,
@@ -76,7 +141,7 @@ pub(super) fn remove(
     };
     let (mut i, mut removed) = (0, 0);
     while i < array.len() {
-        if !array.get(i).and_then(Value::as_str).is_some_and(&matches) {
+        if !array.get(i).and_then(element_name).is_some_and(&matches) {
             i += 1;
             continue;
         }
@@ -307,6 +372,54 @@ mod tests {
                 "[store]\nname = \"s\"\n\n# the repos\n[repos.a]\nx = 1\n\n# b, mostly\n[repos.b]\ny = 2\n"
             ),
             "[store]\nname = \"s\"\n\n# the repos\n\n# b, mostly\n[repos.b]\ny = 2\n"
+        );
+    }
+
+    #[test]
+    fn via_turns_a_string_into_a_table_and_back() {
+        for text in [
+            "[t]\na = [\"p\"]\n",
+            "[t]\na = [\"p\", \"q\"]  # keep\n",
+            "[t]\na = [ \"q\", \"p\" ]\n",
+            "[t]\na = [\n  \"q\",\n  # about p\n  \"p\", # p\n]\n",
+        ] {
+            let set = edit(text, |t| set_via(t, "a", "p", Some("its tables")));
+            assert!(
+                set.contains("{ repo = \"p\", via = \"its tables\" }"),
+                "{set}"
+            );
+            let replaced = edit(&set, |t| set_via(t, "a", "p", Some("its API")));
+            assert_eq!(replaced, set.replace("its tables", "its API"));
+            let mut doc: DocumentMut = replaced.parse().unwrap();
+            let table = table_mut(&mut doc, &["t"]).unwrap();
+            assert!(contains(table, "a", |v| v == "p"));
+            assert_eq!(via(table, "a", "p").as_deref(), Some("its API"));
+            assert_eq!(edit(&replaced, |t| set_via(t, "a", "p", None)), text);
+            assert_eq!(
+                edit(&replaced, |t| assert_eq!(remove(t, "a", |v| v == "p"), 1)),
+                edit(text, |t| {
+                    remove(t, "a", |v| v == "p");
+                })
+            );
+        }
+        // A hand-written table keeps its spacing and its other keys' order.
+        assert_eq!(
+            edit("[t]\na = [{repo = \"p\", via = \"x\"}]\n", |t| set_via(
+                t,
+                "a",
+                "p",
+                Some("y")
+            )),
+            "[t]\na = [{repo = \"p\", via = \"y\"}]\n"
+        );
+        assert_eq!(
+            edit("[t]\na = [{ repo = \"p\" }]\n", |t| set_via(
+                t,
+                "a",
+                "p",
+                Some("y")
+            )),
+            "[t]\na = [{ repo = \"p\", via = \"y\" }]\n"
         );
     }
 

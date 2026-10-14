@@ -13,7 +13,7 @@
 {% endif %}
 ## This repo
 Scope: {{ scope or "none (unscoped)" }}.
-{%- if related %} Related: {% if related_status %}{{ related | map(attribute="name") | join(", ") }} ({{ related_status }}){% else %}{% for r in related %}{{ r.name }} ({{ r.status }}){% if not loop.last %}, {% endif %}{% endfor %}{% endif %}.{% endif %}
+{%- if related %} Related: {% if related_status %}{% for r in related %}{{ r.name }}{% if r.via %} ({{ r.via }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% if related_via %} — {{ related_status }}{% else %} ({{ related_status }}){% endif %}{% else %}{% for r in related %}{{ r.name }} ({% if r.via %}{{ r.via }}; {% endif %}{{ r.status }}){% if not loop.last %}, {% endif %}{% endfor %}{% endif %}.{% endif %}
 
 {% for e in unlisted %}
 {{ repo_line(e) }}

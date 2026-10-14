@@ -349,6 +349,7 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
                 related: &b.related,
                 exclude: &b.exclude,
                 aliases: &b.aliases,
+                via: b.via.as_deref(),
             },
             matches!(command, Command::Bind(_)),
             b.dry_run.dry_run,

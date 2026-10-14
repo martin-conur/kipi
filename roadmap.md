@@ -220,7 +220,7 @@ Resolution is a pure function `(stores, machine) -> Plan` with no I/O beyond rea
 
 **Registry entries:** one per repo in the registry's scope set, from `bindings.toml` (`summary`, `aliases`) and `machine.toml` (local path). Repos not cloned on this machine are listed with `local: (not cloned here)`. A repo with no summary is listed with its name only and `doctor` reports it. If `repos/<name>/notes.md` exists, the entry carries its absolute path.
 
-**Related repos:** each `related` entry must resolve to a repo in the same scope chain (same scope, an ancestor, or a descendant). A relation to a repo in an unrelated scope is a hard error; this is the leak rule. Cycles are allowed (A↔B is normal) and are not expanded.
+**Related repos:** each `related` entry must resolve to a repo in the same scope chain (same scope, an ancestor, or a descendant). A relation to a repo in an unrelated scope is a hard error; this is the leak rule. Cycles are allowed (A↔B is normal) and are not expanded. An item may be `{ repo = "app", via = "…" }`: a one-line description (≤ 120 characters) of how the repos connect, rendered next to the repo; each direction has its own.
 
 **Read grant:** per `grant` (repo > scope chain > defaults): `related` → the owning store's `repos/` + `skills/` (plus `skills/` of any store a shared skill came from) + local paths of related repos; `registry` → store dirs + local paths of every cloned repo in the registry; `none` → nothing. Every granted path must belong to a repo in the scope chain (leak rule applies). Repos not cloned here are skipped.
 
@@ -252,7 +252,7 @@ Resolution is a pure function `(stores, machine) -> Plan` with no I/O beyond rea
 | `add scope <name> --root <path>... [--extends <s>] [--registry \| --no-registry] [--skill <s>...] [--store <n>]` | Declare `[scopes.<name>]` (toml_edit, comment-preserving) in `--store`, else the store owning `--extends`, else the only mounted store; roots under home written `~/…`; a registry unless `--no-registry` or a scope it extends has one | bindings.toml |
 | `scope <name> [--registry \| --no-registry] [--add-root <p>]... [--remove-root <p>]... [--extends <s> \| --no-extends] [--skill <s>]... [--remove-skill <s>]... [--always <f>]... [--remove-always <f>]...` | Change an existing scope in place (comment-preserving, re-validated before writing) | bindings.toml |
 | `remove repo <name> [--notes]` | Delete a repo entry and its `machine.toml` path, and remove what kipi wrote into its checkout; refused while another entry's `related` names it; `--notes` also deletes its `notes.md` | store, machine, repos |
-| `bind <repo> --skill <s>... / --related <repo>... / --exclude <s>... / --alias <a>...` | Edit a repo's entry (toml_edit, comment-preserving) | bindings.toml |
+| `bind <repo> --skill <s>... / --related <repo>... [--via <text>] / --exclude <s>... / --alias <a>...` | Edit a repo's entry (toml_edit, comment-preserving); `--via` describes the one `--related` relation (`""` removes it) | bindings.toml |
 | `unbind <repo> ...` | Inverse of bind | bindings.toml |
 | `resolve [repo]` | Print the Plan (JSON with `--json`); no side effects | — |
 | `explain <repo>` | Human-readable provenance for every skill, relation, grant and scope decision | — |

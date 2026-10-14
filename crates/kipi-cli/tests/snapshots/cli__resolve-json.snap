@@ -749,6 +749,7 @@ expression: out
       "related": [
         {
           "name": "billing-api",
+          "via": "feeds the usage events it bills from",
           "scope": "acme",
           "path": "/Volumes/work/acme/billing-api",
           "notes": "[HOME]/stores/acme-store/repos/billing-api/notes.md",
@@ -759,6 +760,7 @@ expression: out
         },
         {
           "name": "ml-platform",
+          "via": null,
           "scope": "acme-ml",
           "path": "/Volumes/work/acme/ml/ml-platform",
           "notes": null,
@@ -1230,6 +1232,7 @@ expression: out
       "related": [
         {
           "name": "api",
+          "via": null,
           "scope": "personal",
           "path": "/srv/code/api",
           "notes": null,

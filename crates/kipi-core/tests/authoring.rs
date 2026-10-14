@@ -87,7 +87,7 @@ fn bind_then_unbind_is_byte_identical_for_every_example_repo() {
         let related = store
             .repos
             .iter()
-            .find(|r| r.name != repo.name && !repo.related.contains(&r.name))
+            .find(|r| r.name != repo.name && !repo.related.iter().any(|x| x.name == r.name))
             .map(|r| r.name.clone())
             .unwrap();
         let exclude = store.skills[0].name.clone();
@@ -107,6 +107,7 @@ fn bind_then_unbind_is_byte_identical_for_every_example_repo() {
                 &[]
             },
             aliases: &aliases,
+            via: None,
         };
         let bound = home.bind(&b, true).unwrap();
         assert_eq!(bound.writes.len(), 1, "{}", repo.name);
@@ -129,6 +130,7 @@ fn bind_keeps_comments_order_and_blank_lines() {
         related: &strings(&["feature-store"]),
         exclude: &strings(&["dbt-conventions"]),
         aliases: &strings(&["kafka"]),
+        via: None,
     };
     let outcome = home.bind(&b, true).unwrap();
     let ops: Vec<(Op, &str, &str)> = outcome
@@ -182,6 +184,210 @@ fn values_already_there_or_missing_change_nothing() {
         note.contains("inherited from scope `acme`") && note.contains("--exclude code-review"),
         "{note}"
     );
+}
+
+/// The `[repos.<name>]` section of `text`, through the line before the next blank one.
+fn section(text: &str, name: &str) -> String {
+    let start = text.find(&format!("[repos.{name}]")).unwrap();
+    let rest = &text[start..];
+    rest[..rest.find("\n\n").unwrap_or(rest.len())].to_owned()
+}
+
+#[test]
+fn via_turns_a_related_string_into_a_table_and_back() {
+    let home = Home::new();
+    let original = home.bindings(ExampleStore::Acme);
+    let bind = |related: &str, via: &str| {
+        let b = Binding {
+            repo: "events-pipeline",
+            related: &strings(&[related]),
+            via: Some(via),
+            ..Binding::default()
+        };
+        let outcome = home.bind(&b, true).unwrap();
+        let ops: Vec<String> = (outcome.changes.iter())
+            .map(|c| format!("{} {} {}", c.op.as_str(), c.what, c.value))
+            .collect();
+        outcome.write().unwrap();
+        ops
+    };
+
+    // A string item becomes a table in place; its comment and neighbours stay.
+    let ops = bind("ml-platform", "reads the feature tables it trains on");
+    assert_eq!(
+        ops,
+        [
+            "keep related ml-platform",
+            "add via ml-platform (reads the feature tables it trains on)"
+        ]
+    );
+    let described = home.bindings(ExampleStore::Acme);
+    insta::assert_snapshot!("bind-via-table", section(&described, "events-pipeline"));
+    let store = home.stores();
+    let (_, events) = store.repo("events-pipeline").unwrap();
+    assert_eq!(
+        events.related[1].via.as_deref(),
+        Some("reads the feature tables it trains on")
+    );
+
+    // Replacing the text keeps the table; the same text again is a no-op.
+    bind("ml-platform", "reads its feature tables");
+    assert_eq!(
+        home.bindings(ExampleStore::Acme),
+        described.replace(
+            "reads the feature tables it trains on",
+            "reads its feature tables"
+        )
+    );
+    assert_eq!(
+        bind("ml-platform", "reads its feature tables")[1],
+        "keep via ml-platform"
+    );
+
+    // `--via ""` turns it back into the original string, byte for byte.
+    assert_eq!(
+        bind("ml-platform", ""),
+        ["keep related ml-platform", "remove via ml-platform"]
+    );
+    assert_eq!(home.bindings(ExampleStore::Acme), original);
+
+    // The example's own table item goes back to a string, and comes back.
+    bind("billing-api", "");
+    let plain = home.bindings(ExampleStore::Acme);
+    assert!(
+        plain.contains("related = [\"billing-api\", \"ml-platform\"]\n"),
+        "{plain}"
+    );
+    bind("billing-api", "feeds the usage events it bills from");
+    assert_eq!(home.bindings(ExampleStore::Acme), original);
+}
+
+#[test]
+fn binding_a_new_relation_with_via_and_unbinding_either_form() {
+    let home = Home::new();
+    let original = home.bindings(ExampleStore::Acme);
+    let b = Binding {
+        repo: "events-pipeline",
+        related: &strings(&["feature-store"]),
+        via: Some("writes the features it serves"),
+        ..Binding::default()
+    };
+    let outcome = home.bind(&b, true).unwrap();
+    let text = &outcome.writes[0].after;
+    assert!(
+        text.contains(
+            "related = [{ repo = \"billing-api\", via = \"feeds the usage events it bills from\" }, \
+             \"ml-platform\", { repo = \"feature-store\", via = \"writes the features it serves\" }]\n"
+        ),
+        "{text}"
+    );
+    outcome.write().unwrap();
+
+    // Unbinding removes a table item and a string item alike.
+    let b = Binding {
+        repo: "events-pipeline",
+        related: &strings(&["feature-store", "billing-api"]),
+        ..Binding::default()
+    };
+    let outcome = home.bind(&b, false).unwrap();
+    assert!(outcome.changes.iter().all(|c| c.op == Op::Remove));
+    assert!(
+        outcome.writes[0]
+            .after
+            .contains("related = [\"ml-platform\"]\n"),
+        "{}",
+        outcome.writes[0].after
+    );
+
+    // And re-adding what was removed gives the original back.
+    outcome.write().unwrap();
+    let b = Binding {
+        repo: "events-pipeline",
+        related: &strings(&["billing-api"]),
+        via: Some("feeds the usage events it bills from"),
+        ..Binding::default()
+    };
+    home.bind(&b, true).unwrap().write().unwrap();
+    let now = home.bindings(ExampleStore::Acme);
+    assert_eq!(
+        section(&now, "events-pipeline"),
+        section(&original, "events-pipeline").replace(
+            "[{ repo = \"billing-api\", via = \"feeds the usage events it bills from\" }, \"ml-platform\"]",
+            "[\"ml-platform\", { repo = \"billing-api\", via = \"feeds the usage events it bills from\" }]"
+        )
+    );
+}
+
+#[test]
+fn via_flag_misuse_is_a_usage_error() {
+    let home = Home::new();
+    let long = "x".repeat(121);
+    let cases: [(Binding, bool, &str); 5] = [
+        (
+            Binding {
+                repo: "events-pipeline",
+                via: Some("text"),
+                ..Binding::default()
+            },
+            true,
+            "--via describes one relation",
+        ),
+        (
+            Binding {
+                repo: "events-pipeline",
+                related: &[],
+                skills: &strings(&["code-review"]),
+                via: Some("text"),
+                ..Binding::default()
+            },
+            true,
+            "--via describes one relation",
+        ),
+        (
+            Binding {
+                repo: "events-pipeline",
+                related: &strings(&["billing-api"]),
+                via: Some("text"),
+                ..Binding::default()
+            },
+            false,
+            "--via only applies to `kipi bind`",
+        ),
+        (
+            Binding {
+                repo: "events-pipeline",
+                related: &strings(&["billing-api"]),
+                via: Some(&long),
+                ..Binding::default()
+            },
+            true,
+            "invalid --via: the description is 121 characters long, over the 120 allowed",
+        ),
+        (
+            Binding {
+                repo: "events-pipeline",
+                related: &strings(&["billing-api"]),
+                via: Some("two\nlines"),
+                ..Binding::default()
+            },
+            true,
+            "invalid --via: the description spans several lines",
+        ),
+    ];
+    for (b, adding, expected) in cases {
+        let err = home.bind(&b, adding).unwrap_err();
+        assert!(!err.hint().is_empty());
+        let report = err.report();
+        assert!(report.contains(expected), "{expected:?} not in {report}");
+    }
+    let b = Binding {
+        repo: "events-pipeline",
+        related: &strings(&["billing-api", "ml-platform"]),
+        via: Some("text"),
+        ..Binding::default()
+    };
+    let err = home.bind(&b, true).unwrap_err().report();
+    assert!(err.contains("--via describes one relation"), "{err}");
 }
 
 #[test]

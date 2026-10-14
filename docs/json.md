@@ -68,7 +68,8 @@ Lines point at the `[scopes.<name>]` / `[repos.<name>]` table header that holds 
 - `{"kind": "registry", "scope", "source"}`: the registry of `scope`.
 - `{"kind": "this-repo"}`: the this-repo section.
 
-**Related**: `name`, `scope` (string \| null), `path` (checkout or `null`), `notes`
+**Related**: `name`, `via` (how this repo connects to it, as written in `bindings.toml`, or
+`null`), `scope` (string \| null), `path` (checkout or `null`), `notes`
 (`repos/<name>/notes.md` in the store, or `null`), `source`.
 
 **Grant**: `mode` (Decided<`"related"` \| `"registry"` \| `"none"`>) and `dirs`, each
@@ -278,8 +279,8 @@ number, "tokens": number }` when the scope has `registry = true`, else `null`), 
 **TreeRepo**: `name`, `path` (string \| null), `state` (as in [Status](#status)), `always_on`
 (AlwaysOn), `notes` (path of `repos/<name>/notes.md`, or `null`), `draft_summary` (bool), `skills`
 ([{`reference`, `mark`}]: effective and excluded skills in the order the scope chain and the repo
-bind them; `mark` is `inherited`, `explicit` or `excluded`), `related` ([{`name`, `access`}];
-`access` is `granted`, `not_granted` or `not_cloned`).
+bind them; `mark` is `inherited`, `explicit` or `excluded`), `related` ([{`name`, `via`, `access`}];
+`via` is the full description or `null`, `access` is `granted`, `not_granted` or `not_cloned`).
 
 ## Exit codes
 
