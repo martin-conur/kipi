@@ -7,6 +7,36 @@ the stable interface; human-readable output may change in any release.
 
 ## [Unreleased]
 
+### Added
+
+- **Describe how related repos connect** (#62). A `related` item can be an inline table
+  `{ repo = "app", via = "marts.* tables consumed by app's loaders" }`, mixed freely with plain
+  names. The description is shown next to the repo in the block's "This repo" section, in
+  `explain`, in `tree` (truncated to fit) and as `via` in `resolve --json` / `tree --json`.
+  `kipi bind <repo> --related <target> --via "<text>"` sets or replaces it without touching
+  comments, and `--via ""` removes it. Stores without `via` are unchanged and need no migration;
+  the JSON gains a `via` field (`null` when unset) on each related repo.
+- **Store sync over git** (#16). For a store that is a git repo, each store syncing on its own
+  with its own remote:
+  - `kipi init --store <path> --clone <git-url>` clones a store into a new or empty directory,
+    validates it and mounts it, then names the next steps (`kipi scan`, `kipi sync --all`).
+  - `kipi pull [--store <name>]... [--no-sync]` fetches and fast-forwards each store, then
+    re-validates and runs `sync --all`. A diverged store stops with a hint
+    (`git pull --rebase`) and is left untouched; the others still pull. Stores that are not git
+    repos, or have no upstream, are skipped with a note.
+  - `kipi push [--store <name>]... [-m <msg>]` commits every change in the store but `generated/`,
+    with a message listing the changed repos, skills and scopes, and pushes. Refused, with
+    nothing committed, on an error-level doctor finding in the store, on machine-only state
+    inside it, or (for a store named with `--store`) when it has no upstream.
+  - `--json` for `pull` and `push` (`docs/json.md`, "Pull and push"). When the sync after a pull
+    fails, `pull --json` still prints every store's row, with the sync's `error` and `hint`.
+
+### Changed
+
+- `kipi stores` shows each store's branch against its upstream: `clean` / `dirty`, then
+  `3 ahead`, `2 behind` or `no upstream`, and `not a git repo` (was `local, no git`). `--json`
+  adds `upstream`, `ahead` and `behind` to `git`. Nothing is fetched. No upgrade step.
+
 ## [0.1.1]
 
 ### Fixed

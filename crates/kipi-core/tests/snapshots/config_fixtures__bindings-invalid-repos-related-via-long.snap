@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/bindings.toml:6: the `via` of related repo `two` is 145 characters long, over the 120 allowed
+  hint: keep `via` to one short line (at most 120 characters); longer knowledge belongs in repos/<name>/notes.md

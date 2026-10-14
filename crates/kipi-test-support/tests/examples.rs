@@ -37,6 +37,20 @@ fn strings(item: &Item) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// The repo names of a `related` array: strings, or the `repo` of `{ repo, via }` tables.
+fn related(item: &Item) -> Vec<String> {
+    item.as_array()
+        .map(|a| {
+            a.iter()
+                .map(|v| match v.as_inline_table() {
+                    Some(t) => t["repo"].as_str().unwrap().to_owned(),
+                    None => v.as_str().unwrap().to_owned(),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn is_draft(item: &Item) -> bool {
     item.as_value()
         .and_then(|v| v.decor().suffix())
@@ -123,7 +137,7 @@ fn acme_store_mirrors_spec_5_1() {
     let events = &repos["events-pipeline"];
     assert_eq!(events["scope"].as_str(), Some("acme-ml"));
     assert_eq!(
-        strings(opt(events, "related")),
+        related(opt(events, "related")),
         ["billing-api", "ml-platform"]
     );
     assert_eq!(strings(opt(events, "skills")), ["stream-recipes"]);
@@ -181,7 +195,7 @@ fn cross_store_requirements_hold() {
         .map(|&s| (s, bindings(s)))
         .collect();
     let mut entries = BTreeSet::new();
-    let (mut drafts, mut missing_summary, mut related) = (0, 0, 0);
+    let (mut drafts, mut missing_summary, mut relations) = (0, 0, 0);
     let mut remotes_by_dir: Vec<(String, String)> = Vec::new();
     for (store, doc) in &docs {
         let repos = table(doc, "repos");
@@ -198,8 +212,8 @@ fn cross_store_requirements_hold() {
             drafts +=
                 usize::from(is_draft(opt(entry, "summary")) || is_draft(opt(entry, "aliases")));
             missing_summary += usize::from(entry.get("summary").is_none());
-            for rel in strings(opt(entry, "related")) {
-                related += 1;
+            for rel in related(opt(entry, "related")) {
+                relations += 1;
                 assert!(
                     repos.contains_key(&rel),
                     "{name} relates to {rel} in its own store"
@@ -209,7 +223,7 @@ fn cross_store_requirements_hold() {
     }
     assert!(drafts >= 1, "at least one `# kipi:draft` value");
     assert!(missing_summary >= 1, "at least one repo without a summary");
-    assert!(related >= 1, "at least one `related`");
+    assert!(relations >= 1, "at least one `related`");
 
     // The directory-name clash: two checkouts named `api`, told apart by remote.
     let api: BTreeSet<_> = remotes_by_dir

@@ -321,6 +321,7 @@ impl Ctx<'_> {
                 .iter()
                 .map(|r| RelatedNode {
                     name: r.name.clone(),
+                    via: r.via.clone(),
                     access: match &r.path {
                         None => Access::NotCloned,
                         Some(p) if plan.grant.contains(p) => Access::Granted,

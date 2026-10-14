@@ -8,7 +8,7 @@ api              personal  missing  ~264/4000  ~/code/api
 billing-api      acme      missing  ~400/4000  ~/work/acme/billing-api
 blog             personal  missing  ~264/4000  ~/code/blog
 dotfiles         personal  missing  ~264/4000  ~/code/dotfiles
-events-pipeline  acme-ml   missing  ~433/4000  ~/work/acme/ml/events-pipeline
+events-pipeline  acme-ml   missing  ~441/4000  ~/work/acme/ml/events-pipeline
 feature-store    acme-ml   missing  ~418/4000  ~/work/acme/ml/feature-store
 ml-platform      acme-ml   missing  ~418/4000  ~/work/acme/ml/ml-platform
 side-tool        personal  missing  ~272/4000  ~/code/side-tool

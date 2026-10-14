@@ -27,6 +27,24 @@ pub struct Row {
     pub repos: usize,
 }
 
+/// `clean` or `dirty`, then how the branch stands: `3 ahead`, `2 behind`, `no upstream`
+/// (as of the last fetch; `kipi stores` fetches nothing).
+pub fn git_state(g: git::DirStatus) -> String {
+    let mut parts = vec![if g.clean { "clean" } else { "dirty" }.to_owned()];
+    match g.upstream {
+        None => parts.push("no upstream".to_owned()),
+        Some(t) => {
+            if t.ahead > 0 {
+                parts.push(format!("{} ahead", t.ahead));
+            }
+            if t.behind > 0 {
+                parts.push(format!("{} behind", t.behind));
+            }
+        }
+    }
+    parts.join(", ")
+}
+
 /// List every mounted store.
 pub fn run(env: &Env, store_flags: &[PathBuf], out: &Output) -> Result<(), Failure> {
     let cfg = config::load_config(env)?;
@@ -58,14 +76,7 @@ pub fn run(env: &Env, store_flags: &[PathBuf], out: &Output) -> Result<(), Failu
         (String::new(), styles::none()),
     ]);
     for r in &rows {
-        let git = match r.git {
-            None => "local, no git".to_owned(),
-            Some(g) => format!(
-                "{}, {}",
-                if g.clean { "clean" } else { "dirty" },
-                if g.has_remote { "remote" } else { "no remote" }
-            ),
-        };
+        let git = r.git.map_or_else(|| "not a git repo".to_owned(), git_state);
         table.row([
             (r.name.clone(), styles::name()),
             (out.path(&r.path), Style::new()),

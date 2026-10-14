@@ -105,6 +105,8 @@ struct BlockView<'a> {
     related: Vec<RelatedView<'a>>,
     /// Set when every related repo has the same status, printed once after the list.
     related_status: Option<&'static str>,
+    /// Some related repo has a `via`, so a shared status follows a dash, not parentheses.
+    related_via: bool,
     /// Related repos the known-repos list does not show, as their own lines.
     unlisted: Vec<LineView<'a>>,
 }
@@ -118,6 +120,7 @@ struct ConventionsView<'a> {
 #[derive(Debug, Serialize)]
 struct RelatedView<'a> {
     name: &'a str,
+    via: Option<&'a str>,
     status: &'static str,
 }
 
@@ -155,6 +158,7 @@ pub fn render(
         .iter()
         .map(|r| RelatedView {
             name: &r.name,
+            via: r.via.as_deref(),
             status: match &r.path {
                 None => "not cloned here",
                 Some(p) if repo.grant.contains(p) => "read access granted",
@@ -183,6 +187,7 @@ pub fn render(
         conventions: grouped,
         registry: registry.map(|r| RegistryView::new(r, home)),
         scope: repo.scope.value.as_deref(),
+        related_via: related.iter().any(|r| r.via.is_some()),
         related,
         related_status,
         unlisted,

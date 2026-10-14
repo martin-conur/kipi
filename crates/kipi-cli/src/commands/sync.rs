@@ -36,6 +36,24 @@ pub struct Args<'a> {
 
 /// Sync, then report.
 pub fn run(env: &Env, loaded: &Loaded, args: &Args, out: &Output) -> Result<(), Failure> {
+    let Some(outcome) = execute(env, loaded, args, out)? else {
+        return Ok(());
+    };
+    if out.json {
+        let text = json::sync(&outcome, args.dry_run).map_err(|e| Failure::json("the sync", e))?;
+        return Ok(out.print(&text)?);
+    }
+    out.print(&human(&outcome, args.dry_run, out))?;
+    Ok(())
+}
+
+/// Sync without reporting; `None` when `--hook` finds no repo here.
+pub fn execute(
+    env: &Env,
+    loaded: &Loaded,
+    args: &Args,
+    out: &Output,
+) -> Result<Option<Outcome>, Failure> {
     let selection = if args.all {
         Selection::All
     } else if args.repos.is_empty() {
@@ -47,7 +65,7 @@ pub fn run(env: &Env, loaded: &Loaded, args: &Args, out: &Output) -> Result<(), 
                 repo: repo.name.clone(),
                 dir,
             },
-            None if args.hook => return Ok(()),
+            None if args.hook => return Ok(None),
             None => return Err(no_repo_here(loaded)),
         }
     } else {
@@ -80,12 +98,7 @@ pub fn run(env: &Env, loaded: &Loaded, args: &Args, out: &Output) -> Result<(), 
         &loaded.caches,
     )?;
     loaded.save_caches(out);
-    if out.json {
-        let text = json::sync(&outcome, args.dry_run).map_err(|e| Failure::json("the sync", e))?;
-        return Ok(out.print(&text)?);
-    }
-    out.print(&human(&outcome, args.dry_run, out))?;
-    Ok(())
+    Ok(Some(outcome))
 }
 
 /// `kipi sync` with nothing named, outside every known repo: say how to name one, with
@@ -279,7 +292,8 @@ fn repo(r: &RepoOutcome, dry_run: bool, out: &Output) -> String {
     text
 }
 
-fn human(outcome: &Outcome, dry_run: bool, out: &Output) -> String {
+/// The sync report as text.
+pub fn human(outcome: &Outcome, dry_run: bool, out: &Output) -> String {
     let p = &out.paint;
     let mut text = String::new();
     let (mut changed, mut current, mut skipped, mut worktrees) = (0, 0, 0, 0);

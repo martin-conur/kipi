@@ -64,9 +64,9 @@ impl Failure {
         }
     }
 
-    /// `error: …` and `hint: …`, as printed on stderr.
-    pub fn render(&self, paint: &Painter) -> String {
-        let (message, hint) = match self {
+    /// What went wrong and what to do about it.
+    pub fn parts(&self) -> (String, String) {
+        match self {
             Failure::Core(e) => (e.to_string(), e.hint()),
             Failure::User { message, hint } => (message.clone(), hint.clone()),
             Failure::Output(e) => (
@@ -80,7 +80,12 @@ impl Failure {
                 ),
                 "fix each as its hint says, then run `kipi doctor` again".to_owned(),
             ),
-        };
+        }
+    }
+
+    /// `error: …` and `hint: …`, as printed on stderr.
+    pub fn render(&self, paint: &Painter) -> String {
+        let (message, hint) = self.parts();
         format!(
             "{} {message}\n  {} {hint}\n",
             paint.error("error:"),

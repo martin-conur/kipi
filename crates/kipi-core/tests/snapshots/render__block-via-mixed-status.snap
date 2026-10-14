@@ -1,0 +1,14 @@
+---
+source: crates/kipi-core/tests/render.rs
+expression: body.body()
+---
+## Known repos (team)
+- gone · (not cloned here)
+- me · /h/c/me
+- peer · /h/c/peer
+
+## This repo
+Scope: team. Related: up (shares its event schema; read access granted), gone (not cloned here), peer (read access granted).
+- up · /h/c/up · notes: /st/repos/up/notes.md
+For any repo above, read its code at the listed path; check its notes first if listed.
+Lookup: `kipi where <alias>`, `kipi grep <term> --repos`.

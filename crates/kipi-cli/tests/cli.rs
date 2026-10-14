@@ -130,6 +130,8 @@ fn help_documents_the_whole_v1_surface() {
     for command in [
         "init",
         "stores",
+        "pull",
+        "push",
         "scan",
         "add",
         "bind",
@@ -1480,6 +1482,39 @@ fn authoring_from_an_empty_home_to_a_synced_repo() {
     let settings = || fs::read_to_string(app.join(".claude/settings.local.json")).unwrap();
     assert!(settings().contains(&lib), "{}", settings());
 
+    // Describe the relation: the block says how the two connect.
+    let out = stdout_of(
+        &home,
+        home.bare().args([
+            "bind",
+            "app",
+            "--related",
+            "lib-core",
+            "--via",
+            "its parser crate",
+        ]),
+    );
+    assert!(out.contains("+ via: lib-core (its parser crate)"), "{out}");
+    home.bare().args(["sync", "--all"]).assert().success();
+    let block = fs::read_to_string(app.join("CLAUDE.md")).unwrap();
+    assert!(
+        block.contains("Related: lib-core (its parser crate) — read access granted."),
+        "{block}"
+    );
+    let err = home
+        .bare()
+        .args(["bind", "app", "--via", "its parser crate"])
+        .assert()
+        .failure()
+        .get_output()
+        .stderr
+        .clone();
+    let err = String::from_utf8(err).unwrap();
+    assert!(
+        err.contains("--via describes one relation") && err.contains("hint:"),
+        "{err}"
+    );
+
     home.bare()
         .args(["unbind", "app", "--related", "lib-core"])
         .assert()
@@ -2720,7 +2755,7 @@ fn tree_of_both_example_stores_matches_the_sketch_layout() {
         "|- acme-ml  (~/work/acme/ml)  extends acme",
         "skills: code-review ○ pr-conventions ✗ personal/commit-style ○ dbt-conventions ○ \
          stream-recipes ●",
-        "related: billing-api ✓ granted   ml-platform ✓ granted",
+        "related: billing-api ✓ granted (feeds the usage events it bills f…)   ml-platform ✓ granted",
     ] {
         assert!(out.contains(expected), "missing {expected:?} in\n{out}");
     }

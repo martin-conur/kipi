@@ -277,6 +277,9 @@ The spec wins wherever it is explicit.
   "none"`). When every related repo has the same status it is printed once after the list, as
   in §8. A related repo the known-repos list does not show (no registry, or it lives in an ancestor
   scope above the registry) gets its own line with path and notes, so the agent still finds it.
+  A `via` (#62) follows its repo in parentheses; with one shared status the status then follows
+  the list after ` — ` instead of in parentheses (`Related: app (marts.* tables), billing-api —
+  read access granted.`), and with mixed statuses each repo's parentheses hold `via; status`.
   The "read its code at the listed path" hint appears only when some repo is listed.
 - **Markers**: the begin marker is any line starting with `<!-- kipi:begin` (the text after it is
   free), the end marker a line that is `<!-- kipi:end -->` plus optional trailing whitespace. A
@@ -1125,3 +1128,78 @@ The spec wins wherever it is explicit.
   (`git.example.com/`) is accepted for a self-hosted forge; a local path is refused. Removal and
   the "already there" check compare normalized values, so a hand-written `github.com/o` matches.
   The key is written after `roots`. `init --scope` has no such flag; add it with `kipi scope`.
+
+## How related repos connect: `related = [{ repo, via }]` (#62)
+
+- **Shape.** A `related` item is a string or an inline table `{ repo, via }`; the two mix in one
+  array, and a table without `via` is the same as the string. The table is `deny_unknown_fields`,
+  and its keys appear in the config reference as `repos.<repo>.related[].repo` / `.via`, read off
+  the serde model like every other key. `via` must be non-empty, one line (no `\n` or `\r`) and at
+  most 120 characters, counted as Unicode scalar values; the error points at the `related` key.
+  `RepoEntry.related` is `Vec<Related { name, via }>`, and `RepoPlan.related[].via` carries it.
+- **One direction.** `etl → app` and `app → etl` each have their own `via`; nothing is mirrored,
+  because "consumes app's tables" read from the other side is a different sentence.
+- **`bind --via`.** `--via` needs exactly one `--related` and only applies to `bind`: on `unbind`,
+  with no `--related`, or with several, it is a usage error with a hint. On a string item it
+  replaces the element in place with `{ repo = "…", via = "…" }`, keeping the element's decor
+  (leading whitespace, comments on its line), so `--via ""` gives back the original bytes; on a
+  table it replaces only the `via` value. A table left with only `repo` becomes a string again. A
+  new relation with `--via` is appended as a string first (formatted like the array), then turned
+  into a table. The report has a separate `via` line (`+ via: app (…)`, `- via: app`, or kept).
+  `unbind --related` matches both forms. A hand-written table without `via` (`{repo="app"}`) is
+  reformatted to `{ repo = "app", via = "…" }` when `via` is added.
+- **`tree`.** The `via` follows the repo's access marker in parentheses, while the `related:`
+  line stays within 100 columns (the width the tree layout targets): descriptions take the spare
+  width in list order, are truncated with `…`, and one that would be cut below 12 characters is
+  left out. `--json` has the full text.
+- **`explain`** adds a `via: …` column to the Related table, before the source.
+
+## Store sync over git: `init --clone`, `pull`, `push` (#16)
+
+- **Spec addition.** Roadmap §7 gains `init --clone`, `pull` and `push`; §11 describes them, §1 and
+  §4 now say kipi drives `git` for a store that already is a repo, and §15 keeps only the lockfile,
+  custom transports, auto-pull and conflict resolution deferred.
+- **Pull is fetch, then `merge --ff-only @{u}`** rather than `git pull --ff-only`: the same
+  result, but the ahead/behind count after the fetch tells a diverged store (stopped with the
+  `git pull --rebase` hint, working tree untouched) from a fast-forward git refuses because an
+  uncommitted change is in the way (`failed`, git's message kept). A store with nothing behind is
+  `up_to_date` even with unpushed commits of its own.
+- **Exit codes.** Every selected store is reported; then `pull` and `push` exit 1 when any store
+  stopped (`diverged`, `failed`, `refused`), naming them. A push refused on doctor errors exits 2,
+  like `doctor`. `pull` still runs `sync --all` when a store stopped: the stores that did pull
+  should take effect.
+- **Which stores.** With no `--store`, every mounted store. A store that is not a git repo, or
+  has no upstream, is skipped with a note by `pull` always and by `push` when not named: a local
+  work store is normal. Named with `push --store`, it is refused (exit 1) with the
+  `git push -u origin <branch>` hint. `--store` here takes a store *name* (as `tree --store`); the
+  global `--store <path>` still mounts.
+- **Push's doctor gate** runs the full `doctor` over every mounted store and blocks a store on
+  the error-level findings that are its own: located in one of its files, or about one of its
+  repo entries. The error-level checks are all config checks (K001, K003–K006, K012, K013); the
+  filesystem checks are warnings. There is no `--force` (out of scope). A `diagnose` that fails
+  outright (an `extends` cycle) fails the push before anything is committed.
+- **What push commits.** `git add --all -- .` in the store's directory, then `git reset --
+  generated` and `git commit -- . ':(exclude)generated'`, so `generated/` is never committed even
+  when the store's `.gitignore` lost the line, and a store kept in a subdirectory of a larger repo
+  (dotfiles) commits only its own files. (An exclude pathspec on `git add` fails when it names an
+  ignored directory, hence the reset.) Push also refuses when `config.toml`, `machine.toml` or the
+  cache directory lies inside the store.
+- **Commit message.** `kipi: update store <name>: repos a, b; skills c; scopes d` (at most three
+  names per kind in the subject, `…` after), then one line per kind with every name. Kinds come
+  from the changed paths: `skills/<n>/…`, `repos/<n>/…` (notes), `conventions/<scope>.md`, and for
+  `bindings.toml` the `[repos.*]` / `[scopes.*]` tables that differ from `HEAD`; anything else
+  (another `bindings.toml` table, `.gitignore`) is listed under `files`. `-m` replaces it whole.
+- **`init --clone`** clones with full history (`git clone`, not the shallow clone of
+  `add skill --from`), into a directory that does not exist or is empty; anything else is refused
+  before cloning. A clone with no `bindings.toml`, or one that fails to mount (its `[store] name`
+  collides with a mounted store: the existing check, an error rather than a warning, so nothing
+  half-mounted is left), is **kept** on disk and named in the hint; kipi never deletes it.
+  `--clone` conflicts with `--git` and `--scope`. `--dry-run` clones nothing and so validates
+  nothing; it reports the clone it would make.
+- **`stores` fetches nothing.** `ahead` / `behind` come from `git status --porcelain=v2 --branch`
+  (one git run per store, as before) and are as of the last fetch; a network call on every listing
+  would make `stores` (and `tree`, which shares the status) slow and fail offline. An upstream
+  that is configured but does not exist yet (an empty remote) counts as no upstream.
+- **Dry runs.** `push --dry-run` runs every check and prints the commit it would make and how
+  many commits it would send. `pull --dry-run` does not fetch (a fetch writes refs) and reports
+  against the last fetch; it never syncs.

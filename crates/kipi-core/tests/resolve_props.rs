@@ -205,7 +205,7 @@ fn build_store(store: &str, share: bool, spec: &StoreSpec, machine: &mut Machine
             repo.exclude = r.exclude.iter().map(|&p| skill_ref(store, p)).collect();
             repo.related = (r.related.iter())
                 .filter(|&&j| j != i)
-                .map(|&j| repo_name(store, j))
+                .map(|&j| repo_name(store, j).as_str().into())
                 .collect();
             repo.grant = r.grant;
         });

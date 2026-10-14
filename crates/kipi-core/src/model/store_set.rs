@@ -229,7 +229,7 @@ impl StoreSet {
                 };
                 push(site, RefKind::CrossStore, e);
             }
-            for rel in &repo.related {
+            for rel in repo.related.iter().map(|r| &r.name) {
                 if store.repo(rel).is_none()
                     && let Some((other, r)) = find_in(&others, |st| st.repo(rel))
                 {
@@ -454,7 +454,7 @@ impl RefSite {
                 name: rel,
             } => {
                 if let Some(r) = repo(store, name) {
-                    r.related.retain(|n| n != rel);
+                    r.related.retain(|n| &n.name != rel);
                 }
             }
             RefSite::RepoSkill { repo: name, skill } => {

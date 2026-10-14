@@ -19,6 +19,7 @@ use serde::Serialize;
 
 use super::status::Row;
 use super::tree::{RepoNode, ScopeNode, Tree};
+use crate::commands::store_git::Row as StoreRow;
 
 /// Bumped on any breaking change to the shape below.
 pub const JSON_VERSION: u32 = 1;
@@ -110,6 +111,7 @@ enum AlwaysJson<'a> {
 #[derive(Serialize)]
 struct RelatedJson<'a> {
     name: &'a str,
+    via: Option<&'a str>,
     scope: Option<&'a str>,
     path: Option<&'a Path>,
     notes: Option<&'a Path>,
@@ -231,6 +233,7 @@ fn repo<'a>(set: &StoreSet, r: &'a RepoPlan) -> RepoJson<'a> {
             .iter()
             .map(|rel| RelatedJson {
                 name: &rel.name,
+                via: rel.via.as_deref(),
                 scope: rel.scope.as_deref(),
                 path: rel.path.as_deref(),
                 notes: rel.notes.as_deref(),
@@ -435,7 +438,13 @@ struct WarningJson<'a> {
 /// A `kipi sync` outcome as pretty-printed JSON with a trailing newline (`docs/json.md`,
 /// "Sync"). Fails only on a path that is not valid UTF-8.
 pub fn sync(outcome: &Outcome, dry_run: bool) -> serde_json::Result<String> {
-    let doc = SyncJson {
+    let mut out = serde_json::to_string_pretty(&sync_doc(outcome, dry_run))?;
+    out.push('\n');
+    Ok(out)
+}
+
+fn sync_doc(outcome: &Outcome, dry_run: bool) -> SyncJson<'_> {
+    SyncJson {
         version: JSON_VERSION,
         dry_run,
         repos: outcome
@@ -473,10 +482,7 @@ pub fn sync(outcome: &Outcome, dry_run: bool) -> serde_json::Result<String> {
                 report: report(&s.report),
             })
             .collect(),
-    };
-    let mut out = serde_json::to_string_pretty(&doc)?;
-    out.push('\n');
-    Ok(out)
+    }
 }
 
 /// `kipi doctor`'s findings as pretty-printed JSON with a trailing newline
@@ -499,19 +505,7 @@ pub fn doctor(
                 })
                 .collect()
         }),
-        findings: findings
-            .iter()
-            .map(|f| FindingJson {
-                level: f.level.as_str(),
-                code: f.code.as_str(),
-                check: f.code.name(),
-                repo: f.repo.as_deref(),
-                at: f.at.as_ref().map(|at| set.provenance(at)),
-                message: &f.message,
-                hint: &f.hint,
-                fix: f.fix.as_ref().map(fix_json),
-            })
-            .collect(),
+        findings: findings.iter().map(|f| finding_json(set, f)).collect(),
         summary: DoctorSummaryJson {
             error: count(Level::Error),
             warn: count(Level::Warn),
@@ -557,6 +551,19 @@ struct DoctorJson<'a> {
 struct SkippedFixJson<'a> {
     fix: FixJson<'a>,
     reason: &'a str,
+}
+
+fn finding_json<'a>(set: &StoreSet, f: &'a Finding) -> FindingJson<'a> {
+    FindingJson {
+        level: f.level.as_str(),
+        code: f.code.as_str(),
+        check: f.code.name(),
+        repo: f.repo.as_deref(),
+        at: f.at.as_ref().map(|at| set.provenance(at)),
+        message: &f.message,
+        hint: &f.hint,
+        fix: f.fix.as_ref().map(fix_json),
+    }
 }
 
 #[derive(Serialize)]
@@ -835,9 +842,12 @@ pub fn stores(rows: &[crate::commands::stores::Row]) -> serde_json::Result<Strin
             .map(|r| StoreJson {
                 name: &r.name,
                 path: &r.path,
-                git: r.git.map(|g| GitJson {
+                git: r.git.map(|g| StoreGitJson {
                     clean: g.clean,
                     remote: g.has_remote,
+                    upstream: g.upstream.is_some(),
+                    ahead: g.upstream.map(|t| t.ahead),
+                    behind: g.upstream.map(|t| t.behind),
                 }),
                 share_skills: r.share_skills,
                 scopes: &r.scopes,
@@ -860,7 +870,7 @@ struct StoresJson<'a> {
 struct StoreJson<'a> {
     name: &'a str,
     path: &'a Path,
-    git: Option<GitJson>,
+    git: Option<StoreGitJson>,
     share_skills: bool,
     scopes: &'a [String],
     repos: usize,
@@ -870,6 +880,97 @@ struct StoreJson<'a> {
 struct GitJson {
     clean: bool,
     remote: bool,
+}
+
+#[derive(Serialize)]
+struct StoreGitJson {
+    clean: bool,
+    remote: bool,
+    upstream: bool,
+    ahead: Option<u32>,
+    behind: Option<u32>,
+}
+
+/// `kipi pull` as pretty-printed JSON (`docs/json.md`, "Pull and push"): one entry per
+/// store, then the `sync --all` that followed (`null` with `--no-sync` or `--dry-run`),
+/// or the error and hint it failed with.
+pub fn pull(
+    rows: &[StoreRow],
+    synced: Option<Result<&Outcome, (&str, &str)>>,
+    dry_run: bool,
+) -> serde_json::Result<String> {
+    let doc = PullJson {
+        version: JSON_VERSION,
+        dry_run,
+        stores: rows.iter().map(|r| store_row(None, r)).collect(),
+        sync: synced.map(|r| match r {
+            Ok(o) => PullSyncJson::Synced(sync_doc(o, false)),
+            Err((error, hint)) => PullSyncJson::Failed { error, hint },
+        }),
+    };
+    let mut out = serde_json::to_string_pretty(&doc)?;
+    out.push('\n');
+    Ok(out)
+}
+
+/// `kipi push` as pretty-printed JSON (`docs/json.md`, "Pull and push").
+pub fn push(set: &StoreSet, rows: &[StoreRow], dry_run: bool) -> serde_json::Result<String> {
+    let doc = PushJson {
+        version: JSON_VERSION,
+        dry_run,
+        stores: rows.iter().map(|r| store_row(Some(set), r)).collect(),
+    };
+    let mut out = serde_json::to_string_pretty(&doc)?;
+    out.push('\n');
+    Ok(out)
+}
+
+fn store_row<'a>(set: Option<&StoreSet>, r: &'a StoreRow) -> StoreRowJson<'a> {
+    StoreRowJson {
+        name: &r.name,
+        path: &r.path,
+        result: r.result,
+        commits: r.commits,
+        commit_message: r.commit_message.as_deref(),
+        reason: r.reason.as_deref(),
+        hint: r.hint.as_deref(),
+        findings: set.map(|set| r.findings.iter().map(|f| finding_json(set, f)).collect()),
+    }
+}
+
+#[derive(Serialize)]
+struct PullJson<'a> {
+    version: u32,
+    dry_run: bool,
+    stores: Vec<StoreRowJson<'a>>,
+    sync: Option<PullSyncJson<'a>>,
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum PullSyncJson<'a> {
+    Synced(SyncJson<'a>),
+    Failed { error: &'a str, hint: &'a str },
+}
+
+#[derive(Serialize)]
+struct PushJson<'a> {
+    version: u32,
+    dry_run: bool,
+    stores: Vec<StoreRowJson<'a>>,
+}
+
+#[derive(Serialize)]
+struct StoreRowJson<'a> {
+    name: &'a str,
+    path: &'a Path,
+    result: &'static str,
+    commits: u32,
+    commit_message: Option<&'a str>,
+    reason: Option<&'a str>,
+    hint: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    findings: Option<Vec<FindingJson<'a>>>,
 }
 
 /// A `kipi where` result as pretty-printed JSON with a trailing newline (`docs/json.md`,
@@ -1028,6 +1129,7 @@ fn tree_repo(r: &RepoNode) -> TreeRepoJson<'_> {
             .iter()
             .map(|x| TreeRelatedJson {
                 name: &x.name,
+                via: x.via.as_deref(),
                 access: x.access.as_str(),
             })
             .collect(),
@@ -1091,6 +1193,7 @@ struct TreeSkillJson<'a> {
 #[derive(Serialize)]
 struct TreeRelatedJson<'a> {
     name: &'a str,
+    via: Option<&'a str>,
     access: &'static str,
 }
 

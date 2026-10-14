@@ -7,8 +7,10 @@ kipi: a scoped map of your local repos and shared skills for LLM coding agents.
 Usage: kipi [OPTIONS] <COMMAND>
 
 Commands:
-  init         Create a store and mount it, or mount an existing one
+  init         Create a store and mount it, or mount an existing (or --clone'd) one
   stores       List mounted stores, or unmount one
+  pull         Fast-forward each store from its git upstream, then sync every repo
+  push         Commit each store's changes and push them to its git upstream
   scan         Find git repos under scope roots (or PATHs) and record them
   add          Add a skill, a repo entry or a scope
   remove       Remove a repo entry

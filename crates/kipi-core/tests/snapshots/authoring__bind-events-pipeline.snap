@@ -40,7 +40,7 @@ remote = "github.com/acme-org/events-pipeline"
 scope = "acme-ml"                  # optional; explicit beats path
 summary = "Kafka consumers that turn raw events into billing and ML features"
 aliases = ["events", "pipeline", "kafka"]
-related = ["billing-api", "ml-platform", "feature-store"]
+related = [{ repo = "billing-api", via = "feeds the usage events it bills from" }, "ml-platform", "feature-store"]
 skills = ["stream-recipes", "code-review"]
 exclude = ["pr-conventions", "dbt-conventions"]
 agents = ["claude"]                # per-repo override

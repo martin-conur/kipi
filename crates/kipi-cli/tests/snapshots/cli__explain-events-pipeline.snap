@@ -28,8 +28,8 @@ Registry
   6 repos in scopes acme, acme-ml
 
 Related
-  billing-api  acme     /Volumes/work/acme/billing-api     notes  ← repos.events-pipeline.related (acme:bindings.toml:34)
-  ml-platform  acme-ml  /Volumes/work/acme/ml/ml-platform         ← repos.events-pipeline.related (acme:bindings.toml:34)
+  billing-api  acme     /Volumes/work/acme/billing-api     notes  via: feeds the usage events it bills from  ← repos.events-pipeline.related (acme:bindings.toml:34)
+  ml-platform  acme-ml  /Volumes/work/acme/ml/ml-platform                                                    ← repos.events-pipeline.related (acme:bindings.toml:34)
 
 Grant: registry  ← repos.events-pipeline.grant (acme:bindings.toml:34)
   ~/stores/acme-store/repos          store acme repos/       ← grant: store `acme` dirs

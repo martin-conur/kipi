@@ -26,7 +26,8 @@ kipi stores                                        # both are now mounted
 
 `init` writes a commented `bindings.toml` skeleton into each store and lists the store in
 `~/.config/kipi/config.toml`. Add `--git` to `git init` a store; kipi itself never needs git for
-stores and has no sync transport — sync each store however its trust boundary allows.
+stores — sync each store however its trust boundary allows. For a store in a git repo,
+`kipi pull` and `kipi push` do it for you (see [Two machines](#two-machines)).
 
 ## 2. Declare the scopes
 
@@ -142,6 +143,23 @@ kipi explain events-pipeline                        # where every decision comes
 A `related` repo is listed in the repo's own section and pre-granted for reads. A relation that
 crosses scopes (`events-pipeline` → `side-tool`) is refused: that is the leak rule.
 
+When a feature spans repos, say how they connect, so the agent knows without opening
+`notes.md`. An ETL that builds tables an app reads:
+
+```bash
+kipi bind etl --related app --via "marts.* tables consumed by app's loaders"
+```
+
+```toml
+[repos.etl]
+related = [{ repo = "app", via = "marts.* tables consumed by app's loaders" }, "billing-api"]
+```
+
+The block then reads `Related: app (marts.* tables consumed by app's loaders), billing-api — read
+access granted.` A `via` is one line of at most 120 characters and describes one direction only;
+`app`'s own `related` item for `etl` has its own. `--via ""` removes the description and leaves
+the relation; `kipi unbind etl --related app` removes both.
+
 To use a personal skill at work, set `share_skills = true` in the personal store's `[store]` and
 reference it as `personal/<skill>` from the acme scope. Nothing else crosses stores.
 
@@ -197,3 +215,38 @@ kipi scan && kipi sync --all
 ```
 
 Repos are matched by remote, so a different clone path or directory name is still recognized.
+
+## Two machines
+
+The easy way to keep a personal store in step across two laptops is a git repo with a remote
+only you can reach. Each store syncs on its own, only with its own remote; a work store usually
+stays on the one machine that needs it.
+
+On the first laptop, give the store a remote and push it once by hand to set the upstream:
+
+```bash
+cd ~/.agents/store
+git remote add origin git@github.com:example-user/agent-store.git
+git add -A && git commit -m "My store" && git push -u origin main
+```
+
+On the second laptop, clone it and mount it in one step, then record and sync its repos:
+
+```bash
+kipi init --store ~/.agents/store --clone git@github.com:example-user/agent-store.git
+kipi scan && kipi sync --all
+```
+
+From then on, on either laptop:
+
+```bash
+kipi push        # commit the store's changes (message lists repos, skills, scopes), push
+kipi pull        # fast-forward each store, then `kipi sync --all`
+kipi stores      # clean / dirty, 2 ahead, 1 behind, no upstream, not a git repo
+```
+
+`push` refuses a store with an error-level `kipi doctor` finding (an absolute home path, a
+reference into another store, ...) and never commits `generated/`. `pull` never merges: if both
+laptops committed, it stops for that store with a hint (`cd <store> && git pull --rebase`) and
+still pulls the others. `kipi stores` fetches nothing, so "behind" is as of the last pull.
+`machine.toml` and `config.toml` live in `~/.config/kipi`, never in a store.

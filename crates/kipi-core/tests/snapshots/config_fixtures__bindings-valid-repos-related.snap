@@ -22,7 +22,10 @@ repos: [
             is_draft: false,
         },
         related: [
-            "two",
+            Related {
+                name: "two",
+                via: None,
+            },
         ],
         skills: [],
         exclude: [],
@@ -52,7 +55,10 @@ repos: [
             is_draft: false,
         },
         related: [
-            "one",
+            Related {
+                name: "one",
+                via: None,
+            },
         ],
         skills: [],
         exclude: [],

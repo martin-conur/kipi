@@ -39,8 +39,10 @@ operations one would need.
 
 ## Does kipi send anything anywhere?
 
-No. kipi has no network code (CI bans the crates), never reads credentials, and never pushes or
-pulls a store. Stores are plain directories you sync however you like — or not at all.
+Not on its own. kipi has no network code (CI bans the crates) and never reads credentials.
+Stores are plain directories you sync however you like — or not at all. The one exception is
+yours to run: for a store that is a git repo, `kipi pull` and `kipi push` run the `git` binary
+in that store, against the remote you configured, with git's own credentials.
 
 ## Will kipi touch my CLAUDE.md?
 

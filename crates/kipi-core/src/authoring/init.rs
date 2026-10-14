@@ -54,10 +54,7 @@ pub fn default_store_name(root: &Path, env: &Env) -> String {
 /// overwrites a file other than by that edit. The new mount set is loaded and resolved
 /// first.
 pub fn init(env: &Env, cfg: &Config, machine: &Machine, opts: &InitOptions) -> Result<Outcome> {
-    let root = match opts.path {
-        Some(p) => absolute(p, env)?,
-        None => env.home.join(DEFAULT_STORE),
-    };
+    let root = store_root(env, opts.path)?;
     let scope_opts = opts.scope.map(|name| ScopeOptions {
         name,
         roots: opts.roots,
@@ -185,6 +182,14 @@ pub fn init(env: &Env, cfg: &Config, machine: &Machine, opts: &InitOptions) -> R
 
     mount(env, cfg, machine, &root, new_text, &mut out)?;
     Ok(out)
+}
+
+/// The store directory `init` works on: `--store` made absolute, else the default store.
+pub fn store_root(env: &Env, path: Option<&Path>) -> Result<PathBuf> {
+    match path {
+        Some(p) => absolute(p, env),
+        None => Ok(env.home.join(DEFAULT_STORE)),
+    }
 }
 
 /// The `bindings.toml` skeleton for store `name`, its trailing comments kept in a column.

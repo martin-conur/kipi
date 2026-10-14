@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use kipi_core::config::{self, Env};
 use kipi_core::error::{Error, ErrorKind};
-use kipi_core::model::{GrantMode, Machine, StoreSet};
+use kipi_core::model::{GrantMode, Machine, Related, StoreSet};
 use kipi_core::plan::Plan;
 use kipi_core::render::block::{self, BEGIN, Conventions, END, RenderedBlock};
 use kipi_core::render::registry;
@@ -151,6 +151,11 @@ fn example_rendering_stays_within_the_walkthrough_token_estimates() {
 /// Scope `team` (registry) extends `org`; `me` relates to a repo in `org` (outside the
 /// registry), one not cloned here, and one in the registry.
 fn mixed_related(grant: Option<GrantMode>) -> (StoreSet, Machine) {
+    mixed_related_with(grant, None)
+}
+
+/// [`mixed_related`], with `via` on the relation to `up`.
+fn mixed_related_with(grant: Option<GrantMode>, via: Option<&str>) -> (StoreSet, Machine) {
     let set = store_set(vec![
         StoreBuilder::new("s", "/st")
             .defaults(|d| d.grant = grant)
@@ -162,6 +167,7 @@ fn mixed_related(grant: Option<GrantMode>) -> (StoreSet, Machine) {
             .repo("me", |r| {
                 r.scope = Some("team".into());
                 r.related = vec!["up".into(), "gone".into(), "peer".into()];
+                r.related[0].via = via.map(str::to_owned);
             })
             .repo("up", |r| r.scope = Some("org".into()))
             .repo("gone", |r| r.scope = Some("team".into()))
@@ -211,6 +217,57 @@ fn grant_none_says_access_is_not_granted() {
         ),
         "{}",
         body.body()
+    );
+}
+
+#[test]
+fn via_follows_its_related_repo_with_or_without_a_shared_status() {
+    // Statuses differ: each repo's parentheses hold its `via`, then its status.
+    let (set, machine) = mixed_related_with(None, Some("shares its event schema"));
+    let plan = ok(&set, &machine);
+    let body = block::render(&plan, plan.repo("me").unwrap(), &[], None);
+    insta::assert_snapshot!("block-via-mixed-status", body.body());
+
+    // One status for all: names with their `via`, then the status after a dash; with
+    // no `via` at all the line is as before.
+    let etl = |via: Option<&str>| {
+        let set = store_set(vec![
+            StoreBuilder::new("s", "/st")
+                .repo("etl", |r| {
+                    r.related = vec![
+                        Related {
+                            name: "app".into(),
+                            via: via.map(str::to_owned),
+                        },
+                        "billing-api".into(),
+                    ];
+                })
+                .repo("app", |_| {})
+                .repo("billing-api", |_| {})
+                .build(),
+        ]);
+        let machine = MachineBuilder::new()
+            .repo("etl", "/h/c/etl")
+            .repo("app", "/h/c/app")
+            .repo("billing-api", "/h/c/billing-api")
+            .build();
+        let plan = ok(&set, &machine);
+        let etl = plan.repo("etl").unwrap();
+        assert_eq!(etl.related[0].via.as_deref(), via);
+        block::render(&plan, etl, &[], None).body().to_owned()
+    };
+    let described = etl(Some("marts.* tables consumed by app's loaders"));
+    assert!(
+        described.contains(
+            "Related: app (marts.* tables consumed by app's loaders), billing-api — read access \
+             granted."
+        ),
+        "{described}"
+    );
+    let plain = etl(None);
+    assert!(
+        plain.contains("Related: app, billing-api (read access granted)."),
+        "{plain}"
     );
 }
 

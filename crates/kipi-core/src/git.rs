@@ -297,8 +297,20 @@ pub fn init(dir: &Path) -> Result<()> {
 
 /// Shallow-clone `url` into `dest` (which must not exist yet).
 pub fn clone(url: &str, dest: &Path) -> Result<()> {
+    clone_with(url, dest, &["--depth", "1"])
+}
+
+/// Clone `url` into `dest` with its full history (a store is pulled and pushed later).
+/// `dest` must not exist yet, or be an empty directory.
+pub fn clone_full(url: &str, dest: &Path) -> Result<()> {
+    clone_with(url, dest, &[])
+}
+
+fn clone_with(url: &str, dest: &Path, extra: &[&str]) -> Result<()> {
     let out = Command::new("git")
-        .args(["clone", "--quiet", "--depth", "1", "--", url])
+        .args(["clone", "--quiet"])
+        .args(extra)
+        .args(["--", url])
         .arg(dest)
         .output()
         .map_err(|e| Error::io(dest, e, "install git and make sure it is on PATH"))?;
@@ -315,22 +327,32 @@ pub fn clone(url: &str, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The git state of a directory, for `kipi stores`.
+/// The git state of a directory, for `kipi stores` and `kipi tree`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DirStatus {
     /// No uncommitted change under the directory.
     pub clean: bool,
     /// The repository has at least one remote.
     pub has_remote: bool,
+    /// The current branch's upstream, as of the last fetch; `None` when the branch has
+    /// none (or HEAD is detached, or the upstream branch does not exist yet).
+    pub upstream: Option<Tracking>,
+}
+
+/// How far a branch is from its upstream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Tracking {
+    /// Commits on the branch that the upstream lacks.
+    pub ahead: u32,
+    /// Commits on the upstream that the branch lacks.
+    pub behind: u32,
 }
 
 /// The git state of `dir`, or `None` when it is not inside a git work tree. A directory
-/// with no `.git` in it or any ancestor is answered without starting `git`.
+/// with no `.git` in it or any ancestor is answered without starting `git`. Nothing is
+/// fetched: ahead and behind are as of the last fetch.
 pub fn status(dir: &Path) -> Option<DirStatus> {
-    if !dir
-        .ancestors()
-        .any(|d| fs::symlink_metadata(d.join(".git")).is_ok())
-    {
+    if !in_work_tree(dir) {
         return None;
     }
     let git = |args: &[&str]| {
@@ -344,12 +366,171 @@ pub fn status(dir: &Path) -> Option<DirStatus> {
             .success()
             .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
     };
-    let changes = git(&["status", "--porcelain", "--", "."])?;
+    let text = git(&["status", "--porcelain=v2", "--branch", "--", "."])?;
     let remotes = git(&["remote"]).unwrap_or_default();
+    let (mut has_upstream, mut tracking) = (false, None);
+    let mut clean = true;
+    for line in text.lines() {
+        if let Some(header) = line.strip_prefix("# ") {
+            if header.starts_with("branch.upstream ") {
+                has_upstream = true;
+            } else if let Some(ab) = header.strip_prefix("branch.ab ") {
+                tracking = parse_ab(ab);
+            }
+        } else if !line.is_empty() {
+            clean = false;
+        }
+    }
     Some(DirStatus {
-        clean: changes.trim().is_empty(),
+        clean,
         has_remote: !remotes.trim().is_empty(),
+        upstream: tracking.filter(|_| has_upstream),
     })
+}
+
+/// `+3 -2` (porcelain v2 `branch.ab`) as ahead 3, behind 2.
+fn parse_ab(ab: &str) -> Option<Tracking> {
+    let (ahead, behind) = ab.split_once(' ')?;
+    Some(Tracking {
+        ahead: ahead.strip_prefix('+')?.parse().ok()?,
+        behind: behind.strip_prefix('-')?.parse().ok()?,
+    })
+}
+
+/// Whether `dir` or an ancestor holds a `.git` (a cheap test before starting `git`).
+fn in_work_tree(dir: &Path) -> bool {
+    dir.ancestors()
+        .any(|d| fs::symlink_metadata(d.join(".git")).is_ok())
+}
+
+/// `git fetch` the current branch's remote in the repository holding `dir`.
+pub fn fetch(dir: &Path) -> Result<()> {
+    run_hinting(
+        dir,
+        &["fetch", "--quiet"],
+        "check that the store's remote is reachable (try `git fetch` in it by hand)",
+    )
+    .map(drop)
+}
+
+/// Fast-forward the current branch to its upstream (`git merge --ff-only @{u}`).
+pub fn fast_forward(dir: &Path) -> Result<()> {
+    run_hinting(
+        dir,
+        &["merge", "--ff-only", "--quiet", "@{u}"],
+        "commit or stash the changes git names above, then pull again",
+    )
+    .map(drop)
+}
+
+/// The paths under `dir` (relative to it, `/`-separated) with an uncommitted change,
+/// untracked ones included, `generated/` left out.
+pub fn changed_paths(dir: &Path) -> Result<Vec<String>> {
+    let out = run_hinting(
+        dir,
+        &[
+            "-c",
+            "status.relativePaths=true",
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--no-renames",
+            "--untracked-files=all",
+            "--",
+            ".",
+            STORE_EXCLUDE,
+        ],
+        "check that the store is a readable git checkout",
+    )?;
+    Ok(out
+        .split('\0')
+        .filter(|entry| entry.len() > 3)
+        .map(|entry| entry[3..].to_owned())
+        .collect())
+}
+
+/// The committed contents of `rel` (relative to `dir`) at `HEAD`; `None` when it is not
+/// in `HEAD` (or there is no commit yet).
+pub fn head_file(dir: &Path, rel: &str) -> Option<String> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["show", &format!("HEAD:./{rel}")])
+        .output()
+        .ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// The pathspec that keeps a store's per-machine `generated/` out of every commit, even
+/// when its `.gitignore` lost the line.
+const STORE_EXCLUDE: &str = ":(exclude)generated";
+
+/// Stage and commit every change under `dir` but `generated/`, with `message`. Changes
+/// elsewhere in the repository (a store kept in a dotfiles repo) are neither staged nor
+/// committed.
+pub fn commit_dir(dir: &Path, message: &str) -> Result<()> {
+    let hint = "check that the store is a writable git checkout";
+    // An exclude pathspec naming an ignored directory makes `git add` fail, so stage
+    // everything, then unstage `generated/` (staged only when no longer ignored).
+    run_hinting(dir, &["add", "--all", "--", "."], hint)?;
+    run_hinting(dir, &["reset", "--quiet", "--", "generated"], hint)?;
+    run_hinting(
+        dir,
+        &["commit", "--quiet", "-m", message, "--", ".", STORE_EXCLUDE],
+        "set your identity with `git config --global user.name` and `user.email`, then push again",
+    )
+    .map(drop)
+}
+
+/// `git push` the current branch to its upstream.
+pub fn push(dir: &Path) -> Result<()> {
+    run_hinting(
+        dir,
+        &["push", "--quiet"],
+        "if the remote has commits you lack, run `kipi pull` first, then push again",
+    )
+    .map(drop)
+}
+
+/// The current branch's name; `None` on a detached HEAD.
+pub fn branch(dir: &Path) -> Option<String> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["symbolic-ref", "--quiet", "--short", "HEAD"])
+        .output()
+        .ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+}
+
+/// `git -C <dir> <args>`, returning stdout; a failure is an I/O error carrying git's
+/// message and `hint`.
+fn run_hinting(dir: &Path, args: &[&str], hint: &str) -> Result<String> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .map_err(|e| Error::io(dir, e, "install git and make sure it is on PATH"))?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let why = if stderr.trim().is_empty() {
+            stdout
+        } else {
+            stderr
+        };
+        return Err(Error::io(
+            dir,
+            std::io::Error::other(format!("git {} failed: {}", args[0], why.trim())),
+            hint,
+        ));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// Run a git command, returning its stdout; a non-zero exit is an I/O error.
@@ -478,10 +659,24 @@ mod tests {
         let clean = DirStatus {
             clean: true,
             has_remote: false,
+            upstream: None,
         };
         assert_eq!(status(&sub), Some(clean), "inside a work tree");
         std::fs::write(sub.join("x"), "x").unwrap();
         assert!(!status(&sub).unwrap().clean);
+    }
+
+    #[test]
+    fn branch_ab_parses_ahead_and_behind() {
+        assert_eq!(
+            parse_ab("+3 -2"),
+            Some(Tracking {
+                ahead: 3,
+                behind: 2
+            })
+        );
+        assert_eq!(parse_ab("+0 -0"), Some(Tracking::default()));
+        assert_eq!(parse_ab("3 2"), None);
     }
 
     #[test]
