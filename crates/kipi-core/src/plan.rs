@@ -185,6 +185,8 @@ pub enum AlwaysOn {
 pub struct RelatedRepo {
     /// The entry name.
     pub name: String,
+    /// `via`: how this repo connects to it, if described.
+    pub via: Option<String>,
     /// Its resolved scope.
     pub scope: Option<String>,
     /// Its checkout on this machine, if cloned here.

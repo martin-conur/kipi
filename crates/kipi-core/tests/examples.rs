@@ -90,7 +90,16 @@ fn acme_store_loads_with_drafts_detected() {
 
     let events = store.repo("events-pipeline").unwrap();
     assert_eq!(events.scope.as_deref(), Some("acme-ml"));
-    assert_eq!(events.related, ["billing-api", "ml-platform"]);
+    let related: Vec<_> = (events.related.iter())
+        .map(|r| (r.name.as_str(), r.via.as_deref()))
+        .collect();
+    assert_eq!(
+        related,
+        [
+            ("billing-api", Some("feeds the usage events it bills from")),
+            ("ml-platform", None)
+        ]
+    );
     assert_eq!(events.exclude, ["pr-conventions".parse().unwrap()]);
     assert_eq!(events.agents.as_deref(), Some(&[AgentId::Claude][..]));
     assert_eq!(events.grant, Some(GrantMode::Registry));

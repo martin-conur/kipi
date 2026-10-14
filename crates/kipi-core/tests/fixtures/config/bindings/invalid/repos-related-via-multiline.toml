@@ -1,0 +1,10 @@
+[store]
+name = "fx"
+version = 1
+
+[repos.one]
+related = [{ repo = "two", via = """
+reads its tables
+and its views""" }]
+
+[repos.two]

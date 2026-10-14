@@ -17,9 +17,9 @@ acme  (~/work/acme)                         always-on: 346 tok
 |- registry (6 repos, 208 tok)
 |- acme-ml  (~/work/acme/ml)  extends acme  always-on: 362 tok
 |  |- dbt-conventions ●                     [scope]
-|  |- events-pipeline                       433 tok  ✓ synced  notes
+|  |- events-pipeline                       441 tok  ✓ synced  notes
 |  |  |- skills: code-review ○ pr-conventions ✗ personal/commit-style ○ dbt-conventions ○ stream-recipes ●
-|  |  `- related: billing-api ✓ granted   ml-platform ✓ granted
+|  |  `- related: billing-api ✓ granted (feeds the usage events it bills f…)   ml-platform ✓ granted
 |  |- feature-store                         418 tok  ✓ synced  draft summary
 |  `- ml-platform                           418 tok  ✓ synced
 |- acme-api                                 400 tok  ✓ synced

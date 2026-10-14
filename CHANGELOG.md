@@ -7,6 +7,16 @@ the stable interface; human-readable output may change in any release.
 
 ## [Unreleased]
 
+### Added
+
+- **Describe how related repos connect** (#62). A `related` item can be an inline table
+  `{ repo = "app", via = "marts.* tables consumed by app's loaders" }`, mixed freely with plain
+  names. The description is shown next to the repo in the block's "This repo" section, in
+  `explain`, in `tree` (truncated to fit) and as `via` in `resolve --json` / `tree --json`.
+  `kipi bind <repo> --related <target> --via "<text>"` sets or replaces it without touching
+  comments, and `--via ""` removes it. Stores without `via` are unchanged and need no migration;
+  the JSON gains a `via` field (`null` when unset) on each related repo.
+
 ## [0.1.1]
 
 ### Fixed

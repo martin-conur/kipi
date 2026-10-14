@@ -142,6 +142,23 @@ kipi explain events-pipeline                        # where every decision comes
 A `related` repo is listed in the repo's own section and pre-granted for reads. A relation that
 crosses scopes (`events-pipeline` → `side-tool`) is refused: that is the leak rule.
 
+When a feature spans repos, say how they connect, so the agent knows without opening
+`notes.md`. An ETL that builds tables an app reads:
+
+```bash
+kipi bind etl --related app --via "marts.* tables consumed by app's loaders"
+```
+
+```toml
+[repos.etl]
+related = [{ repo = "app", via = "marts.* tables consumed by app's loaders" }, "billing-api"]
+```
+
+The block then reads `Related: app (marts.* tables consumed by app's loaders), billing-api — read
+access granted.` A `via` is one line of at most 120 characters and describes one direction only;
+`app`'s own `related` item for `etl` has its own. `--via ""` removes the description and leaves
+the relation; `kipi unbind etl --related app` removes both.
+
 To use a personal skill at work, set `share_skills = true` in the personal store's `[store]` and
 reference it as `personal/<skill>` from the acme scope. Nothing else crosses stores.
 

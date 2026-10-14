@@ -141,6 +141,8 @@ impl Mark {
 pub struct RelatedNode {
     /// The entry name.
     pub name: String,
+    /// `via`: how the repo connects to it, if described.
+    pub via: Option<String>,
     /// Whether the agent may read it.
     pub access: Access,
 }
@@ -182,6 +184,23 @@ pub struct Display {
 /// column; a wider one puts its token count two spaces after itself instead, so the repo
 /// rows stay readable at 100 columns.
 const SCOPE_LABEL_CAP: usize = 48;
+
+/// The width a `related:` line keeps its `via` descriptions within; a longer one is
+/// truncated with `…` (`--json` has it in full).
+const RELATED_LINE_CAP: usize = 100;
+
+/// A `via` that would be cut to fewer characters than this is left out instead.
+const VIA_MIN: usize = 12;
+
+/// `text` cut to at most `max` characters, ending in `…` when cut.
+fn truncate(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_owned();
+    }
+    let mut cut: String = text.chars().take(max.saturating_sub(1)).collect();
+    cut.push('…');
+    cut
+}
 
 /// A styled piece of a line.
 type Seg = (String, Style);
@@ -395,15 +414,43 @@ impl Renderer<'_> {
                     });
                 }
                 Item::Related(repo) => {
+                    let mut items: Vec<Vec<Seg>> = repo
+                        .related
+                        .iter()
+                        .map(|r| {
+                            vec![
+                                plain(format!("{} ", r.name)),
+                                match r.access {
+                                    Access::Granted => ("✓ granted".into(), styles::explicit()),
+                                    Access::NotGranted => {
+                                        ("✗ not granted".into(), styles::removed())
+                                    }
+                                    Access::NotCloned => ("· not cloned".into(), styles::source()),
+                                },
+                            ]
+                        })
+                        .collect();
+                    // Descriptions take what is left of the line, first come first served.
+                    let base = head.chars().count()
+                        + "related:".chars().count()
+                        + items.iter().map(|i| width(i) + 3).sum::<usize>()
+                        - 2;
+                    let mut spare = RELATED_LINE_CAP.saturating_sub(base);
+                    for (item, r) in items.iter_mut().zip(&repo.related) {
+                        let Some(via) = &r.via else { continue };
+                        // ` (` and `)` around the text.
+                        let room = spare.saturating_sub(3);
+                        if room < VIA_MIN.min(via.chars().count()) {
+                            continue;
+                        }
+                        let text = truncate(via, room);
+                        spare -= text.chars().count() + 3;
+                        item.push((format!(" ({text})"), styles::source()));
+                    }
                     let mut left = vec![plain(head), plain("related:")];
-                    for (j, r) in repo.related.iter().enumerate() {
+                    for (j, item) in items.into_iter().enumerate() {
                         left.push(plain(if j == 0 { " " } else { "   " }));
-                        left.push(plain(format!("{} ", r.name)));
-                        left.push(match r.access {
-                            Access::Granted => ("✓ granted".into(), styles::explicit()),
-                            Access::NotGranted => ("✗ not granted".into(), styles::removed()),
-                            Access::NotCloned => ("· not cloned".into(), styles::source()),
-                        });
+                        left.extend(item);
                     }
                     self.lines.push(Line {
                         left,
@@ -554,14 +601,17 @@ mod tests {
         events.related = vec![
             RelatedNode {
                 name: "billing".into(),
+                via: None,
                 access: Access::Granted,
             },
             RelatedNode {
                 name: "ml".into(),
+                via: None,
                 access: Access::NotCloned,
             },
             RelatedNode {
                 name: "web".into(),
+                via: None,
                 access: Access::NotGranted,
             },
         ];
@@ -647,6 +697,41 @@ mod tests {
         (unscoped)
         └─ gone                                  12 tok  ✗ checkout gone
         ");
+    }
+
+    #[test]
+    fn via_shows_after_a_related_repo_while_the_line_has_room() {
+        let mut tree = sample();
+        let events = &mut tree.stores[0].scopes[0].scopes[0].repos[0];
+        events.related[0].via = Some("invoices".into());
+        events.related[2].via = Some("x".repeat(200));
+        let text = render(
+            &tree,
+            Display::default(),
+            &Painter::plain(),
+            Some(Path::new("/h")),
+        );
+        let line = text.lines().find(|l| l.contains("related:")).unwrap();
+        assert!(
+            line.contains(
+                "billing ✓ granted (invoices)   ml · not cloned   web ✗ not granted (xxx"
+            ),
+            "{line}"
+        );
+        assert!(line.ends_with("x…)"), "{line}");
+        assert_eq!(line.chars().count(), RELATED_LINE_CAP, "{line}");
+
+        // No room left: the description is dropped rather than shown as a stub.
+        let events = &mut tree.stores[0].scopes[0].scopes[0].repos[0];
+        events.related[0].via = Some("y".repeat(200));
+        let text = render(
+            &tree,
+            Display::default(),
+            &Painter::plain(),
+            Some(Path::new("/h")),
+        );
+        let line = text.lines().find(|l| l.contains("related:")).unwrap();
+        assert!(line.ends_with("web ✗ not granted"), "{line}");
     }
 
     #[test]

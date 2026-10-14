@@ -180,6 +180,10 @@ fn explain(loaded: &Loaded, repo: &RepoPlan, out: &Output) -> String {
             } else {
                 String::new()
             }),
+            plain(match &r.via {
+                Some(via) => format!("via: {via}"),
+                None => String::new(),
+            }),
             src(&r.source),
         ]);
     }

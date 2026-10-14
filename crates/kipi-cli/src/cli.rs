@@ -395,6 +395,9 @@ pub struct Binding {
     /// Aliases.
     #[arg(long = "alias", value_name = "ALIAS", num_args = 1..)]
     pub aliases: Vec<String>,
+    /// How this repo connects to the one `--related` repo (`bind` only; "" removes it).
+    #[arg(long, value_name = "TEXT")]
+    pub via: Option<String>,
     #[command(flatten)]
     pub dry_run: DryRun,
 }

@@ -48,7 +48,9 @@ and `kipi scan` write `[repos.<name>]` tables; `kipi remove repo` deletes one.
 | `repos.<repo>.remote` | string | none | Normalized origin URL (`github.com/acme-org/billing-api`); filled by `scan`; the primary match key across machines |
 | `repos.<repo>.summary` | string | none | One line: what the repo is and where to look. A trailing `# kipi:draft` marks it drafted |
 | `repos.<repo>.aliases` | array of strings | `[]` | Other names for the repo in the registry; matched exactly after case-folding |
-| `repos.<repo>.related` | array of repo names | `[]` | Repos listed in this repo's section and granted for reads; must be in the same scope chain |
+| `repos.<repo>.related` | array of repo names or `{ repo, via }` tables | `[]` | Repos listed in this repo's section and granted for reads; must be in the same scope chain. Strings and tables can be mixed |
+| `repos.<repo>.related[].repo` | string | required | In a table item: the related repo entry name |
+| `repos.<repo>.related[].via` | string | none | In a table item: how this repo connects to it, shown next to it in the block. One line, at most 120 characters; one direction only (`b`'s own item to `a` has its own `via`) |
 | `repos.<repo>.skills` | array of skill refs | `[]` | Skills added to the scope's |
 | `repos.<repo>.exclude` | array of skill refs | `[]` | Skills removed from the effective set; always wins |
 | `repos.<repo>.scope` | string | from path | Explicit scope; beats root membership |

@@ -15,7 +15,7 @@ Dry run: would write 1 file:
  summary = "Kafka consumers that turn raw events into billing and ML features"
 -aliases = ["events", "pipeline"]
 +aliases = ["events", "pipeline", "kafka"]
- related = ["billing-api", "ml-platform"]
+ related = [{ repo = "billing-api", via = "feeds the usage events it bills from" }, "ml-platform"]
 -skills = ["stream-recipes"]
 +skills = ["stream-recipes", "code-review"]
  exclude = ["pr-conventions"]

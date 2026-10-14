@@ -2,7 +2,8 @@
 
 use std::path::{Component, Path, PathBuf};
 
-use serde::Deserialize;
+use serde::de::{self, MapAccess, Visitor};
+use serde::{Deserialize, Deserializer};
 
 use super::paths::{ABSOLUTE_PATH_HINT, Env, absolute_path};
 use super::skills::load_skills;
@@ -10,8 +11,8 @@ use super::source::{Entries, Source};
 use super::{BINDINGS_FILE, NAME_HINT};
 use crate::error::{Error, Location, Result};
 use crate::model::{
-    AgentId, Defaults, Drafted, GrantMode, RemoteUrl, RepoEntry, STORE_VERSION, Scope, SkillRef,
-    Store, check_name,
+    AgentId, Defaults, Drafted, GrantMode, Related, RemoteUrl, RepoEntry, STORE_VERSION, Scope,
+    SkillRef, Store, check_name, check_via,
 };
 
 /// Every key `bindings.toml` accepts (see [`super::schema`]).
@@ -23,7 +24,11 @@ pub(super) fn schema_keys() -> Vec<String> {
             "store" => under::<RawStore>(table),
             "defaults" => under::<RawDefaults>(table),
             "scopes" => under::<RawScope>("scopes.<scope>"),
-            "repos" => under::<RawRepo>("repos.<repo>"),
+            "repos" => {
+                let mut keys = under::<RawRepo>("repos.<repo>");
+                keys.extend(under::<RawRelatedTable>("repos.<repo>.related[]"));
+                keys
+            }
             other => vec![other.to_owned()],
         })
         .collect()
@@ -86,7 +91,7 @@ struct RawRepo {
     summary: Option<String>,
     aliases: Option<Vec<String>>,
     #[serde(default)]
-    related: Vec<String>,
+    related: Vec<RawRelated>,
     #[serde(default)]
     skills: Vec<String>,
     #[serde(default)]
@@ -95,6 +100,39 @@ struct RawRepo {
     agents: Option<Vec<AgentId>>,
     grant: Option<GrantMode>,
     budget_tokens: Option<i64>,
+}
+
+/// One `related` item: a repo name, or `{ repo = "…", via = "…" }`.
+struct RawRelated(RawRelatedTable);
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawRelatedTable {
+    repo: String,
+    via: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for RawRelated {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct V;
+        impl<'de> Visitor<'de> for V {
+            type Value = RawRelated;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a repo name or a `{ repo = \"…\", via = \"…\" }` table")
+            }
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                Ok(RawRelated(RawRelatedTable {
+                    repo: v.to_owned(),
+                    via: None,
+                }))
+            }
+            fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+                RawRelatedTable::deserialize(de::value::MapAccessDeserializer::new(map))
+                    .map(RawRelated)
+            }
+        }
+        d.deserialize_any(V)
+    }
 }
 
 /// Load the store at `root`: its `bindings.toml`, `skills/*/SKILL.md` and
@@ -193,8 +231,16 @@ fn parse_store(root: &Path, src: Source, home: &Path) -> Result<Store> {
         for alias in r.aliases.iter().flatten() {
             v.non_empty(&k("aliases"), alias, "alias")?;
         }
-        for rel in &r.related {
-            v.name(&k("related"), rel, "repo")?;
+        let mut related = Vec::with_capacity(r.related.len());
+        for RawRelated(rel) in r.related {
+            v.name(&k("related"), &rel.repo, "repo")?;
+            if let Some(via) = &rel.via {
+                v.via(&k("related"), &rel.repo, via)?;
+            }
+            related.push(Related {
+                name: rel.repo,
+                via: rel.via,
+            });
         }
         if let Some(scope) = &r.scope {
             v.name(&k("scope"), scope, "scope")?;
@@ -216,7 +262,7 @@ fn parse_store(root: &Path, src: Source, home: &Path) -> Result<Store> {
             at: src.at(&["repos", &name]),
             name,
             remote,
-            related: r.related,
+            related,
             scope: r.scope,
             agents: r.agents,
             grant: r.grant,
@@ -378,6 +424,18 @@ impl Validator<'_> {
             ));
         }
         Ok(())
+    }
+
+    /// The `via` of the `related` item naming `repo`.
+    fn via(&self, keys: &[&str], repo: &str, via: &str) -> Result<()> {
+        check_via(via).map_err(|why| {
+            Error::invalid(
+                self.src.at(keys),
+                format!("the `via` of related repo `{repo}` {why}"),
+                "keep `via` to one short line (at most 120 characters); longer knowledge \
+                 belongs in repos/<name>/notes.md",
+            )
+        })
     }
 
     /// The value at `keys` still carries a trailing `# kipi:draft` comment.

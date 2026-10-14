@@ -277,6 +277,9 @@ The spec wins wherever it is explicit.
   "none"`). When every related repo has the same status it is printed once after the list, as
   in §8. A related repo the known-repos list does not show (no registry, or it lives in an ancestor
   scope above the registry) gets its own line with path and notes, so the agent still finds it.
+  A `via` (#62) follows its repo in parentheses; with one shared status the status then follows
+  the list after ` — ` instead of in parentheses (`Related: app (marts.* tables), billing-api —
+  read access granted.`), and with mixed statuses each repo's parentheses hold `via; status`.
   The "read its code at the listed path" hint appears only when some repo is listed.
 - **Markers**: the begin marker is any line starting with `<!-- kipi:begin` (the text after it is
   free), the end marker a line that is `<!-- kipi:end -->` plus optional trailing whitespace. A
@@ -1125,3 +1128,28 @@ The spec wins wherever it is explicit.
   (`git.example.com/`) is accepted for a self-hosted forge; a local path is refused. Removal and
   the "already there" check compare normalized values, so a hand-written `github.com/o` matches.
   The key is written after `roots`. `init --scope` has no such flag; add it with `kipi scope`.
+
+## How related repos connect: `related = [{ repo, via }]` (#62)
+
+- **Shape.** A `related` item is a string or an inline table `{ repo, via }`; the two mix in one
+  array, and a table without `via` is the same as the string. The table is `deny_unknown_fields`,
+  and its keys appear in the config reference as `repos.<repo>.related[].repo` / `.via`, read off
+  the serde model like every other key. `via` must be non-empty, one line (no `\n` or `\r`) and at
+  most 120 characters, counted as Unicode scalar values; the error points at the `related` key.
+  `RepoEntry.related` is `Vec<Related { name, via }>`, and `RepoPlan.related[].via` carries it.
+- **One direction.** `etl → app` and `app → etl` each have their own `via`; nothing is mirrored,
+  because "consumes app's tables" read from the other side is a different sentence.
+- **`bind --via`.** `--via` needs exactly one `--related` and only applies to `bind`: on `unbind`,
+  with no `--related`, or with several, it is a usage error with a hint. On a string item it
+  replaces the element in place with `{ repo = "…", via = "…" }`, keeping the element's decor
+  (leading whitespace, comments on its line), so `--via ""` gives back the original bytes; on a
+  table it replaces only the `via` value. A table left with only `repo` becomes a string again. A
+  new relation with `--via` is appended as a string first (formatted like the array), then turned
+  into a table. The report has a separate `via` line (`+ via: app (…)`, `- via: app`, or kept).
+  `unbind --related` matches both forms. A hand-written table without `via` (`{repo="app"}`) is
+  reformatted to `{ repo = "app", via = "…" }` when `via` is added.
+- **`tree`.** The `via` follows the repo's access marker in parentheses, while the `related:`
+  line stays within 100 columns (the width the tree layout targets): descriptions take the spare
+  width in list order, are truncated with `…`, and one that would be cut below 12 characters is
+  left out. `--json` has the full text.
+- **`explain`** adds a `via: …` column to the Related table, before the source.
