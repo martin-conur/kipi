@@ -9,7 +9,7 @@ use kipi_core::model::{AgentId, GrantMode, Machine, StoreSet};
 use kipi_core::plan::{AlwaysOn, GrantKind, Plan, RepoPlan};
 use kipi_core::resolve::{remote_pattern_matches, resolve};
 use kipi_test_support::builders::{
-    MachineBuilder, StoreBuilder, draft, remote, reviewed, skill_refs, store_set,
+    MachineBuilder, StoreBuilder, attributes, draft, remote, reviewed, skill_refs, store_set,
 };
 use kipi_test_support::stores::ExampleStore;
 use kipi_test_support::workspace_root;
@@ -1033,4 +1033,71 @@ fn registry_is_the_nearest_enabled_scope_and_always_on_runs_top_down() {
         team_registry.entries[0].notes.as_deref(),
         Some(Path::new("/st/repos/in-team/notes.md"))
     );
+}
+
+// ---------------------------------------------------------------------------------
+// Attributes
+
+#[test]
+fn attributes_inherit_down_the_chain_and_the_repo_wins() {
+    let store = StoreBuilder::new("work", "/stores/work")
+        .scope("work", |s| {
+            s.roots = vec!["/w".into()];
+            s.attributes = attributes(
+                &[("tracker.site", "example.net"), ("tracker.project", "TOP")],
+                &s.at,
+            );
+        })
+        .scope("ml", |s| {
+            s.extends = Some("work".into());
+            s.roots = vec!["/w/ml".into()];
+            s.attributes = attributes(&[("tracker.project", "ML")], &s.at);
+        })
+        .repo("trainer", |r| {
+            r.attributes = attributes(&[("tracker.board", "Models")], &r.at);
+        })
+        .repo("api", |r| {
+            r.attributes = attributes(&[("tracker.project", "API")], &r.at);
+        })
+        .repo("loose", |r| {
+            r.scope = None;
+        })
+        .build();
+    let set = store_set(vec![store]);
+    let machine = MachineBuilder::new()
+        .repo("trainer", "/w/ml/trainer")
+        .repo("api", "/w/api")
+        .repo("loose", "/elsewhere/loose")
+        .build();
+    let plan = ok(&set, &machine);
+    let attrs = |name: &str| -> Vec<(String, String, String)> {
+        plan.repo(name)
+            .unwrap()
+            .attributes
+            .iter()
+            .map(|(k, d)| (k.clone(), d.value.clone(), d.source.rule.clone()))
+            .collect()
+    };
+    let row = |k: &str, v: &str, rule: &str| (k.to_owned(), v.to_owned(), rule.to_owned());
+    assert_eq!(
+        attrs("trainer"),
+        [
+            row("tracker.board", "Models", "repos.trainer.attributes"),
+            row("tracker.project", "ML", "scopes.ml.attributes"),
+            row("tracker.site", "example.net", "scopes.work.attributes"),
+        ]
+    );
+    assert_eq!(
+        attrs("api"),
+        [
+            row("tracker.project", "API", "repos.api.attributes"),
+            row("tracker.site", "example.net", "scopes.work.attributes"),
+        ]
+    );
+    assert!(
+        attrs("loose").is_empty(),
+        "an unscoped repo has only its own"
+    );
+    let site = &plan.repo("trainer").unwrap().attributes["tracker.site"];
+    assert_eq!(site.source.store(), Some("work"));
 }

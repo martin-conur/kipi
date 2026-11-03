@@ -130,11 +130,11 @@ pub enum Command {
     /// Remove a repo entry.
     #[command(subcommand)]
     Remove(Remove),
-    /// Change a scope: its registry, roots, parent, remote patterns, skills or always-on files.
+    /// Change a scope: its registry, roots, parent, remote patterns, skills, always-on files or attributes.
     Scope(ScopeArgs),
-    /// Add skills, relations, exclusions or aliases to a repo entry.
+    /// Add skills, relations, exclusions, aliases or attributes to a repo entry.
     Bind(Binding),
-    /// Remove skills, relations, exclusions or aliases from a repo entry.
+    /// Remove skills, relations, exclusions, aliases or attributes from a repo entry.
     Unbind(Binding),
     /// Print the resolved plan (no side effects).
     Resolve {
@@ -195,17 +195,21 @@ pub enum Command {
         #[arg(long)]
         machine: bool,
     },
-    /// Resolve an alias to a repo, its summary and paths.
+    /// Resolve an alias to a repo, its summary and paths, or find repos by attribute.
     Where {
         /// A repo name or alias.
-        #[arg(add = ArgValueCandidates::new(complete::aliases))]
-        alias: String,
+        #[arg(add = ArgValueCandidates::new(complete::aliases), required_unless_present = "attrs", conflicts_with = "attrs")]
+        alias: Option<String>,
         /// Print the repo's notes.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "attrs")]
         notes: bool,
         /// Look in every mounted store, not just the current repo's scope chain.
         #[arg(long)]
         any_scope: bool,
+        /// List the repos whose resolved attribute is `key=value` (or set at all, for `key`);
+        /// repeat to require several.
+        #[arg(long = "attr", value_name = "KEY[=VALUE]", num_args = 1..)]
+        attrs: Vec<String>,
     },
     /// Search skills, notes and conventions (and checkouts with --repos).
     Grep {
@@ -398,6 +402,12 @@ pub struct ScopeArgs {
     /// Remove an always-on file.
     #[arg(long = "remove-always", value_name = "FILE", num_args = 1..)]
     pub remove_always: Vec<String>,
+    /// Set an attribute every repo in the scope inherits unless it sets its own.
+    #[arg(long = "attr", value_name = "KEY=VALUE", num_args = 1..)]
+    pub attrs: Vec<String>,
+    /// Remove an attribute.
+    #[arg(long = "remove-attr", value_name = "KEY", num_args = 1..)]
+    pub remove_attrs: Vec<String>,
     #[command(flatten)]
     pub dry_run: DryRun,
 }
@@ -423,6 +433,9 @@ pub struct Binding {
     /// How this repo connects to the one `--related` repo (`bind` only; "" removes it).
     #[arg(long, value_name = "TEXT")]
     pub via: Option<String>,
+    /// Attributes: `key=value` to set (`bind`), `key` to remove (`unbind`).
+    #[arg(long = "attr", value_name = "KEY[=VALUE]", num_args = 1..)]
+    pub attrs: Vec<String>,
     #[command(flatten)]
     pub dry_run: DryRun,
 }

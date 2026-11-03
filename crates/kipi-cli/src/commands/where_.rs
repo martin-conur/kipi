@@ -1,16 +1,76 @@
 //! `kipi where <alias> [--notes]`: resolve an alias to a repo entry, its summary, its
-//! checkout and its notes (roadmap §3 channel 4, §7). Written for an agent reading it:
-//! one fact per line, absolute paths, no decoration. Inside a bound repo only the
-//! repo's scope chain is searched; `--any-scope` searches every mounted store.
+//! checkout, its attributes and its notes (roadmap §3 channel 4, §7). Written for an
+//! agent reading it: one fact per line, absolute paths, no decoration. `kipi where --attr
+//! key=value` is the reverse: every repo whose resolved attributes match. Inside a bound
+//! repo only the repo's scope chain is searched; `--any-scope` searches every mounted
+//! store.
 
 use std::fs;
 
 use kipi_core::error::{Error, closest};
-use kipi_core::search::{self, Lookup, RepoInfo, View};
+use kipi_core::model::check_attribute_key;
+use kipi_core::search::{self, AttrQuery, Lookup, RepoInfo, View};
 
 use super::{Loaded, cwd_repo};
 use crate::error::Failure;
 use crate::output::{Output, json};
+
+/// What `where` may see from the working directory: the current repo's scope chain, or
+/// everything with `--any-scope` or outside a bound repo. `true` when scoped.
+fn view(loaded: &Loaded, any_scope: bool) -> (View, bool) {
+    let here = if any_scope { None } else { cwd_repo(loaded) };
+    match here {
+        Some(repo) => (View::repo(&loaded.stores, &loaded.plan, repo), true),
+        None => (View::everything(&loaded.stores), false),
+    }
+}
+
+/// List every repo in view whose resolved attributes match every `--attr`.
+pub fn by_attributes(
+    loaded: &Loaded,
+    raw: &[String],
+    any_scope: bool,
+    out: &Output,
+) -> Result<(), Failure> {
+    let mut query = Vec::with_capacity(raw.len());
+    for r in raw {
+        let q = AttrQuery::parse(r);
+        check_attribute_key(&q.key).map_err(|why| {
+            Failure::user(
+                format!("invalid --attr `{r}`: the key {why}"),
+                "pass `key=value` or `key`, e.g. `kipi where --attr tracker.project=PROJ`",
+            )
+        })?;
+        query.push(q);
+    }
+    let (view, scoped) = view(loaded, any_scope);
+    out.info(&format!("searching {}", view.label));
+    let found = search::by_attributes(&loaded.stores, &loaded.plan, &view, &query);
+    if out.json {
+        let text = json::by_attributes(&view, &query, &found)
+            .map_err(|e| Failure::json("the repo entries", e))?;
+        return Ok(out.print(&text)?);
+    }
+    let text: Vec<String> = found.iter().map(describe).collect();
+    out.print(&text.join("\n"))?;
+    if found.is_empty() && out.verbosity >= 0 {
+        let p = &out.paint_err;
+        let more = if scoped {
+            "; `--any-scope` searches every mounted store"
+        } else {
+            ""
+        };
+        eprintln!(
+            "{} no repo in {} has {}\n  {} values match exactly; `kipi explain <repo>` shows a \
+             repo's attributes{more}",
+            p.hint("note:"),
+            view.label,
+            raw.join(" and "),
+            p.hint("hint:")
+        );
+    }
+    Ok(())
+}
 
 /// Look `alias` up and print what it names.
 pub fn run(
@@ -20,11 +80,7 @@ pub fn run(
     any_scope: bool,
     out: &Output,
 ) -> Result<(), Failure> {
-    let here = if any_scope { None } else { cwd_repo(loaded) };
-    let view = match here {
-        Some(repo) => View::repo(&loaded.stores, &loaded.plan, repo),
-        None => View::everything(&loaded.stores),
-    };
+    let (view, scoped) = view(loaded, any_scope);
     let info = match search::lookup(&loaded.stores, &loaded.plan, &view, alias) {
         Lookup::Found(info) => info,
         Lookup::Ambiguous(infos) => {
@@ -37,7 +93,7 @@ pub fn run(
                 ),
             ));
         }
-        Lookup::NotFound => return Err(not_found(loaded, &view, alias, here.is_some())),
+        Lookup::NotFound => return Err(not_found(loaded, &view, alias, scoped)),
     };
     let notes_text = if notes {
         Some(read_notes(&info)?)
@@ -61,7 +117,7 @@ pub fn run(
     Ok(())
 }
 
-/// One fact per line: name and summary, aliases, scope, checkout, notes.
+/// One fact per line: name and summary, aliases, scope, checkout, notes, attributes.
 fn describe(info: &RepoInfo) -> String {
     let draft = |d: bool| if d { " (draft)" } else { "" };
     let summary = info.summary.as_deref().unwrap_or("(no summary)");
@@ -88,6 +144,9 @@ fn describe(info: &RepoInfo) -> String {
         .as_ref()
         .map_or_else(|| "none".to_owned(), |p| p.display().to_string());
     text.push_str(&format!("notes: {notes}\n"));
+    for (key, value) in &info.attributes {
+        text.push_str(&format!("attribute: {key} = {value}\n"));
+    }
     text
 }
 

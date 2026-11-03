@@ -5,7 +5,7 @@
 //! and, optionally, the checkouts of the repos in view. Both work on a [`View`]: what a
 //! repo's scope chain may see (the leak rule of roadmap §6), or everything mounted.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -204,6 +204,8 @@ pub struct RepoInfo {
     pub local: Option<PathBuf>,
     /// `repos/<name>/notes.md` in the store, when it exists.
     pub notes: Option<PathBuf>,
+    /// The resolved `attributes` (repo > scope chain), by key.
+    pub attributes: BTreeMap<String, String>,
 }
 
 /// What an alias resolves to.
@@ -257,7 +259,61 @@ fn repo_info(stores: &StoreSet, plan: &RepoPlan) -> Option<RepoInfo> {
         summary_draft: entry.summary_is_draft(),
         local: plan.path.as_deref().map(absolute),
         notes: entry.notes.as_deref().map(absolute),
+        attributes: plan
+            .attributes
+            .iter()
+            .map(|(k, d)| (k.clone(), d.value.clone()))
+            .collect(),
     })
+}
+
+/// One condition of a reverse lookup: the resolved attribute `key` is set, and equals
+/// `value` when one is given.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttrQuery {
+    /// The dotted key.
+    pub key: String,
+    /// The exact value wanted; `None` matches any.
+    pub value: Option<String>,
+}
+
+impl AttrQuery {
+    /// `key=value`, or `key` alone for any value.
+    pub fn parse(raw: &str) -> Self {
+        match raw.split_once('=') {
+            Some((key, value)) => AttrQuery {
+                key: key.trim().to_owned(),
+                value: Some(value.to_owned()),
+            },
+            None => AttrQuery {
+                key: raw.trim().to_owned(),
+                value: None,
+            },
+        }
+    }
+
+    fn matches(&self, attributes: &BTreeMap<String, String>) -> bool {
+        attributes
+            .get(&self.key)
+            .is_some_and(|v| self.value.as_ref().is_none_or(|want| want == v))
+    }
+}
+
+/// Every repo entry in `view` whose resolved attributes (inherited ones included) meet
+/// every condition of `query`, sorted by name. The reverse of `where <alias>`: an
+/// incoming ticket's `tracker.project` names the repos it belongs to.
+pub fn by_attributes(
+    stores: &StoreSet,
+    plan: &Plan,
+    view: &View,
+    query: &[AttrQuery],
+) -> Vec<RepoInfo> {
+    plan.repos
+        .iter()
+        .filter(|r| view.repos.contains(&r.name))
+        .filter_map(|r| repo_info(stores, r))
+        .filter(|i| query.iter().all(|q| q.matches(&i.attributes)))
+        .collect()
 }
 
 /// How to search.

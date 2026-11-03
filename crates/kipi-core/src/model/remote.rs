@@ -378,6 +378,7 @@ mod tests {
             agents: None,
             grant: None,
             budget_tokens: None,
+            attributes: Vec::new(),
             notes: None,
             at: Location::file("bindings.toml"),
         }

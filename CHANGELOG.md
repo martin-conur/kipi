@@ -7,6 +7,20 @@ the stable interface; human-readable output may change in any release.
 
 ## [Unreleased]
 
+### Added
+
+- **Repo attributes** (#70). Free-form per-repo settings for the tools kipi syncs into a repo (an
+  issue-tracker project, a board, a base branch): `attributes = { "tracker.project" = "PROJ" }`
+  on a `[repos.*]` entry or a `[scopes.*]` table, dotted keys and string values that kipi does not
+  interpret. A repo's value beats its scope's, which beats a parent scope's.
+  `kipi bind <repo> --attr key=value`, `kipi unbind <repo> --attr key` and
+  `kipi scope <scope> --attr key=value` / `--remove-attr key` edit them without touching comments.
+  `kipi explain` shows where each came from; `kipi where` and `kipi resolve --json` carry the
+  resolved set (`attributes`); `kipi where --attr key=value [--any-scope]` lists every repo with
+  that value. Stores without attributes are unchanged and need no migration. The JSON output gains
+  an `attributes` field on each repo of `resolve` and on `where`, and a new `where --attr` shape
+  (`docs/json.md`); nothing existing changed.
+
 ### Fixed
 
 - **The installer check now runs on every release** (#68). It triggered on `release: published`,

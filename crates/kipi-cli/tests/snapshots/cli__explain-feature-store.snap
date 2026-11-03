@@ -37,3 +37,6 @@ Settings  (repo > scope chain > defaults > built-in)
   agents         claude, generic  ← defaults.agents (acme:bindings.toml:8)
   budget_tokens  4000             ← defaults.budget_tokens (acme:bindings.toml:8)
   grant          related          ← defaults.grant (acme:bindings.toml:8)
+
+Attributes  (repo > scope chain)
+  (none)

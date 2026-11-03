@@ -5,7 +5,7 @@
 //! engine diffs them against the manifest and the disk. Every decision carries a
 //! [`Source`] so `explain` can print where it came from.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use crate::adapters::{self, AgentAdapter};
@@ -122,6 +122,9 @@ pub struct RepoPlan {
     pub agents: Decided<Vec<AgentId>>,
     /// Always-on token budget.
     pub budget_tokens: Decided<u32>,
+    /// Resolved `attributes` by key: the repo's own value, else the nearest scope's in the
+    /// chain.
+    pub attributes: BTreeMap<String, Decided<String>>,
 }
 
 /// A skill a repo uses (or excludes).

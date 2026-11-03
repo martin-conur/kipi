@@ -161,6 +161,50 @@ pub fn check_via(via: &str) -> Result<(), String> {
     }
 }
 
+/// One entry of a scope's or repo's `attributes`: a free-form dotted key and a string
+/// value kipi does not interpret (`tracker.project = "PROJ"`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Attribute {
+    /// The dotted key, `tracker.project`, however it was written (quoted or nested).
+    pub key: String,
+    /// The value.
+    pub value: String,
+    /// The line that sets it.
+    pub at: Location,
+}
+
+/// Check an attribute key: dot-separated segments of ASCII letters, digits, `-` and `_`.
+pub fn check_attribute_key(key: &str) -> Result<(), String> {
+    if key.is_empty() {
+        return Err("is empty".to_owned());
+    }
+    for segment in key.split('.') {
+        if segment.is_empty() {
+            return Err("has an empty segment (`..`, or a leading or trailing `.`)".to_owned());
+        }
+        if !segment
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "-_".contains(c))
+        {
+            return Err(format!(
+                "has segment `{segment}`, which may only contain letters, digits, `-` and `_`"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Check an attribute value: non-empty and one line.
+pub fn check_attribute_value(value: &str) -> Result<(), &'static str> {
+    if value.is_empty() {
+        Err("is empty")
+    } else if value.contains(['\n', '\r']) {
+        Err("spans several lines")
+    } else {
+        Ok(())
+    }
+}
+
 /// One item of `repos.<repo>.related`: a repo entry name and, optionally, how the two
 /// repos connect (`via`, one direction only).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -256,8 +300,14 @@ impl Store {
         if let Some(at) = &mut self.defaults.at {
             tag(at);
         }
-        self.scopes.iter_mut().for_each(|s| tag(&mut s.at));
-        self.repos.iter_mut().for_each(|r| tag(&mut r.at));
+        for s in &mut self.scopes {
+            tag(&mut s.at);
+            s.attributes.iter_mut().for_each(|a| tag(&mut a.at));
+        }
+        for r in &mut self.repos {
+            tag(&mut r.at);
+            r.attributes.iter_mut().for_each(|a| tag(&mut a.at));
+        }
         self.skills.iter_mut().for_each(|s| tag(&mut s.at));
     }
 }
@@ -315,6 +365,8 @@ pub struct Scope {
     pub grant: Option<GrantMode>,
     /// `budget_tokens` override.
     pub budget_tokens: Option<u32>,
+    /// `attributes`: defaults for every repo in the scope and its descendants.
+    pub attributes: Vec<Attribute>,
     /// The `[scopes.<name>]` header.
     pub at: Location,
 }
@@ -344,6 +396,8 @@ pub struct RepoEntry {
     pub grant: Option<GrantMode>,
     /// `budget_tokens` override.
     pub budget_tokens: Option<u32>,
+    /// `attributes`: the repo's own, over its scope chain's.
+    pub attributes: Vec<Attribute>,
     /// `repos/<name>/notes.md` in the store, when it exists.
     pub notes: Option<PathBuf>,
     /// The `[repos.<name>]` header.

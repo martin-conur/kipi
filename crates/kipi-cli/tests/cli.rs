@@ -3274,3 +3274,149 @@ fn unmounting_a_store_cleans_its_repos_worktrees_too() {
         assert!(!wt.join(file).exists(), "{file} removed");
     }
 }
+
+// --- attributes (#70) ---
+
+#[test]
+fn attributes_are_set_inherited_explained_and_looked_up_in_reverse() {
+    let home = onboarded_home();
+    let kipi = |args: &[&str]| stdout_of(&home, home.bare().args(args).current_dir(home.path()));
+    kipi(&[
+        "scope",
+        "acme",
+        "--attr",
+        "tracker.project=ACME",
+        "tracker.site=tracker.example.com",
+    ]);
+    kipi(&[
+        "bind",
+        "events-pipeline",
+        "--attr",
+        "tracker.project=EVT",
+        "--attr",
+        "tracker.board=Team board",
+    ]);
+
+    let explained = kipi(&["explain", "events-pipeline"]);
+    let section = explained
+        .split("Attributes  (repo > scope chain)\n")
+        .nth(1)
+        .unwrap();
+    insta::assert_snapshot!("explain-attributes", section);
+
+    let out = kipi(&["where", "events"]);
+    assert!(
+        out.ends_with(
+            "attribute: tracker.board = Team board\nattribute: tracker.project = EVT\n\
+             attribute: tracker.site = tracker.example.com\n"
+        ),
+        "{out}"
+    );
+    let doc: serde_json::Value =
+        serde_json::from_str(&kipi(&["where", "events", "--json"])).unwrap();
+    assert_eq!(doc["attributes"]["tracker.project"], "EVT");
+    let doc: serde_json::Value =
+        serde_json::from_str(&kipi(&["resolve", "events-pipeline", "--json"])).unwrap();
+    let site = &doc["repos"][0]["attributes"]["tracker.site"];
+    assert_eq!(site["value"], "tracker.example.com");
+    assert_eq!(site["source"]["rule"], "scopes.acme.attributes");
+
+    // Reverse lookup: the inherited value counts, the overridden one does not.
+    let names = |doc: &serde_json::Value| -> Vec<String> {
+        doc["repos"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["name"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let out = kipi(&["where", "--attr", "tracker.project=ACME", "--json"]);
+    insta::assert_snapshot!("where-attr-json", out);
+    let doc: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(
+        names(&doc),
+        [
+            "acme-api",
+            "billing-api",
+            "feature-store",
+            "ml-platform",
+            "web-dashboard"
+        ]
+    );
+    let doc: serde_json::Value = serde_json::from_str(&kipi(&[
+        "where",
+        "--attr",
+        "tracker.site",
+        "--attr",
+        "tracker.project=EVT",
+        "--json",
+    ]))
+    .unwrap();
+    assert_eq!(names(&doc), ["events-pipeline"]);
+    let out = kipi(&["where", "--attr", "tracker.project=EVT"]);
+    assert!(out.starts_with("events-pipeline — "), "{out}");
+
+    // From a personal repo only its scope chain is searched, unless --any-scope.
+    let side_tool = home.path().join("code/side-tool");
+    let scoped = home
+        .bare()
+        .args(["where", "--attr", "tracker.project=EVT", "--json"])
+        .current_dir(&side_tool)
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let doc: serde_json::Value = serde_json::from_slice(&scoped.stdout).unwrap();
+    assert!(names(&doc).is_empty());
+    let text = home
+        .bare()
+        .args(["where", "--attr", "tracker.project=EVT"])
+        .current_dir(&side_tool)
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    assert!(text.stdout.is_empty());
+    assert!(
+        home.scrub(&text.stderr)
+            .contains("`--any-scope` searches every mounted store"),
+        "{}",
+        home.scrub(&text.stderr)
+    );
+    let doc: serde_json::Value = serde_json::from_str(&stdout_of(
+        &home,
+        home.bare()
+            .args([
+                "where",
+                "--attr",
+                "tracker.project=EVT",
+                "--any-scope",
+                "--json",
+            ])
+            .current_dir(&side_tool),
+    ))
+    .unwrap();
+    assert_eq!(names(&doc), ["events-pipeline"]);
+
+    // Unbinding the repo's own value falls back to the scope's.
+    let out = kipi(&["unbind", "events-pipeline", "--attr", "tracker.project"]);
+    assert!(
+        out.contains("still inherited: `ACME` ← scopes.acme.attributes"),
+        "{out}"
+    );
+    let (code, err) = failure_of(
+        &home,
+        home.bare()
+            .args(["where", "--attr", "tracker..project"])
+            .current_dir(home.path()),
+    );
+    assert_eq!(code, 1);
+    assert!(err.contains("hint:"), "{err}");
+    let (code, _) = failure_of(
+        &home,
+        home.bare()
+            .args(["where", "events", "--attr", "x=y"])
+            .current_dir(home.path()),
+    );
+    assert_eq!(code, 1, "an alias and --attr together are a usage error");
+}

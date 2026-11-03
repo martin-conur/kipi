@@ -23,6 +23,7 @@ scopes: [
         agents: None,
         grant: None,
         budget_tokens: None,
+        attributes: [],
         at: Location {
             file: "<dir>/bindings.toml",
             line: Some(

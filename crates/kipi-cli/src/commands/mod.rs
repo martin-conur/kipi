@@ -172,7 +172,14 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
             alias,
             notes,
             any_scope,
-        } => where_::run(&load(&env()?)?, alias, *notes, *any_scope, out),
+            attrs,
+        } => {
+            let loaded = load(&env()?)?;
+            match alias {
+                Some(alias) => where_::run(&loaded, alias, *notes, *any_scope, out),
+                None => where_::by_attributes(&loaded, attrs, *any_scope, out),
+            }
+        }
         Command::Grep {
             pattern,
             scope,
@@ -363,6 +370,8 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
                 remove_always: &s.remove_always,
                 add_remote_patterns: &s.add_remote_patterns,
                 remove_remote_patterns: &s.remove_remote_patterns,
+                attrs: &s.attrs,
+                remove_attrs: &s.remove_attrs,
             },
             s.dry_run.dry_run,
             out,
@@ -377,6 +386,7 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
                 exclude: &b.exclude,
                 aliases: &b.aliases,
                 via: b.via.as_deref(),
+                attrs: &b.attrs,
             },
             matches!(command, Command::Bind(_)),
             b.dry_run.dry_run,

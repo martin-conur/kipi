@@ -1154,6 +1154,38 @@ The spec wins wherever it is explicit.
   left out. `--json` has the full text.
 - **`explain`** adds a `via: …` column to the Related table, before the source.
 
+## Repo attributes: `attributes = { "tracker.project" = "…" }` (#70)
+
+- **Spec addition.** Roadmap §6 gains an **Attributes** paragraph and §7 the `--attr` flags of
+  `bind` / `unbind` / `scope` and `where --attr`.
+- **Shape.** `attributes` is a table on `[scopes.<scope>]` and `[repos.<repo>]`. Keys are dotted
+  (`tracker.project`), each segment ASCII letters, digits, `-` and `_`; values are non-empty,
+  one-line strings. The loader flattens every TOML spelling to the dotted key: a quoted
+  `"tracker.project"`, nested `tracker.project` / `{ tracker = { project = … } }`, or an
+  `[repos.<repo>.attributes.tracker]` sub-table. Two spellings of one key are an error, as is a
+  non-string value. The table is read off the spanned document rather than through serde (serde
+  sees `IgnoredAny`), so each attribute keeps the line that sets it for `explain`.
+- **No `[defaults]` attributes, no lists.** The issue asks for scope-level defaults only; a
+  store-wide default is a top-level scope's attribute. Values are strings; lists can come later.
+- **Resolution.** Per key: the repo's value, else the nearest scope in the chain, walking up
+  `extends`. An unscoped repo has only its own. `RepoPlan.attributes` is a `BTreeMap` of
+  `Decided<String>`, so JSON and `explain` list keys sorted.
+- **Writing.** `bind --attr k=v`, `unbind --attr k`, `scope --attr k=v` / `--remove-attr k`. A
+  key that exists is changed where it is written, keeping its comment and spacing (so a hand-written
+  nested or sub-table form stays as it is); a new key is added quoted to an inline
+  `attributes = { … }`, created when absent. Removing the last key removes the table, and emptied
+  nested tables go with it, so set-then-unset gives back the original bytes. Changing a value is
+  reported as an add with ``was `old` ``; the same value is a keep. Unbinding a key the repo still
+  inherits notes the inherited value and its rule, as unbinding an inherited skill does.
+  `unbind --attr k=v` is refused (the value says nothing there) with the key-only form as the hint.
+- **Reverse lookup.** `where --attr k=v` (or `k` alone: set to anything; repeatable, all must
+  match) replaces the alias, which it conflicts with, as does `--notes`. It searches the same view
+  as `where <alias>`: the current repo's scope chain inside a bound repo, else every mounted store,
+  and `--any-scope` widens it. Values match exactly (case-sensitive). No match is not an error:
+  text mode prints nothing on stdout and a note on stderr, JSON an empty `repos` (like `grep`).
+- **Text `where`** prints one `attribute: <key> = <value>` line per resolved attribute after
+  `notes:`. `explain` has an `Attributes  (repo > scope chain)` section after Settings.
+
 ## Store sync over git: `init --clone`, `pull`, `push` (#16)
 
 - **Spec addition.** Roadmap §7 gains `init --clone`, `pull` and `push`; §11 describes them, §1 and

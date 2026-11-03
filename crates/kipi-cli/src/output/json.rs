@@ -4,6 +4,7 @@
 //! kipi-core's types, so the internal model can change without changing the output.
 //! Field order is declaration order; lists keep the plan's deterministic order.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use kipi_core::apply::Report;
@@ -13,7 +14,7 @@ use kipi_core::model::StoreSet;
 use kipi_core::plan::{
     AlwaysOn, Decided, GrantKind, Plan, PlannedSkill, Registry, RepoPlan, SkillOrigin, Source,
 };
-use kipi_core::search::{HitSource, RepoInfo, Search, View};
+use kipi_core::search::{AttrQuery, HitSource, RepoInfo, Search, View};
 use kipi_core::sync::{AlwaysOnSize, Outcome, RepoState, Tally};
 use serde::Serialize;
 
@@ -80,6 +81,7 @@ struct RepoJson<'a> {
     grant: GrantJson<'a>,
     agents: DecidedJson<'a, Vec<&'static str>>,
     budget_tokens: DecidedJson<'a, u32>,
+    attributes: BTreeMap<&'a str, DecidedJson<'a, &'a str>>,
 }
 
 #[derive(Serialize)]
@@ -266,6 +268,11 @@ fn repo<'a>(set: &StoreSet, r: &'a RepoPlan) -> RepoJson<'a> {
         },
         agents: decided(set, &r.agents, |a| a.iter().map(|a| a.as_str()).collect()),
         budget_tokens: decided(set, &r.budget_tokens, |b| *b),
+        attributes: r
+            .attributes
+            .iter()
+            .map(|(k, d)| (k.as_str(), decided(set, d, String::as_str)))
+            .collect(),
     }
 }
 
@@ -979,6 +986,40 @@ struct StoreRowJson<'a> {
 pub fn lookup(info: &RepoInfo, notes_text: Option<&str>) -> serde_json::Result<String> {
     let doc = LookupJson {
         version: JSON_VERSION,
+        info: repo_info(info),
+        notes_text,
+    };
+    let mut out = serde_json::to_string_pretty(&doc)?;
+    out.push('\n');
+    Ok(out)
+}
+
+/// A `kipi where --attr` result as pretty-printed JSON with a trailing newline
+/// (`docs/json.md`, "Where"). Fails only on a path that is not valid UTF-8.
+pub fn by_attributes(
+    view: &View,
+    query: &[AttrQuery],
+    found: &[RepoInfo],
+) -> serde_json::Result<String> {
+    let doc = ByAttributesJson {
+        version: JSON_VERSION,
+        searched: &view.label,
+        query: query
+            .iter()
+            .map(|q| AttrQueryJson {
+                key: &q.key,
+                value: q.value.as_deref(),
+            })
+            .collect(),
+        repos: found.iter().map(repo_info).collect(),
+    };
+    let mut out = serde_json::to_string_pretty(&doc)?;
+    out.push('\n');
+    Ok(out)
+}
+
+fn repo_info(info: &RepoInfo) -> RepoInfoJson<'_> {
+    RepoInfoJson {
         name: &info.name,
         store: &info.store,
         scope: info.scope.as_deref(),
@@ -988,16 +1029,21 @@ pub fn lookup(info: &RepoInfo, notes_text: Option<&str>) -> serde_json::Result<S
         summary_draft: info.summary_draft,
         local: info.local.as_deref(),
         notes: info.notes.as_deref(),
-        notes_text,
-    };
-    let mut out = serde_json::to_string_pretty(&doc)?;
-    out.push('\n');
-    Ok(out)
+        attributes: &info.attributes,
+    }
 }
 
 #[derive(Serialize)]
 struct LookupJson<'a> {
     version: u32,
+    #[serde(flatten)]
+    info: RepoInfoJson<'a>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    notes_text: Option<&'a str>,
+}
+
+#[derive(Serialize)]
+struct RepoInfoJson<'a> {
     name: &'a str,
     store: &'a str,
     scope: Option<&'a str>,
@@ -1007,8 +1053,21 @@ struct LookupJson<'a> {
     summary_draft: bool,
     local: Option<&'a Path>,
     notes: Option<&'a Path>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    notes_text: Option<&'a str>,
+    attributes: &'a BTreeMap<String, String>,
+}
+
+#[derive(Serialize)]
+struct ByAttributesJson<'a> {
+    version: u32,
+    searched: &'a str,
+    query: Vec<AttrQueryJson<'a>>,
+    repos: Vec<RepoInfoJson<'a>>,
+}
+
+#[derive(Serialize)]
+struct AttrQueryJson<'a> {
+    key: &'a str,
+    value: Option<&'a str>,
 }
 
 /// A `kipi grep` result as pretty-printed JSON with a trailing newline (`docs/json.md`,
