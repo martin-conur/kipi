@@ -30,6 +30,8 @@ repos: [
         ),
         grant: None,
         budget_tokens: None,
+        attributes: [],
+        on_sync: [],
         notes: Some(
             "<dir>/repos/one/notes.md",
         ),

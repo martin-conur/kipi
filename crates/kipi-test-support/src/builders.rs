@@ -23,9 +23,10 @@ use std::path::{Path, PathBuf};
 use kipi_core::config::{BINDINGS_FILE, MACHINE_FILE, SKILL_FILE};
 use kipi_core::error::Location;
 use kipi_core::model::{
-    Defaults, Drafted, Machine, MachineRepo, MachineRoots, RemoteUrl, RepoEntry, Scope, Skill,
-    SkillRef, Store, StoreSet, TomlDoc,
+    Attribute, Defaults, Drafted, Machine, MachineRepo, MachineRoots, RemoteUrl, RepoEntry, Scope,
+    Skill, SkillRef, Store, StoreSet, SyncCommand, TomlDoc,
 };
+use kipi_core::on_sync;
 use toml_edit::DocumentMut;
 
 /// Builds one [`Store`].
@@ -141,6 +142,8 @@ pub fn scope(name: &str, at: Location) -> Scope {
         agents: None,
         grant: None,
         budget_tokens: None,
+        attributes: Vec::new(),
+        on_sync: Vec::new(),
         at,
     }
 }
@@ -159,8 +162,36 @@ pub fn repo(name: &str, at: Location) -> RepoEntry {
         agents: None,
         grant: None,
         budget_tokens: None,
+        attributes: Vec::new(),
+        on_sync: Vec::new(),
         notes: None,
         at,
+    }
+}
+
+/// `attributes` entries set on the line `at` (a scope's or repo's own `at`).
+pub fn attributes(pairs: &[(&str, &str)], at: &Location) -> Vec<Attribute> {
+    pairs
+        .iter()
+        .map(|(key, value)| Attribute {
+            key: (*key).to_owned(),
+            value: (*value).to_owned(),
+            at: at.clone(),
+        })
+        .collect()
+}
+
+/// An `on_sync` command named `name` running `run` (array form: one word per element),
+/// declared at `at` (a scope's or repo's own `at`). Panics on a bad template.
+pub fn sync_command(name: &str, run: &[&str], at: &Location) -> SyncCommand {
+    let words: Vec<String> = run.iter().map(|w| (*w).to_owned()).collect();
+    SyncCommand {
+        name: name.to_owned(),
+        argv: on_sync::template(&words)
+            .unwrap_or_else(|e| panic!("bad `run` {run:?}: {}", e.message)),
+        when: Vec::new(),
+        worktrees: false,
+        at: at.clone(),
     }
 }
 
@@ -240,6 +271,12 @@ impl MachineBuilder {
             path: path.into(),
             at,
         });
+        self
+    }
+
+    /// `approved_commands = [..., "<key>"]`.
+    pub fn approve(mut self, key: impl Into<String>) -> Self {
+        self.machine.approved_commands.push(key.into());
         self
     }
 

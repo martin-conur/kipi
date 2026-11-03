@@ -3,13 +3,19 @@
 # does, so it catches problems the build-from-source jobs in ci.yml cannot: a broken
 # installer, a wrong asset name, a binary that does not run on the target.
 #
-# Runs on every published release, and on demand for any tag:
+# Runs after every successful tag-push run of the Release workflow, and on demand for any tag:
 #   gh workflow run installer.yml -f version=v0.1.1
+#
+# Not `release: published`: dist's `host` job publishes the release with `GITHUB_TOKEN`, and
+# events caused by `GITHUB_TOKEN` start no workflow runs. The Release run itself was started by
+# the maintainer's tag push, so its completion does fire `workflow_run`. GitHub only reads
+# `workflow_run` triggers from the default branch's copy of this file.
 name: Installer
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
   workflow_dispatch:
     inputs:
       version:
@@ -22,6 +28,13 @@ permissions:
 jobs:
   install:
     name: install ${{ matrix.name }}
+    # A finished Release run triggers this too when it was a PR dry run or failed; install only
+    # after a successful tag push (`head_branch` is the tag name for a tag push).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       startsWith(github.event.workflow_run.head_branch, 'v'))
     strategy:
       fail-fast: false
       matrix:
@@ -37,7 +50,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     container: ${{ matrix.container }}
     env:
-      VERSION: ${{ github.event.release.tag_name || inputs.version }}
+      VERSION: ${{ github.event.workflow_run.head_branch || inputs.version }}
     steps:
       - name: Install prerequisites (container)
         if: matrix.container != ''

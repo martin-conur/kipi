@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/bindings.toml:9: invalid type: integer `5`, expected a string or an array of strings in [repos.one.on_sync]
+  hint: change the value to the expected type

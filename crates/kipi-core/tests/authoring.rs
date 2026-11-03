@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use kipi_core::authoring::{
-    self, Binding, InitOptions, Op, Outcome, RemoveOptions, RepoOptions, SkillOptions,
+    self, Binding, InitOptions, Op, Outcome, RemoveOptions, RepoOptions, ScopeEdit, SkillOptions,
 };
 use kipi_core::config::{self, Env};
 use kipi_core::model::{Machine, StoreSet};
@@ -108,6 +108,7 @@ fn bind_then_unbind_is_byte_identical_for_every_example_repo() {
             },
             aliases: &aliases,
             via: None,
+            attrs: &[],
         };
         let bound = home.bind(&b, true).unwrap();
         assert_eq!(bound.writes.len(), 1, "{}", repo.name);
@@ -131,6 +132,7 @@ fn bind_keeps_comments_order_and_blank_lines() {
         exclude: &strings(&["dbt-conventions"]),
         aliases: &strings(&["kafka"]),
         via: None,
+        attrs: &[],
     };
     let outcome = home.bind(&b, true).unwrap();
     let ops: Vec<(Op, &str, &str)> = outcome
@@ -978,4 +980,140 @@ fn unmount_removes_a_store_by_name_or_path() {
     );
     let err = authoring::unmount(&env, &cfg, "acm").unwrap_err().report();
     assert!(err.contains("did you mean `acme`?"), "{err}");
+}
+
+#[test]
+fn attributes_are_set_inherited_and_unset_byte_identically() {
+    let home = Home::new();
+    let original = home.bindings(ExampleStore::Acme);
+    let (stores, machine, env) = (home.stores(), home.machine(), home.env());
+    let attrs = strings(&["tracker.project=ACME", "tracker.site=tracker.example.com"]);
+    let edit = ScopeEdit {
+        name: "acme",
+        attrs: &attrs,
+        ..ScopeEdit::default()
+    };
+    let scoped = authoring::edit_scope(&stores, &machine, &env, &edit).unwrap();
+    scoped.write().unwrap();
+    let text = home.bindings(ExampleStore::Acme);
+    assert!(
+        text.contains(
+            "remote_patterns = [\"github.com/acme-org/\"]   # for doctor's leak check\n\
+             attributes = { \"tracker.project\" = \"ACME\", \"tracker.site\" = \
+             \"tracker.example.com\" }\n"
+        ),
+        "{text}"
+    );
+
+    // The repo's own value wins over the scope's, and an unchanged one is kept.
+    let attrs = strings(&["tracker.project=EVT", "tracker.board=Streams"]);
+    let b = Binding {
+        repo: "events-pipeline",
+        attrs: &attrs,
+        ..Binding::default()
+    };
+    let bound = home.bind(&b, true).unwrap();
+    let ops: Vec<(Op, &str)> = bound
+        .changes
+        .iter()
+        .map(|c| (c.op, c.value.as_str()))
+        .collect();
+    assert_eq!(
+        ops,
+        [
+            (Op::Add, "tracker.project=EVT"),
+            (Op::Add, "tracker.board=Streams")
+        ]
+    );
+    bound.write().unwrap();
+    let plan = kipi_core::resolve::resolve(&home.stores(), &home.machine()).unwrap();
+    let values = |repo: &str| -> Vec<(String, String)> {
+        plan.repo(repo)
+            .unwrap()
+            .attributes
+            .iter()
+            .map(|(k, d)| (k.clone(), d.value.clone()))
+            .collect()
+    };
+    let pair = |k: &str, v: &str| (k.to_owned(), v.to_owned());
+    assert_eq!(
+        values("events-pipeline"),
+        [
+            pair("tracker.board", "Streams"),
+            pair("tracker.project", "EVT"),
+            pair("tracker.site", "tracker.example.com"),
+        ]
+    );
+    assert_eq!(
+        values("ml-platform"),
+        [
+            pair("tracker.project", "ACME"),
+            pair("tracker.site", "tracker.example.com"),
+        ]
+    );
+
+    // Setting it again is a keep; changing it reports the old value.
+    let again = strings(&["tracker.board=Streams", "tracker.project=EVT2"]);
+    let b2 = Binding {
+        repo: "events-pipeline",
+        attrs: &again,
+        ..Binding::default()
+    };
+    let rebound = home.bind(&b2, true).unwrap();
+    let notes: Vec<(Op, Option<&str>)> = rebound
+        .changes
+        .iter()
+        .map(|c| (c.op, c.note.as_deref()))
+        .collect();
+    assert_eq!(
+        notes,
+        [(Op::Keep, Some("already so")), (Op::Add, Some("was `EVT`"))]
+    );
+
+    // Unbinding the repo's value leaves the scope's, and says so.
+    let keys = strings(&["tracker.project", "tracker.board"]);
+    let b = Binding {
+        repo: "events-pipeline",
+        attrs: &keys,
+        ..Binding::default()
+    };
+    let unbound = home.bind(&b, false).unwrap();
+    assert_eq!(
+        unbound.changes[0].note.as_deref(),
+        Some("still inherited: `ACME` ← scopes.acme.attributes")
+    );
+    assert_eq!(unbound.changes[1].note, None);
+    unbound.write().unwrap();
+    let remove = strings(&["tracker.project", "tracker.site"]);
+    let edit = ScopeEdit {
+        name: "acme",
+        remove_attrs: &remove,
+        ..ScopeEdit::default()
+    };
+    let (stores, machine) = (home.stores(), home.machine());
+    authoring::edit_scope(&stores, &machine, &env, &edit)
+        .unwrap()
+        .write()
+        .unwrap();
+    assert_eq!(home.bindings(ExampleStore::Acme), original);
+}
+
+#[test]
+fn bad_attr_flags_are_refused_with_a_hint() {
+    let home = Home::new();
+    for (adding, raw) in [
+        (true, "tracker.project"),
+        (true, "tracker..project=X"),
+        (true, "tracker.project="),
+        (false, "tracker.project=X"),
+    ] {
+        let attrs = strings(&[raw]);
+        let b = Binding {
+            repo: "events-pipeline",
+            attrs: &attrs,
+            ..Binding::default()
+        };
+        let err = home.bind(&b, adding).expect_err(raw);
+        assert!(!err.hint().trim().is_empty(), "{raw}: {err}");
+    }
 }

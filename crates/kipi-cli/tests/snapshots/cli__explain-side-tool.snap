@@ -36,3 +36,6 @@ Settings  (repo > scope chain > defaults > built-in)
   agents         claude, generic  ← defaults.agents (personal:bindings.toml:8)
   budget_tokens  4000             ← defaults.budget_tokens (personal:bindings.toml:8)
   grant          related          ← defaults.grant (personal:bindings.toml:8)
+
+Attributes  (repo > scope chain)
+  (none)

@@ -592,7 +592,7 @@ pub(crate) fn place<'a>(
 
 /// `path` as one shell word: unchanged when it needs no quoting, else single-quoted after
 /// a leading `~/`, which must stay unquoted to expand.
-fn shell_word(path: &str) -> String {
+pub(crate) fn shell_word(path: &str) -> String {
     let plain = |c: char| c.is_ascii_alphanumeric() || "/._-~+,:@%".contains(c);
     if path.chars().all(plain) {
         return path.to_owned();

@@ -3274,3 +3274,375 @@ fn unmounting_a_store_cleans_its_repos_worktrees_too() {
         assert!(!wt.join(file).exists(), "{file} removed");
     }
 }
+
+// --- attributes (#70) ---
+
+#[test]
+fn attributes_are_set_inherited_explained_and_looked_up_in_reverse() {
+    let home = onboarded_home();
+    let kipi = |args: &[&str]| stdout_of(&home, home.bare().args(args).current_dir(home.path()));
+    kipi(&[
+        "scope",
+        "acme",
+        "--attr",
+        "tracker.project=ACME",
+        "tracker.site=tracker.example.com",
+    ]);
+    kipi(&[
+        "bind",
+        "events-pipeline",
+        "--attr",
+        "tracker.project=EVT",
+        "--attr",
+        "tracker.board=Team board",
+    ]);
+
+    let explained = kipi(&["explain", "events-pipeline"]);
+    let section = explained
+        .split("Attributes  (repo > scope chain)\n")
+        .nth(1)
+        .unwrap();
+    insta::assert_snapshot!("explain-attributes", section);
+
+    let out = kipi(&["where", "events"]);
+    assert!(
+        out.ends_with(
+            "attribute: tracker.board = Team board\nattribute: tracker.project = EVT\n\
+             attribute: tracker.site = tracker.example.com\n"
+        ),
+        "{out}"
+    );
+    let doc: serde_json::Value =
+        serde_json::from_str(&kipi(&["where", "events", "--json"])).unwrap();
+    assert_eq!(doc["attributes"]["tracker.project"], "EVT");
+    let doc: serde_json::Value =
+        serde_json::from_str(&kipi(&["resolve", "events-pipeline", "--json"])).unwrap();
+    let site = &doc["repos"][0]["attributes"]["tracker.site"];
+    assert_eq!(site["value"], "tracker.example.com");
+    assert_eq!(site["source"]["rule"], "scopes.acme.attributes");
+
+    // Reverse lookup: the inherited value counts, the overridden one does not.
+    let names = |doc: &serde_json::Value| -> Vec<String> {
+        doc["repos"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["name"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let out = kipi(&["where", "--attr", "tracker.project=ACME", "--json"]);
+    insta::assert_snapshot!("where-attr-json", out);
+    let doc: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(
+        names(&doc),
+        [
+            "acme-api",
+            "billing-api",
+            "feature-store",
+            "ml-platform",
+            "web-dashboard"
+        ]
+    );
+    let doc: serde_json::Value = serde_json::from_str(&kipi(&[
+        "where",
+        "--attr",
+        "tracker.site",
+        "--attr",
+        "tracker.project=EVT",
+        "--json",
+    ]))
+    .unwrap();
+    assert_eq!(names(&doc), ["events-pipeline"]);
+    let out = kipi(&["where", "--attr", "tracker.project=EVT"]);
+    assert!(out.starts_with("events-pipeline — "), "{out}");
+
+    // From a personal repo only its scope chain is searched, unless --any-scope.
+    let side_tool = home.path().join("code/side-tool");
+    let scoped = home
+        .bare()
+        .args(["where", "--attr", "tracker.project=EVT", "--json"])
+        .current_dir(&side_tool)
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let doc: serde_json::Value = serde_json::from_slice(&scoped.stdout).unwrap();
+    assert!(names(&doc).is_empty());
+    let text = home
+        .bare()
+        .args(["where", "--attr", "tracker.project=EVT"])
+        .current_dir(&side_tool)
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    assert!(text.stdout.is_empty());
+    assert!(
+        home.scrub(&text.stderr)
+            .contains("`--any-scope` searches every mounted store"),
+        "{}",
+        home.scrub(&text.stderr)
+    );
+    let doc: serde_json::Value = serde_json::from_str(&stdout_of(
+        &home,
+        home.bare()
+            .args([
+                "where",
+                "--attr",
+                "tracker.project=EVT",
+                "--any-scope",
+                "--json",
+            ])
+            .current_dir(&side_tool),
+    ))
+    .unwrap();
+    assert_eq!(names(&doc), ["events-pipeline"]);
+
+    // A key-only query compares no value, so the hint does not talk about exact values.
+    let key_only = home
+        .bare()
+        .args(["where", "--attr", "tracker.nothing"])
+        .current_dir(home.path())
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    assert_eq!(
+        home.scrub(&key_only.stderr),
+        "note: no repo in every mounted store has tracker.nothing\n  hint: `kipi explain <repo>` \
+         shows a repo's attributes\n"
+    );
+
+    // Unbinding the repo's own value falls back to the scope's.
+    let out = kipi(&["unbind", "events-pipeline", "--attr", "tracker.project"]);
+    assert!(
+        out.contains("still inherited: `ACME` ← scopes.acme.attributes"),
+        "{out}"
+    );
+    let (code, err) = failure_of(
+        &home,
+        home.bare()
+            .args(["where", "--attr", "tracker..project"])
+            .current_dir(home.path()),
+    );
+    assert_eq!(code, 1);
+    assert!(err.contains("hint:"), "{err}");
+    let (code, _) = failure_of(
+        &home,
+        home.bare()
+            .args(["where", "events", "--attr", "x=y"])
+            .current_dir(home.path()),
+    );
+    assert_eq!(code, 1, "an alias and --attr together are a usage error");
+}
+
+/// Appends `toml` to the personal store's `bindings.toml` in `home`.
+fn add_to_personal_store(home: &Home, toml: &str) {
+    let path = home.store(ExampleStore::Personal).join("bindings.toml");
+    let mut text = fs::read_to_string(&path).unwrap();
+    text.push_str(toml);
+    fs::write(&path, text).unwrap();
+}
+
+/// Writes `$1` (the `tracker.board` attribute) to `out.txt`, as one argument.
+const WRITE_BOARD: &str = r#"
+[[repos.blog.on_sync]]
+name = "board"
+run = ["sh", "-c", "printf '%s' \"$1\" > out.txt", "x", "{attr.tracker.board}"]
+
+[[repos.blog.on_sync]]
+name = "gated"
+run = "true"
+when = "tracker.project"
+"#;
+
+#[test]
+fn sync_commands_are_previewed_approved_once_then_run_when_due() {
+    let home = onboarded_home();
+    add_to_personal_store(&home, WRITE_BOARD);
+    home.kipi()
+        .args(["bind", "blog", "--attr", "tracker.board=My board; $(id)"])
+        .assert()
+        .success();
+    let blog = home.path().join("code/blog");
+    let machine = home.path().join(".config/kipi/machine.toml");
+    let machine_before = fs::read_to_string(&machine).unwrap();
+
+    // `resolve` shows what would run, without running it.
+    let out = stdout_of(&home, home.kipi().args(["resolve", "blog"]));
+    insta::assert_snapshot!("on-sync-resolve", out);
+    let json: serde_json::Value = serde_json::from_str(&stdout_of(
+        &home,
+        home.kipi().args(["resolve", "blog", "--json"]),
+    ))
+    .unwrap();
+    let cmds = &json["repos"][0]["on_sync"];
+    assert_eq!(cmds[0]["name"], "board");
+    assert_eq!(cmds[0]["argv"][4], "My board; $(id)");
+    assert_eq!(cmds[0]["skipped"]["reason"], "unapproved");
+    assert_eq!(cmds[0]["source"]["rule"], "repos.blog.on_sync");
+    assert_eq!(cmds[1]["argv"], serde_json::Value::Null);
+    assert_eq!(cmds[1]["skipped"]["reason"], "when");
+    assert_eq!(cmds[1]["skipped"]["key"], "tracker.project");
+
+    // Not approved: a non-interactive sync warns and runs nothing.
+    let out = stdout_of(&home, home.kipi().args(["sync", "blog"]));
+    insta::assert_snapshot!("on-sync-unapproved", out);
+    assert!(!blog.join("out.txt").exists());
+    let out = stdout_of(&home, home.kipi().args(["status", "blog"]));
+    assert!(out.contains("1 pending"), "{out}");
+
+    // A dry run with `--allow-commands` approves nothing and runs nothing.
+    let out = home
+        .kipi()
+        .args(["sync", "blog", "--dry-run", "--allow-commands"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let (stdout, stderr) = (home.scrub(&out.stdout), home.scrub(&out.stderr));
+    assert!(
+        stderr.contains("would approve on this machine:"),
+        "{stderr}"
+    );
+    assert!(stdout.contains("would run board"), "{stdout}");
+    assert_eq!(fs::read_to_string(&machine).unwrap(), machine_before);
+    assert!(!blog.join("out.txt").exists());
+
+    // `--allow-commands` approves and runs it; the value stays one argument.
+    let out = home
+        .kipi()
+        .args(["sync", "blog", "--allow-commands"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let stderr = home.scrub(&out.stderr);
+    assert!(stderr.contains("approving on this machine:"), "{stderr}");
+    assert!(
+        stderr.contains("(personal · repos.blog.on_sync)"),
+        "{stderr}"
+    );
+    let stdout = home.scrub(&out.stdout);
+    assert!(stdout.contains("  ran board\n"), "{stdout}");
+    assert!(stdout.ends_with(", 1 command ran.\n"), "{stdout}");
+    assert_eq!(
+        fs::read_to_string(blog.join("out.txt")).unwrap(),
+        "My board; $(id)"
+    );
+    let approved = fs::read_to_string(&machine).unwrap();
+    assert!(
+        approved.starts_with("approved_commands = [\"sha256:"),
+        "{approved}"
+    );
+    assert!(
+        approved.contains(machine_before.trim_end()),
+        "rest of machine.toml kept"
+    );
+
+    // Up to date: nothing runs again; status and JSON say so.
+    fs::remove_file(blog.join("out.txt")).unwrap();
+    let out = stdout_of(&home, home.kipi().args(["sync", "blog"]));
+    assert!(!out.contains("board"), "{out}");
+    assert!(!blog.join("out.txt").exists());
+    let out = stdout_of(&home, home.kipi().args(["status", "blog"]));
+    assert!(out.contains("1 ok"), "{out}");
+    let json: serde_json::Value = serde_json::from_str(&stdout_of(
+        &home,
+        home.kipi().args(["status", "blog", "--json"]),
+    ))
+    .unwrap();
+    let cmd = &json["repos"][0]["commands"][0];
+    assert_eq!(cmd["name"], "board");
+    assert_eq!(cmd["pending"], false);
+    assert_eq!(cmd["last"]["ok"], true);
+    assert_eq!(cmd["last"]["exit"], 0);
+    let json: serde_json::Value = serde_json::from_str(&stdout_of(
+        &home,
+        home.kipi().args(["sync", "blog", "--json"]),
+    ))
+    .unwrap();
+    assert_eq!(json["repos"][0]["commands"][0]["state"], "up_to_date");
+    assert_eq!(json["repos"][0]["commands"][1]["reason"], "when");
+
+    // A changed value reruns without asking again.
+    home.kipi()
+        .args(["bind", "blog", "--attr", "tracker.board=Other"])
+        .assert()
+        .success();
+    let out = stdout_of(&home, home.kipi().args(["sync", "blog"]));
+    assert!(out.contains("  ran board\n"), "{out}");
+    assert_eq!(fs::read_to_string(blog.join("out.txt")).unwrap(), "Other");
+}
+
+#[test]
+fn a_failed_sync_command_exits_1_after_every_repo_and_the_hook_stays_quiet() {
+    let home = onboarded_home();
+    add_to_personal_store(
+        &home,
+        r#"
+[[repos.blog.on_sync]]
+name = "fails"
+run = "sh -c 'exit 3'"
+
+[[repos.api.on_sync]]
+name = "works"
+run = ["sh", "-c", "echo done > out.txt"]
+"#,
+    );
+    let (blog, api) = (home.path().join("code/blog"), home.path().join("code/api"));
+
+    // The post-checkout hook never approves and never runs an unapproved command.
+    let machine = home.path().join(".config/kipi/machine.toml");
+    let before = fs::read_to_string(&machine).unwrap();
+    home.bare()
+        .args(["sync", "--hook", "-q"])
+        .current_dir(&api)
+        .assert()
+        .success();
+    assert!(!api.join("out.txt").exists());
+    assert_eq!(fs::read_to_string(&machine).unwrap(), before);
+
+    let out = home
+        .kipi()
+        .args(["sync", "blog", "api", "--allow-commands"])
+        .assert()
+        .code(1)
+        .get_output()
+        .clone();
+    let (stdout, stderr) = (home.scrub(&out.stdout), home.scrub(&out.stderr));
+    assert!(
+        stdout.contains("warning: fails failed (exit 3)"),
+        "{stdout}"
+    );
+    assert!(
+        stdout
+            .contains("hint: fix it and run `kipi sync blog` again (failed commands always rerun)"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("  ran works\n"), "{stdout}");
+    assert!(
+        stdout.ends_with(", 2 commands ran, 1 failed.\n"),
+        "{stdout}"
+    );
+    assert!(
+        stderr.contains("error: 1 sync command failed: blog/fails"),
+        "{stderr}"
+    );
+    assert_eq!(fs::read_to_string(api.join("out.txt")).unwrap(), "done\n");
+    let state = fs::read_to_string(blog.join(".kipi/on_sync.toml")).unwrap();
+    assert!(
+        state.contains("ok = false") && state.contains("exit = 3"),
+        "{state}"
+    );
+
+    // The failed one reruns on the next sync; the hook stays quiet about it.
+    home.kipi().args(["sync", "blog"]).assert().code(1);
+    home.bare()
+        .args(["sync", "--hook", "-q"])
+        .current_dir(&blog)
+        .assert()
+        .success();
+    let out = stdout_of(&home, home.kipi().args(["status", "blog"]));
+    assert!(out.contains("1 failed"), "{out}");
+}

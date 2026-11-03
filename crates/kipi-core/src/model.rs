@@ -22,6 +22,7 @@ use serde::Deserialize;
 use toml_edit::DocumentMut;
 
 use crate::error::Location;
+use crate::on_sync::Word;
 
 /// The only `[store] version` this kipi understands.
 pub const STORE_VERSION: i64 = 1;
@@ -161,6 +162,67 @@ pub fn check_via(via: &str) -> Result<(), String> {
     }
 }
 
+/// One entry of a scope's or repo's `attributes`: a free-form dotted key and a string
+/// value kipi does not interpret (`tracker.project = "PROJ"`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Attribute {
+    /// The dotted key, `tracker.project`, however it was written (quoted or nested).
+    pub key: String,
+    /// The value.
+    pub value: String,
+    /// The line that sets it.
+    pub at: Location,
+}
+
+/// Check an attribute key: dot-separated segments of ASCII letters, digits, `-` and `_`.
+pub fn check_attribute_key(key: &str) -> Result<(), String> {
+    if key.is_empty() {
+        return Err("is empty".to_owned());
+    }
+    for segment in key.split('.') {
+        if segment.is_empty() {
+            return Err("has an empty segment (`..`, or a leading or trailing `.`)".to_owned());
+        }
+        if !segment
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "-_".contains(c))
+        {
+            return Err(format!(
+                "has segment `{segment}`, which may only contain letters, digits, `-` and `_`"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Check an attribute value: non-empty and one line.
+pub fn check_attribute_value(value: &str) -> Result<(), &'static str> {
+    if value.is_empty() {
+        Err("is empty")
+    } else if value.contains(['\n', '\r']) {
+        Err("spans several lines")
+    } else {
+        Ok(())
+    }
+}
+
+/// One `on_sync` entry of a scope or repo: a program `kipi sync` runs in the repo after
+/// materializing it, with `{attr.*}` placeholders filled from the repo's attributes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyncCommand {
+    /// `name`: unique within one table's `on_sync`; a later table's command of the same
+    /// name replaces it.
+    pub name: String,
+    /// `run`, split into words; the first is the program and has no placeholder.
+    pub argv: Vec<Word>,
+    /// `when`: attribute keys that must all be set, else the command is skipped silently.
+    pub when: Vec<String>,
+    /// `worktrees`: also run in the checkout's linked worktrees.
+    pub worktrees: bool,
+    /// The `on_sync` key of its table.
+    pub at: Location,
+}
+
 /// One item of `repos.<repo>.related`: a repo entry name and, optionally, how the two
 /// repos connect (`via`, one direction only).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -256,8 +318,16 @@ impl Store {
         if let Some(at) = &mut self.defaults.at {
             tag(at);
         }
-        self.scopes.iter_mut().for_each(|s| tag(&mut s.at));
-        self.repos.iter_mut().for_each(|r| tag(&mut r.at));
+        for s in &mut self.scopes {
+            tag(&mut s.at);
+            s.attributes.iter_mut().for_each(|a| tag(&mut a.at));
+            s.on_sync.iter_mut().for_each(|c| tag(&mut c.at));
+        }
+        for r in &mut self.repos {
+            tag(&mut r.at);
+            r.attributes.iter_mut().for_each(|a| tag(&mut a.at));
+            r.on_sync.iter_mut().for_each(|c| tag(&mut c.at));
+        }
         self.skills.iter_mut().for_each(|s| tag(&mut s.at));
     }
 }
@@ -315,6 +385,10 @@ pub struct Scope {
     pub grant: Option<GrantMode>,
     /// `budget_tokens` override.
     pub budget_tokens: Option<u32>,
+    /// `attributes`: defaults for every repo in the scope and its descendants.
+    pub attributes: Vec<Attribute>,
+    /// `on_sync`: commands every repo in the scope and its descendants runs on sync.
+    pub on_sync: Vec<SyncCommand>,
     /// The `[scopes.<name>]` header.
     pub at: Location,
 }
@@ -344,6 +418,10 @@ pub struct RepoEntry {
     pub grant: Option<GrantMode>,
     /// `budget_tokens` override.
     pub budget_tokens: Option<u32>,
+    /// `attributes`: the repo's own, over its scope chain's.
+    pub attributes: Vec<Attribute>,
+    /// `on_sync`: the repo's own commands, after (or replacing, by name) its chain's.
+    pub on_sync: Vec<SyncCommand>,
     /// `repos/<name>/notes.md` in the store, when it exists.
     pub notes: Option<PathBuf>,
     /// The `[repos.<name>]` header.
@@ -388,6 +466,9 @@ pub struct Machine {
     pub roots: Vec<MachineRoots>,
     /// `[repos]`: where each entry is cloned here.
     pub repos: Vec<MachineRepo>,
+    /// `approved_commands`: approval keys of the sync commands that may run here
+    /// ([`crate::on_sync::approval_key`]).
+    pub approved_commands: Vec<String>,
     /// The parsed file, when it exists.
     pub source: Option<TomlDoc>,
 }
@@ -404,6 +485,11 @@ impl Machine {
             .iter()
             .find(|r| r.entry == entry)
             .map(|r| r.path.as_path())
+    }
+
+    /// Whether the sync command with approval key `key` may run here.
+    pub fn approved(&self, key: &str) -> bool {
+        self.approved_commands.iter().any(|k| k == key)
     }
 }
 

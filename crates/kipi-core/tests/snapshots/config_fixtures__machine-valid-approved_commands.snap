@@ -1,0 +1,22 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "redact(&out, dir.path())"
+---
+hostname: None
+roots: []
+repos: [
+    MachineRepo {
+        entry: "one",
+        path: "/srv/one",
+        at: Location {
+            file: "<dir>/machine.toml",
+            line: Some(
+                6,
+            ),
+            store: None,
+        },
+    },
+]
+approved_commands: [
+    "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+]

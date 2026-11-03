@@ -7,6 +7,47 @@ the stable interface; human-readable output may change in any release.
 
 ## [Unreleased]
 
+## [0.3.0]
+
+### Added
+
+- **Sync commands** (#71). A scope or repo can declare `[[scopes.<scope>.on_sync]]` /
+  `[[repos.<repo>.on_sync]]` commands that `kipi sync` runs in each repo after materializing it,
+  for tools installed by their own idempotent installer: `run = "tool --key {attr.tracker.project}"`
+  fills in the repo's attributes, each value as exactly one argument (no shell is involved; write
+  `run = ["sh", "-c", "…"]` for one). `when = "tracker.project"` skips repos without the attribute;
+  `worktrees = true` also runs it in linked worktrees. A command runs only when due (never run here,
+  its arguments changed, or its last run failed; `--force` reruns) and only once approved on this
+  machine: `kipi sync --allow-commands` approves it (recorded as `approved_commands` in
+  `machine.toml`), an interactive `sync` asks, and `kipi pull` never runs a command it brought in
+  without that. A failed command is reported per repo and makes `sync` exit 1. `kipi resolve` shows
+  what would run, `kipi status` a COMMANDS column. The JSON output gains `on_sync` on each repo of
+  `resolve` and `commands` on `sync` and `status` repos (`docs/json.md`). Stores without `on_sync`
+  are unchanged and need no migration.
+
+- **Repo attributes** (#70). Free-form per-repo settings for the tools kipi syncs into a repo (an
+  issue-tracker project, a board, a base branch): `attributes = { "tracker.project" = "PROJ" }`
+  on a `[repos.*]` entry or a `[scopes.*]` table, dotted keys and string values that kipi does not
+  interpret. A repo's value beats its scope's, which beats a parent scope's.
+  `kipi bind <repo> --attr key=value`, `kipi unbind <repo> --attr key` and
+  `kipi scope <scope> --attr key=value` / `--remove-attr key` edit them without touching comments.
+  `kipi explain` shows where each came from; `kipi where` and `kipi resolve --json` carry the
+  resolved set (`attributes`); `kipi where --attr key=value [--any-scope]` lists every repo with
+  that value. Stores without attributes are unchanged and need no migration. The JSON output gains
+  an `attributes` field on each repo of `resolve` and on `where`, and a new `where --attr` shape
+  (`docs/json.md`); nothing existing changed.
+
+- **Homebrew** (#43). Each release now pushes a `kipi` formula to the `martin-conur/homebrew-tap`
+  tap, so `brew install martin-conur/tap/kipi` installs kipi on macOS (and Linux with Homebrew).
+  The shell installer, prebuilt archives and source builds are unchanged.
+
+### Fixed
+
+- **The installer check now runs on every release** (#68). It triggered on `release: published`,
+  which never fires for a release published with `GITHUB_TOKEN`, so it only ran by hand. It now
+  runs when a tag-push Release run succeeds. `gh workflow run installer.yml -f version=vX.Y.Z`
+  still runs it on demand.
+
 ## [0.2.0]
 
 ### Added
@@ -109,7 +150,8 @@ First public release.
 - **Releases** for Linux (static musl) and macOS, x86_64 and aarch64, with a shell installer and
   SHA-256 checksums. Homebrew is planned for a later release.
 
-[Unreleased]: https://github.com/martin-conur/kipi/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/martin-conur/kipi/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/martin-conur/kipi/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/martin-conur/kipi/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/martin-conur/kipi/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/martin-conur/kipi/releases/tag/v0.1.0

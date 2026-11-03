@@ -5,3 +5,4 @@ expression: "redact(&out, dir.path())"
 hostname: None
 roots: []
 repos: []
+approved_commands: []

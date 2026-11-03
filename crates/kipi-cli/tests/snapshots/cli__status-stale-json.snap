@@ -33,7 +33,8 @@ expression: "serde_json::to_string_pretty(&doc).unwrap()"
         "budget": 4000,
         "over": false
       },
-      "draft_summary": false
+      "draft_summary": false,
+      "commands": []
     }
   ],
   "draft_summaries": 0

@@ -1,0 +1,13 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: out
+---
+REPO  STORE     SCOPE     SKILLS                   RELATED  GRANT             CHECKOUT
+blog  personal  personal  rust-style,commit-style  -        related (2 dirs)  ~/code/blog
+
+REGISTRY  STORE     SCOPES    REPOS  ALIAS COLLISIONS
+personal  personal  personal  4      -
+
+REPO  COMMAND  RUN                                                                       WHERE
+blog  board    unapproved: sh -c 'printf '\''%s'\'' "$1" > out.txt' x 'My board; $(id)'  checkout
+blog  gated    skipped: when tracker.project                                             checkout

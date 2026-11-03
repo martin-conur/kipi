@@ -3,4 +3,4 @@ source: crates/kipi-core/tests/config_fixtures.rs
 expression: "report(&err, dir.path())"
 ---
 error: <dir>/bindings.toml:7: unknown key `skils` in [scopes.main]
-  hint: did you mean `skills`? Valid keys: `extends`, `roots`, `skills`, `always`, `registry`, `remote_patterns`, `agents`, `grant`, `budget_tokens`
+  hint: did you mean `skills`? Valid keys: `extends`, `roots`, `skills`, `always`, `registry`, `remote_patterns`, `agents`, `grant`, `budget_tokens`, `attributes`, `on_sync`
