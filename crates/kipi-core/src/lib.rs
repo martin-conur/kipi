@@ -18,6 +18,7 @@ pub mod hook;
 pub mod json_merge;
 pub mod manifest;
 pub mod model;
+pub mod on_sync;
 pub mod plan;
 pub mod render;
 pub mod resolve;

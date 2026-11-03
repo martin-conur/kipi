@@ -16,5 +16,6 @@ expression: out
   "summary_draft": true,
   "local": "/Volumes/work/acme/billing-api",
   "notes": "[HOME]/stores/acme-store/repos/billing-api/notes.md",
+  "attributes": {},
   "notes_text": "# billing-api notes\n\n## Invariants\n\n- Every mutating endpoint requires an `Idempotency-Key` header; keys live 24 h in the `idempotency_keys` table.\n- Invoice totals are recomputed from line items on read; never persist a total by hand.\n\n## Gotchas\n\n- `/v1/charges` is deprecated and kept only for one legacy client; never call v1 from new code.\n\n## Where to look\n\n- `api/openapi.yaml`: the contract.\n- `src/idempotency/`: key storage and replay.\n"
 }

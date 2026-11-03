@@ -1,0 +1,154 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "redact(&out, dir.path())"
+---
+name: fx
+version: 1
+share_skills: false
+defaults: Defaults {
+    budget_tokens: None,
+    agents: None,
+    grant: None,
+    at: None,
+}
+scopes: [
+    Scope {
+        name: "work",
+        extends: None,
+        roots: [],
+        skills: [],
+        always: [],
+        registry: false,
+        remote_patterns: [],
+        agents: None,
+        grant: None,
+        budget_tokens: None,
+        attributes: [
+            Attribute {
+                key: "tracker.project",
+                value: "PROJ",
+                at: Location {
+                    file: "<dir>/bindings.toml",
+                    line: Some(
+                        6,
+                    ),
+                    store: Some(
+                        "fx",
+                    ),
+                },
+            },
+        ],
+        on_sync: [
+            SyncCommand {
+                name: "agent-workflow",
+                argv: [
+                    Word(
+                        [
+                            Lit(
+                                "some-installer",
+                            ),
+                        ],
+                    ),
+                    Word(
+                        [
+                            Lit(
+                                "--local-only",
+                            ),
+                        ],
+                    ),
+                    Word(
+                        [
+                            Lit(
+                                "--key",
+                            ),
+                        ],
+                    ),
+                    Word(
+                        [
+                            Attr(
+                                "tracker.project",
+                            ),
+                        ],
+                    ),
+                    Word(
+                        [
+                            Lit(
+                                "a b",
+                            ),
+                        ],
+                    ),
+                    Word(
+                        [
+                            Lit(
+                                "--literal={x}",
+                            ),
+                        ],
+                    ),
+                ],
+                when: [
+                    "tracker.project",
+                ],
+                worktrees: false,
+                at: Location {
+                    file: "<dir>/bindings.toml",
+                    line: Some(
+                        8,
+                    ),
+                    store: Some(
+                        "fx",
+                    ),
+                },
+            },
+            SyncCommand {
+                name: "both",
+                argv: [
+                    Word(
+                        [
+                            Lit(
+                                "tool",
+                            ),
+                        ],
+                    ),
+                    Word(
+                        [
+                            Lit(
+                                "--board",
+                            ),
+                        ],
+                    ),
+                    Word(
+                        [
+                            Attr(
+                                "tracker.board",
+                            ),
+                        ],
+                    ),
+                ],
+                when: [
+                    "tracker.project",
+                    "tracker.board",
+                ],
+                worktrees: true,
+                at: Location {
+                    file: "<dir>/bindings.toml",
+                    line: Some(
+                        8,
+                    ),
+                    store: Some(
+                        "fx",
+                    ),
+                },
+            },
+        ],
+        at: Location {
+            file: "<dir>/bindings.toml",
+            line: Some(
+                5,
+            ),
+            store: Some(
+                "fx",
+            ),
+        },
+    },
+]
+repos: []

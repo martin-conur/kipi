@@ -10,7 +10,7 @@ use kipi_core::sync::{self, Selection};
 use super::Loaded;
 use crate::error::Failure;
 use crate::output::color::styles;
-use crate::output::status::{Row, State};
+use crate::output::status::{self as row, Row, State};
 use crate::output::table::Table;
 use crate::output::{Output, json};
 
@@ -64,8 +64,17 @@ fn human(rows: &[Row], out: &Output) -> String {
     let cell = |s: String| (s, styles::none());
     let mut t = Table::new(0);
     t.row(
-        ["REPO", "SCOPE", "STATE", "ALWAYS-ON", "CHECKOUT"].map(|h| (h.to_owned(), styles::name())),
+        [
+            "REPO",
+            "SCOPE",
+            "STATE",
+            "ALWAYS-ON",
+            "COMMANDS",
+            "CHECKOUT",
+        ]
+        .map(|h| (h.to_owned(), styles::name())),
     );
+    let (mut failing, mut waiting) = (0, 0);
     for r in rows {
         let pending = r
             .outcome
@@ -87,6 +96,25 @@ fn human(rows: &[Row], out: &Output) -> String {
             let over = if s.over() { " over" } else { "" };
             format!("~{}/{}{over}", s.tokens, s.budget)
         });
+        let cmds = &r.outcome.commands;
+        let failed = cmds.iter().filter(|c| row::failed(c)).count();
+        let pending = cmds.iter().filter(|c| row::pending(c)).count();
+        let ok = cmds
+            .iter()
+            .filter(|c| matches!(c.state, kipi_core::sync::CommandState::UpToDate))
+            .count();
+        failing += failed;
+        waiting += pending;
+        let commands: Vec<String> = [(ok, "ok"), (failed, "failed"), (pending, "pending")]
+            .into_iter()
+            .filter(|(n, _)| *n > 0)
+            .map(|(n, what)| format!("{n} {what}"))
+            .collect();
+        let commands = if commands.is_empty() {
+            "-".to_owned()
+        } else {
+            commands.join(", ")
+        };
         let checkout = r
             .plan
             .path
@@ -103,6 +131,7 @@ fn human(rows: &[Row], out: &Output) -> String {
             ),
             (state, state_style),
             cell(size),
+            cell(commands),
             cell(checkout),
         ]);
     }
@@ -132,6 +161,21 @@ fn human(rows: &[Row], out: &Output) -> String {
     if behind > 0 {
         text.push_str(&format!(
             "\n{behind} not in sync\n  {} run `kipi sync --all` (or `kipi sync <repo>`); `--dry-run` shows the changes\n",
+            p.hint("hint:")
+        ));
+    }
+    let many = |n: usize| if n == 1 { "command" } else { "commands" };
+    if failing > 0 {
+        text.push_str(&format!(
+            "\n{failing} sync {} failed\n  {} fix it and run `kipi sync <repo>` again; failed commands always rerun\n",
+            many(failing),
+            p.hint("hint:")
+        ));
+    }
+    if waiting > 0 {
+        text.push_str(&format!(
+            "\n{waiting} sync {} pending\n  {} run `kipi sync <repo>`; `kipi resolve <repo>` shows what runs, and an unapproved one needs `--allow-commands`\n",
+            many(waiting),
             p.hint("hint:")
         ));
     }

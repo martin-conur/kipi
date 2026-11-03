@@ -30,5 +30,9 @@ predicates.workspace = true
 tempfile.workspace = true
 walkdir.workspace = true
 
+# The Homebrew formula is `kipi`, not the package name (dist-workspace.toml).
+[package.metadata.dist]
+formula = "kipi"
+
 [lints]
 workspace = true

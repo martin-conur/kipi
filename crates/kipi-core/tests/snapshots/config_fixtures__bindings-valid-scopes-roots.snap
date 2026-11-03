@@ -27,6 +27,8 @@ scopes: [
         agents: None,
         grant: None,
         budget_tokens: None,
+        attributes: [],
+        on_sync: [],
         at: Location {
             file: "<dir>/bindings.toml",
             line: Some(

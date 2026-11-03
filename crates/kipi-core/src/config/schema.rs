@@ -95,7 +95,15 @@ mod tests {
         }
         assert!(bindings.iter().any(|k| k == "repos.<repo>.related"));
         let machine = keys(MACHINE_FILE).unwrap();
-        assert_eq!(machine, ["hostname", "roots.<scope>", "repos.<repo>"]);
+        assert_eq!(
+            machine,
+            [
+                "hostname",
+                "roots.<scope>",
+                "repos.<repo>",
+                "approved_commands"
+            ]
+        );
         assert_eq!(
             keys(CONFIG_FILE).unwrap(),
             ["stores", "editor", "tokenizer"]

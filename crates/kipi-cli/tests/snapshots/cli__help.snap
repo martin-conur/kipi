@@ -14,15 +14,15 @@ Commands:
   scan         Find git repos under scope roots (or PATHs) and record them
   add          Add a skill, a repo entry or a scope
   remove       Remove a repo entry
-  scope        Change a scope: its registry, roots, parent, remote patterns, skills or always-on files
-  bind         Add skills, relations, exclusions or aliases to a repo entry
-  unbind       Remove skills, relations, exclusions or aliases from a repo entry
+  scope        Change a scope: its registry, roots, parent, remote patterns, skills, always-on files or attributes
+  bind         Add skills, relations, exclusions, aliases or attributes to a repo entry
+  unbind       Remove skills, relations, exclusions, aliases or attributes from a repo entry
   resolve      Print the resolved plan (no side effects)
   explain      Show where every decision for a repo comes from
   sync         Materialize the plan into repos (and their linked worktrees)
   status       Per-repo sync state and always-on tokens vs budget
   tree         Stores → scopes → repos → skills, with provenance markers
-  where        Resolve an alias to a repo, its summary and paths
+  where        Resolve an alias to a repo, its summary and paths, or find repos by attribute
   grep         Search skills, notes and conventions (and checkouts with --repos)
   edit         Open a repo entry, skill, scope:<name>, notes:<repo> or conventions:<scope> in $EDITOR
   doctor       Check stores, repos and grants for problems

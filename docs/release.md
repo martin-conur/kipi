@@ -16,6 +16,7 @@ For each tag `vX.Y.Z` the release workflow builds, checksums and attaches to a G
 | `kipi-cli-aarch64-apple-darwin.tar.xz` | macOS binary (Apple silicon) |
 | `*.tar.xz.sha256`, `sha256.sum` | SHA-256 checksums |
 | `kipi-cli-installer.sh` | Shell installer: picks the archive for the platform, verifies it, installs into `~/.cargo/bin` |
+| `kipi.rb` | Homebrew formula, also pushed to the [`martin-conur/homebrew-tap`](https://github.com/martin-conur/homebrew-tap) tap |
 | `source.tar.gz` | Source archive |
 
 Each target builds natively on its own GitHub runner (`ubuntu-22.04`, `ubuntu-22.04-arm`,
@@ -26,7 +27,8 @@ Each target builds natively on its own GitHub runner (`ubuntu-22.04`, `ubuntu-22
 - **Locally:** `dist plan` lists every artifact; `dist build --artifacts=all --target <host>`
   builds this machine's archive and the installer into `target/distrib/`.
 - **On a pull request:** the release workflow runs in `pr-run-mode = "upload"` — it builds every
-  artifact on every target and uploads them to the workflow run, and publishes nothing. It runs
+  artifact on every target (the `kipi.rb` formula included) and uploads them to the workflow
+  run, and publishes nothing: no Release, no push to the tap. It runs
   only on PRs that touch release config (`dist-workspace.toml`, `Cargo.toml`,
   `crates/kipi-cli/Cargo.toml`, `rust-toolchain.toml` or `release.yml`).
 - **Every PR** also runs the fresh-machine E2E (`scripts/fresh-machine-e2e.sh`): a release build
@@ -42,18 +44,25 @@ Do this once, before the first release.
   "Read and write" so the workflow's `GITHUB_TOKEN` can create the GitHub Release (the workflow
   requests `contents: write`).
 
-The release needs no other secret: `GITHUB_TOKEN` creates the Release and uploads the artifacts.
+- **Homebrew tap:** a public repository `martin-conur/homebrew-tap` (default branch `main`), and a
+  fine-grained token with **Contents: Read and write** on only that repository, saved on kipi as
+  the `HOMEBREW_TAP_TOKEN` repository secret.
 
-## Homebrew (deferred)
+`GITHUB_TOKEN` creates the Release and uploads the artifacts; `HOMEBREW_TAP_TOKEN` is used only
+by the `publish-homebrew-formula` job.
 
-0.1.0 ships without a Homebrew formula: install with the shell installer or from source. To add
-Homebrew later, set `installers = ["shell", "homebrew"]`, `tap = "<owner>/homebrew-tap"` and
-`publish-jobs = ["homebrew"]` in `dist-workspace.toml` (and `formula = "kipi"` under
-`[package.metadata.dist]` in `crates/kipi-cli/Cargo.toml`, so the formula is not named after the
-package), regenerate `release.yml` as below, create the public tap repository, and add a
-fine-grained token with **Contents: Read and write** on only that repository as the
-`HOMEBREW_TAP_TOKEN` repository secret. The generated formula job puts `/home/linuxbrew` on
-`PATH`, which the leak guard already allows (`PLACEHOLDER_USERS`).
+## Homebrew
+
+`installers = ["shell", "homebrew"]`, `tap = "martin-conur/homebrew-tap"` and
+`publish-jobs = ["homebrew"]` in `dist-workspace.toml`, plus `formula = "kipi"` under
+`[package.metadata.dist]` in `crates/kipi-cli/Cargo.toml` (so the formula is not named after the
+`kipi-cli` package), make every release build a `kipi.rb` formula. After the GitHub Release is
+created, the `publish-homebrew-formula` job commits it to `Formula/kipi.rb` in the tap, so users
+run `brew install martin-conur/tap/kipi`. A pre-release tag skips that job. The job puts
+`/home/linuxbrew` on `PATH`, which the leak guard allows (`PLACEHOLDER_USERS`).
+
+To publish to another tap, change `tap`, regenerate `release.yml` as below and give
+`HOMEBREW_TAP_TOKEN` write access to the new repository.
 
 ## Cutting a release
 
@@ -61,11 +70,31 @@ fine-grained token with **Contents: Read and write** on only that repository as 
    its `[workspace.dependencies]`, move the `CHANGELOG.md` "Unreleased" entries under the new
    version, commit, merge to `main`.
 2. Tag and push: `git tag v0.1.0 && git push origin v0.1.0`.
-3. The release workflow plans, builds all four targets and creates the GitHub Release. Check on a
-   macOS and a Linux machine: run the shell installer from [Install](install.md), then
-   `kipi --version`, `kipi init`, `kipi scan`, `kipi sync --all`.
+3. The release workflow plans, builds all four targets, creates the GitHub Release and pushes the
+   formula to the tap. Check on a macOS and a Linux machine: run the shell installer from
+   [Install](install.md), then `kipi --version`, `kipi init`, `kipi scan`, `kipi sync --all`. On
+   macOS also check `brew install martin-conur/tap/kipi` and `kipi --version`.
 
 A tag with a pre-release suffix (`v0.2.0-rc.1`) is published as a pre-release.
+
+## Installer check
+
+`.github/workflows/installer.yml` installs the published release with `kipi-cli-installer.sh` on
+a bare `debian:stable-slim` container (x86_64), Linux arm64 and macOS arm64, checks
+`kipi --version`, and runs the fresh-machine E2E against the installed binary.
+
+It starts on its own when a Release run finishes successfully for a tag push (`workflow_run`);
+the version is the tag. A Release dry run on a PR, or a failed Release run, does not install
+anything. It does not trigger on the `release: published` event: dist's `host` job publishes the
+release with `GITHUB_TOKEN`, and GitHub starts no workflow runs from events that token causes.
+`workflow_run` triggers are read only from the default branch, so a change to them takes effect
+on the first tag after it is merged to `main`.
+
+Run it by hand for any published tag:
+
+```bash
+gh workflow run installer.yml -f version=vX.Y.Z
+```
 
 ## Changing the release config
 

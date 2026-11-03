@@ -41,7 +41,9 @@ content, and nothing ever crosses into a repo outside its scope.
 ## 60-second quickstart
 
 ```bash
-# 1. Install (macOS or Linux; installs into ~/.cargo/bin)
+# 1. Install (macOS or Linux)
+brew install martin-conur/tap/kipi
+#    or, without Homebrew (installs into ~/.cargo/bin):
 curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/martin-conur/kipi/releases/latest/download/kipi-cli-installer.sh | sh
 
@@ -163,6 +165,12 @@ descriptions. See the [FAQ](docs/faq.md).
 
 kipi runs on Linux and macOS (x86_64 and aarch64). It needs `git` on `PATH` and nothing else.
 
+- **Homebrew** (macOS, or Linux with Homebrew):
+
+  ```bash
+  brew install martin-conur/tap/kipi
+  ```
+
 - **Shell installer** (downloads the binary for your platform from the GitHub release, checks
   its SHA-256 and installs it into `~/.cargo/bin`):
 
@@ -177,8 +185,6 @@ kipi runs on Linux and macOS (x86_64 and aarch64). It needs `git` on `PATH` and 
   ```bash
   cargo install --locked --git https://github.com/martin-conur/kipi kipi-cli
   ```
-
-Homebrew is not available yet. It is planned for a later release.
 
 To load shell completions (they also complete repo, alias, skill and scope names), add
 `eval "$(kipi completions bash)"` to your shell's startup file, or use `zsh`, `fish` or

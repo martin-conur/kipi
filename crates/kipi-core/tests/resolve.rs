@@ -6,10 +6,11 @@ use std::path::{Path, PathBuf};
 use kipi_core::config::{self, Env};
 use kipi_core::error::Error;
 use kipi_core::model::{AgentId, GrantMode, Machine, StoreSet};
-use kipi_core::plan::{AlwaysOn, GrantKind, Plan, RepoPlan};
+use kipi_core::plan::{AlwaysOn, CommandPlan, GrantKind, Plan, RepoPlan, SkipReason};
 use kipi_core::resolve::{remote_pattern_matches, resolve};
 use kipi_test_support::builders::{
-    MachineBuilder, StoreBuilder, draft, remote, reviewed, skill_refs, store_set,
+    MachineBuilder, StoreBuilder, attributes, draft, remote, reviewed, skill_refs, store_set,
+    sync_command,
 };
 use kipi_test_support::stores::ExampleStore;
 use kipi_test_support::workspace_root;
@@ -1033,4 +1034,274 @@ fn registry_is_the_nearest_enabled_scope_and_always_on_runs_top_down() {
         team_registry.entries[0].notes.as_deref(),
         Some(Path::new("/st/repos/in-team/notes.md"))
     );
+}
+
+// ---------------------------------------------------------------------------------
+// Attributes
+
+#[test]
+fn attributes_inherit_down_the_chain_and_the_repo_wins() {
+    let store = StoreBuilder::new("work", "/stores/work")
+        .scope("work", |s| {
+            s.roots = vec!["/w".into()];
+            s.attributes = attributes(
+                &[("tracker.site", "example.net"), ("tracker.project", "TOP")],
+                &s.at,
+            );
+        })
+        .scope("ml", |s| {
+            s.extends = Some("work".into());
+            s.roots = vec!["/w/ml".into()];
+            s.attributes = attributes(&[("tracker.project", "ML")], &s.at);
+        })
+        .repo("trainer", |r| {
+            r.attributes = attributes(&[("tracker.board", "Models")], &r.at);
+        })
+        .repo("api", |r| {
+            r.attributes = attributes(&[("tracker.project", "API")], &r.at);
+        })
+        .repo("loose", |r| {
+            r.scope = None;
+        })
+        .build();
+    let set = store_set(vec![store]);
+    let machine = MachineBuilder::new()
+        .repo("trainer", "/w/ml/trainer")
+        .repo("api", "/w/api")
+        .repo("loose", "/elsewhere/loose")
+        .build();
+    let plan = ok(&set, &machine);
+    let attrs = |name: &str| -> Vec<(String, String, String)> {
+        plan.repo(name)
+            .unwrap()
+            .attributes
+            .iter()
+            .map(|(k, d)| (k.clone(), d.value.clone(), d.source.rule.clone()))
+            .collect()
+    };
+    let row = |k: &str, v: &str, rule: &str| (k.to_owned(), v.to_owned(), rule.to_owned());
+    assert_eq!(
+        attrs("trainer"),
+        [
+            row("tracker.board", "Models", "repos.trainer.attributes"),
+            row("tracker.project", "ML", "scopes.ml.attributes"),
+            row("tracker.site", "example.net", "scopes.work.attributes"),
+        ]
+    );
+    assert_eq!(
+        attrs("api"),
+        [
+            row("tracker.project", "API", "repos.api.attributes"),
+            row("tracker.site", "example.net", "scopes.work.attributes"),
+        ]
+    );
+    assert!(
+        attrs("loose").is_empty(),
+        "an unscoped repo has only its own"
+    );
+    let site = &plan.repo("trainer").unwrap().attributes["tracker.site"];
+    assert_eq!(site.source.store(), Some("work"));
+}
+
+/// A store whose `work` scope runs `install` and `notify`, `ml` (extending it) replaces
+/// `install`, and repos override or add commands of their own.
+fn on_sync_store() -> StoreSet {
+    let store = StoreBuilder::new("work", "/stores/work")
+        .scope("work", |s| {
+            s.roots = vec!["/w".into()];
+            s.attributes = attributes(&[("tracker.project", "TOP")], &s.at);
+            s.on_sync = vec![
+                sync_command(
+                    "install",
+                    &["installer", "--key", "{attr.tracker.project}"],
+                    &s.at,
+                ),
+                sync_command("notify", &["notify", "{attr.tracker.board}"], &s.at),
+            ];
+        })
+        .scope("ml", |s| {
+            s.extends = Some("work".into());
+            s.roots = vec!["/w/ml".into()];
+            s.on_sync = vec![sync_command(
+                "install",
+                &["installer", "--ml", "{attr.tracker.project}"],
+                &s.at,
+            )];
+        })
+        .repo("trainer", |r| {
+            r.attributes = attributes(&[("tracker.board", "Models and data; $(x)")], &r.at);
+        })
+        .repo("api", |r| {
+            let mut gated = sync_command("gated", &["tool", "{attr.tracker.board}"], &r.at);
+            gated.when = vec!["tracker.board".into()];
+            let mut own = sync_command("notify", &["notify-api"], &r.at);
+            own.worktrees = true;
+            r.on_sync = vec![gated, own];
+        })
+        .repo("loose", |r| {
+            r.on_sync = vec![sync_command("solo", &["solo"], &r.at)];
+        })
+        .build();
+    store_set(vec![store])
+}
+
+fn on_sync_machine() -> MachineBuilder {
+    MachineBuilder::new()
+        .repo("trainer", "/w/ml/trainer")
+        .repo("api", "/w/api")
+        .repo("loose", "/elsewhere/loose")
+}
+
+/// `(name, outcome, rule)` of each of `repo`'s sync commands.
+fn commands(plan: &Plan, repo: &str) -> Vec<(String, CommandPlan, String)> {
+    plan.repo(repo)
+        .unwrap()
+        .on_sync
+        .iter()
+        .map(|c| (c.name.clone(), c.outcome.clone(), c.source.rule.clone()))
+        .collect()
+}
+
+fn argv(words: &[&str]) -> Vec<String> {
+    words.iter().map(|w| (*w).to_owned()).collect()
+}
+
+#[test]
+fn sync_commands_inherit_and_override_by_name_in_place() {
+    let set = on_sync_store();
+    let mut machine = on_sync_machine().build();
+    let unapproved = ok(&set, &machine);
+    machine.approved_commands = unapproved
+        .repos
+        .iter()
+        .flat_map(|r| r.on_sync.iter().map(|c| c.approval.clone()))
+        .collect();
+    let plan = ok(&set, &machine);
+    let ready = |w: &[&str]| CommandPlan::Ready { argv: argv(w) };
+    let row = |n: &str, o: CommandPlan, rule: &str| (n.to_owned(), o, rule.to_owned());
+    assert_eq!(
+        commands(&plan, "trainer"),
+        [
+            // The child scope's `install` replaces the parent's, keeping its position;
+            // a value with spaces and `$(…)` stays one argument.
+            row(
+                "install",
+                ready(&["installer", "--ml", "TOP"]),
+                "scopes.ml.on_sync"
+            ),
+            row(
+                "notify",
+                ready(&["notify", "Models and data; $(x)"]),
+                "scopes.work.on_sync"
+            ),
+        ]
+    );
+    assert_eq!(
+        commands(&plan, "api"),
+        [
+            row(
+                "install",
+                ready(&["installer", "--key", "TOP"]),
+                "scopes.work.on_sync"
+            ),
+            row("notify", ready(&["notify-api"]), "repos.api.on_sync"),
+            row(
+                "gated",
+                CommandPlan::Skipped {
+                    reason: SkipReason::When,
+                    key: "tracker.board".into()
+                },
+                "repos.api.on_sync"
+            ),
+        ]
+    );
+    assert!(plan.repo("api").unwrap().on_sync[1].worktrees);
+    // An unscoped repo has only its own.
+    assert_eq!(
+        commands(&plan, "loose"),
+        [row("solo", ready(&["solo"]), "repos.loose.on_sync")]
+    );
+}
+
+#[test]
+fn a_missing_attribute_skips_and_unapproved_commands_keep_their_argv() {
+    let set = on_sync_store();
+    let plan = ok(&set, &on_sync_machine().build());
+    let api = commands(&plan, "api");
+    assert_eq!(
+        api[0].1,
+        CommandPlan::Unapproved {
+            argv: argv(&["installer", "--key", "TOP"])
+        }
+    );
+    // A placeholder naming an unset attribute (no `when`) is a warning-level skip.
+    let set = store_set(vec![
+        StoreBuilder::new("work", "/stores/work")
+            .scope("work", |s| {
+                s.roots = vec!["/w".into()];
+                s.on_sync = vec![sync_command(
+                    "notify",
+                    &["notify", "{attr.tracker.board}"],
+                    &s.at,
+                )];
+            })
+            .repo("api", |_| {})
+            .build(),
+    ]);
+    let plan = ok(&set, &MachineBuilder::new().repo("api", "/w/api").build());
+    assert_eq!(
+        commands(&plan, "api")[0].1,
+        CommandPlan::Skipped {
+            reason: SkipReason::MissingAttribute,
+            key: "tracker.board".into()
+        }
+    );
+}
+
+#[test]
+fn approval_keys_follow_the_template_not_the_values() {
+    let set = on_sync_store();
+    let plan = ok(&set, &on_sync_machine().build());
+    let key = |repo: &str, name: &str| {
+        plan.repo(repo)
+            .unwrap()
+            .on_sync
+            .iter()
+            .find(|c| c.name == name)
+            .unwrap()
+            .approval
+            .clone()
+    };
+    // `work`'s `install` is one template for every repo using it, values aside.
+    let set2 = store_set(vec![
+        StoreBuilder::new("work", "/stores/work")
+            .scope("work", |s| {
+                s.roots = vec!["/w".into()];
+                s.attributes = attributes(&[("tracker.project", "OTHER")], &s.at);
+                s.on_sync = vec![sync_command(
+                    "install",
+                    &["installer", "--key", "{attr.tracker.project}"],
+                    &s.at,
+                )];
+            })
+            .repo("api", |_| {})
+            .build(),
+    ]);
+    let plan2 = ok(&set2, &MachineBuilder::new().repo("api", "/w/api").build());
+    assert_eq!(
+        key("api", "install"),
+        plan2.repo("api").unwrap().on_sync[0].approval
+    );
+    assert_ne!(key("api", "install"), key("trainer", "install"));
+    // Approving it on the machine makes it ready.
+    let machine = on_sync_machine().approve(key("api", "install")).build();
+    let plan = ok(&set, &machine);
+    assert!(matches!(
+        commands(&plan, "api")[0].1,
+        CommandPlan::Ready { .. }
+    ));
+    assert!(matches!(
+        commands(&plan, "trainer")[0].1,
+        CommandPlan::Unapproved { .. }
+    ));
 }

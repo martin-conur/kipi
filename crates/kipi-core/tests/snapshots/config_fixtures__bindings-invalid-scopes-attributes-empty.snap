@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/bindings.toml:7: the value of attribute `tracker.project` is empty
+  hint: give it a one-line value, or remove the key (`kipi unbind <repo> --attr <key>`)

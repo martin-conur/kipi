@@ -1,0 +1,7 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: section
+---
+  tracker.board    Team board           ← repos.events-pipeline.attributes (acme:bindings.toml:45)
+  tracker.project  EVT                  ← repos.events-pipeline.attributes (acme:bindings.toml:45)
+  tracker.site     tracker.example.com  ← scopes.acme.attributes (acme:bindings.toml:19)

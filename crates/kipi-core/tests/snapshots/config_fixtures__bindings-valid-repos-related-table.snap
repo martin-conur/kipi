@@ -35,6 +35,8 @@ repos: [
         agents: None,
         grant: None,
         budget_tokens: None,
+        attributes: [],
+        on_sync: [],
         notes: Some(
             "<dir>/repos/one/notes.md",
         ),
@@ -68,6 +70,8 @@ repos: [
         agents: None,
         grant: None,
         budget_tokens: None,
+        attributes: [],
+        on_sync: [],
         notes: None,
         at: Location {
             file: "<dir>/bindings.toml",

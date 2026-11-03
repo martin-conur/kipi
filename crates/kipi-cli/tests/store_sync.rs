@@ -682,3 +682,45 @@ fn pull_json_keeps_every_store_row_when_the_sync_after_it_fails() {
     let stderr = String::from_utf8(out.stderr).unwrap();
     assert!(stderr.contains(error), "{stderr}");
 }
+
+#[test]
+fn a_sync_command_arriving_with_a_pull_does_not_run_until_approved_here() {
+    let remotes = tempfile::tempdir().unwrap();
+    let remote = bare_remote(remotes.path(), "store.git");
+    let a = first_machine(&remote);
+    let b = Machine::new();
+    let b_app = b.checkout("app");
+    b.checkout("lib");
+    let b_store = b.store();
+    b.ok(&[
+        "init",
+        "--store",
+        b_store.to_str().unwrap(),
+        "--clone",
+        remote.to_str().unwrap(),
+    ]);
+    b.ok(&["scan"]);
+    b.ok(&["sync", "--all"]);
+
+    // Anyone who can push to the store adds a command.
+    let bindings = a.store().join("bindings.toml");
+    let mut text = fs::read_to_string(&bindings).unwrap();
+    text.push_str("\n[[repos.app.on_sync]]\nname = \"payload\"\nrun = \"touch pwned\"\n");
+    fs::write(&bindings, text).unwrap();
+    a.ok(&["push"]);
+
+    // Machine B pulls (not interactively): the command is reported, never run.
+    let out = b.ok(&["pull"]);
+    assert!(out.contains("personal  pulled 1 commit"), "{out}");
+    assert!(
+        out.contains("warning: skipped payload: not approved on this machine"),
+        "{out}"
+    );
+    assert!(!b_app.join("pwned").exists());
+    let machine = fs::read_to_string(b.path().join(".config/kipi/machine.toml")).unwrap();
+    assert!(!machine.contains("approved_commands"), "{machine}");
+
+    // Approving it is an explicit sync.
+    b.ok(&["sync", "app", "--allow-commands"]);
+    assert!(b_app.join("pwned").exists());
+}

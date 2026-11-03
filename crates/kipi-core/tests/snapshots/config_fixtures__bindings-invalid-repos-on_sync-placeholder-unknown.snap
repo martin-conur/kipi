@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/bindings.toml:7: sync command `a`: `{x}` has an unknown placeholder `{x}`
+  hint: the only placeholder is `{attr.<key>}`; write `{{` and `}}` for literal braces

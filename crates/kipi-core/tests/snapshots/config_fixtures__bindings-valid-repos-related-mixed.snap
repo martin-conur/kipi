@@ -39,6 +39,8 @@ repos: [
         agents: None,
         grant: None,
         budget_tokens: None,
+        attributes: [],
+        on_sync: [],
         notes: None,
         at: Location {
             file: "<dir>/bindings.toml",
@@ -65,6 +67,8 @@ repos: [
         agents: None,
         grant: None,
         budget_tokens: None,
+        attributes: [],
+        on_sync: [],
         notes: None,
         at: Location {
             file: "<dir>/bindings.toml",
@@ -91,6 +95,8 @@ repos: [
         agents: None,
         grant: None,
         budget_tokens: None,
+        attributes: [],
+        on_sync: [],
         notes: None,
         at: Location {
             file: "<dir>/bindings.toml",

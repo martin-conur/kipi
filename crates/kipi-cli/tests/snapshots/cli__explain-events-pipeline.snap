@@ -44,3 +44,6 @@ Settings  (repo > scope chain > defaults > built-in)
   agents         claude    ← repos.events-pipeline.agents (acme:bindings.toml:34)
   budget_tokens  4000      ← defaults.budget_tokens (acme:bindings.toml:8)
   grant          registry  ← repos.events-pipeline.grant (acme:bindings.toml:34)
+
+Attributes  (repo > scope chain)
+  (none)

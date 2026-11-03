@@ -1,0 +1,6 @@
+approved_commands = [
+    "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+]
+
+[repos]
+"one" = "/srv/one"

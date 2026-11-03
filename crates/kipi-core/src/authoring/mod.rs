@@ -8,6 +8,7 @@
 //! name clash) rejects the edit. [`Outcome::write`] then applies it; `--dry-run` prints
 //! it instead.
 
+mod attrs;
 mod bind;
 mod init;
 mod repo;

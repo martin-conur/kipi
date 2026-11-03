@@ -1,0 +1,16 @@
+[store]
+name = "fx"
+version = 1
+
+[repos.quoted]
+attributes = { "tracker.project" = "PROJ", base = "main" }
+
+# Nested keys and a sub-table flatten to the same dotted keys.
+[repos.nested]
+attributes.tracker.project = "PROJ"
+
+[repos.table.attributes]
+"tracker.board" = "Team board"
+
+[repos.table.attributes.tracker]
+site = "tracker.example.com"

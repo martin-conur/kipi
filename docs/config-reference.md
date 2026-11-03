@@ -25,7 +25,8 @@ One per store. Scope and repo names are unique across all mounted stores. `kipi 
 `kipi init --scope`) writes a `[scopes.<scope>]` table with `extends`, `roots`,
 `remote_patterns` (`add scope --remote-pattern`), `skills` and `registry` (on unless
 `--no-registry`, or a scope it extends already has one); `kipi scope` changes `registry`, `roots`,
-`remote_patterns`, `extends`, `skills` and `always` of an existing one. `kipi add repo`
+`remote_patterns`, `extends`, `skills`, `always` and `attributes` of an existing one;
+`kipi bind` / `kipi unbind` change a repo entry's lists and `attributes`. `kipi add repo`
 and `kipi scan` write `[repos.<name>]` tables; `kipi remove repo` deletes one.
 
 | Key | Type | Default | Meaning |
@@ -45,6 +46,12 @@ and `kipi scan` write `[repos.<name>]` tables; `kipi remove repo` deletes one.
 | `scopes.<scope>.agents` | array | inherited | Overrides `defaults.agents` for the scope and its descendants |
 | `scopes.<scope>.grant` | string | inherited | Overrides `defaults.grant` |
 | `scopes.<scope>.budget_tokens` | positive integer | inherited | Overrides `defaults.budget_tokens` |
+| `scopes.<scope>.attributes` | table of strings | `{}` | Free-form `key = "value"` settings every repo in the scope and its descendants inherits; a nearer scope's value wins. See `repos.<repo>.attributes` |
+| `scopes.<scope>.on_sync` | array of tables | `[]` | Sync commands every repo in the scope and its descendants runs on `kipi sync` (`[[scopes.<scope>.on_sync]]`). See `repos.<repo>.on_sync` |
+| `scopes.<scope>.on_sync[].name` | string | required | The command's name; unique within one table's `on_sync`. A descendant scope's or a repo's command of the same name replaces it |
+| `scopes.<scope>.on_sync[].run` | string or array of strings | required | The program and its arguments. A string is split into words without a shell (quotes group, `\` escapes; `$VAR`, `~`, globs, `;` and `|` are plain text); an array is taken word for word. `{attr.<key>}` fills in the repo's attribute inside its own word (`{{`, `}}` for literal braces); the program word takes no placeholder. Want a shell? `run = ["sh", "-c", "…"]`; pass attributes to it as positional arguments (`"$1"`), never inside the script, since approval covers the template, not the values |
+| `scopes.<scope>.on_sync[].when` | string or array of strings | none | Attribute keys (an `attr.` prefix is allowed) that must all be set; otherwise the command is skipped silently |
+| `scopes.<scope>.on_sync[].worktrees` | bool | `false` | Also run in the checkout's linked worktrees (`kipi sync --hook` included) |
 | `repos.<repo>.remote` | string | none | Normalized origin URL (`github.com/acme-org/billing-api`); filled by `scan`; the primary match key across machines |
 | `repos.<repo>.summary` | string | none | One line: what the repo is and where to look. A trailing `# kipi:draft` marks it drafted |
 | `repos.<repo>.aliases` | array of strings | `[]` | Other names for the repo in the registry; matched exactly after case-folding |
@@ -57,9 +64,18 @@ and `kipi scan` write `[repos.<name>]` tables; `kipi remove repo` deletes one.
 | `repos.<repo>.agents` | array | inherited | Overrides the scope's `agents` |
 | `repos.<repo>.grant` | string | inherited | Overrides the scope's `grant` |
 | `repos.<repo>.budget_tokens` | positive integer | inherited | Overrides the scope's `budget_tokens` |
+| `repos.<repo>.attributes` | table of strings | `{}` | Free-form per-repo settings for the tools kipi syncs into it (`"tracker.project" = "PROJ"`); kipi does not interpret them. Keys are dotted segments of letters, digits, `-` and `_` (quoted, nested and sub-table spellings are the same key); values are one-line strings. The repo's value beats its scope chain's. Read with `kipi where` / `kipi resolve --json`, queried with `kipi where --attr key=value` |
+| `repos.<repo>.on_sync` | array of tables | `[]` | Sync commands: programs `kipi sync` runs in the checkout after materializing it, when due (never run here, argv changed, or last run failed) and approved on this machine (`kipi sync --allow-commands`). Added after the scope chain's; one with a scope command's `name` replaces it. `kipi resolve` shows what would run |
+| `repos.<repo>.on_sync[].name` | string | required | As `scopes.<scope>.on_sync[].name` |
+| `repos.<repo>.on_sync[].run` | string or array of strings | required | As `scopes.<scope>.on_sync[].run` |
+| `repos.<repo>.on_sync[].when` | string or array of strings | none | As `scopes.<scope>.on_sync[].when` |
+| `repos.<repo>.on_sync[].worktrees` | bool | `false` | As `scopes.<scope>.on_sync[].worktrees` |
 
 Precedence for `agents`, `grant` and `budget_tokens`: repo > scope (walking up `extends`) >
-`defaults`.
+`defaults`. For each key of `attributes`: repo > scope (walking up `extends`); there are no store
+defaults. For `on_sync`: the chain's commands top-most scope first, then the repo's own; a later
+command with an earlier one's `name` replaces it in place. A command whose placeholder names an
+unset attribute is skipped with a warning; add `when` to skip it silently instead.
 
 ```toml
 [store]
@@ -77,6 +93,14 @@ remote_patterns = ["github.com/acme-org/"]
 remote = "github.com/acme-org/billing-api"
 summary = "Invoicing and payment orchestration; OpenAPI in api/openapi.yaml"
 aliases = ["billing", "invoices"]
+attributes = { "tracker.project" = "BILL", "tracker.board" = "Payments" }
+
+# Run an installer in every acme repo that has a tracker project (needs approving once
+# per machine: `kipi sync --allow-commands`).
+[[scopes.acme.on_sync]]
+name = "agent-workflow"
+run = "some-installer --local-only --key {attr.tracker.project} --board {attr.tracker.board}"
+when = "tracker.project"
 ```
 
 ## machine.toml
@@ -88,6 +112,7 @@ Written by `kipi scan` and `kipi add repo`; you rarely edit it. Paths are absolu
 | `hostname` | string | none | A label for this machine |
 | `roots.<scope>` | array of paths | the scope's `roots` | Replaces a scope's roots on this machine |
 | `repos.<repo>` | path | absent | Where repo entry `<repo>` is cloned here; absent means not on this machine |
+| `approved_commands` | array of strings | `[]` | Sync commands (`on_sync`) allowed to run on this machine, as `sha256:` keys over the store, the declaring table, the name, `worktrees` and the unfilled `run`. Written by `kipi sync --allow-commands` (or a yes at its prompt); a changed `run` needs approving again, a changed attribute value does not |
 
 ```toml
 hostname = "laptop-a"

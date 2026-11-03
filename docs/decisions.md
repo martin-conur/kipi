@@ -1004,6 +1004,17 @@ The spec wins wherever it is explicit.
 - **Help text.** `sync --agents` names its values and delimiter, `tree --budget` says it shows
   tokens against the budget, and `edit`'s argument lists the target forms.
 
+## Homebrew tap (#43)
+
+- **Homebrew is back, as configured before 0.1.0.** `dist-workspace.toml` again has
+  `installers = ["shell", "homebrew"]`, `tap = "martin-conur/homebrew-tap"` and
+  `publish-jobs = ["homebrew"]`, and `crates/kipi-cli/Cargo.toml` `formula = "kipi"`, exactly as
+  in "Stage 4: release engineering" above; the "No Homebrew in 0.1.0" entry is reversed.
+  `release.yml` was regenerated with dist 0.32.0 and its two hand edits (SHA pins, PR `paths`
+  filter) re-applied, which brings back the `publish-homebrew-formula` job and its use of
+  `HOMEBREW_TAP_TOKEN`. The install command is `brew install martin-conur/tap/kipi`: Homebrew
+  maps `<owner>/tap` to the `<owner>/homebrew-tap` repository.
+
 ## Worktree support (#49)
 
 - **A linked worktree is its checkout's entry.** It is found from the checkout, with `git
@@ -1154,6 +1165,38 @@ The spec wins wherever it is explicit.
   left out. `--json` has the full text.
 - **`explain`** adds a `via: …` column to the Related table, before the source.
 
+## Repo attributes: `attributes = { "tracker.project" = "…" }` (#70)
+
+- **Spec addition.** Roadmap §6 gains an **Attributes** paragraph and §7 the `--attr` flags of
+  `bind` / `unbind` / `scope` and `where --attr`.
+- **Shape.** `attributes` is a table on `[scopes.<scope>]` and `[repos.<repo>]`. Keys are dotted
+  (`tracker.project`), each segment ASCII letters, digits, `-` and `_`; values are non-empty,
+  one-line strings. The loader flattens every TOML spelling to the dotted key: a quoted
+  `"tracker.project"`, nested `tracker.project` / `{ tracker = { project = … } }`, or an
+  `[repos.<repo>.attributes.tracker]` sub-table. Two spellings of one key are an error, as is a
+  non-string value. The table is read off the spanned document rather than through serde (serde
+  sees `IgnoredAny`), so each attribute keeps the line that sets it for `explain`.
+- **No `[defaults]` attributes, no lists.** The issue asks for scope-level defaults only; a
+  store-wide default is a top-level scope's attribute. Values are strings; lists can come later.
+- **Resolution.** Per key: the repo's value, else the nearest scope in the chain, walking up
+  `extends`. An unscoped repo has only its own. `RepoPlan.attributes` is a `BTreeMap` of
+  `Decided<String>`, so JSON and `explain` list keys sorted.
+- **Writing.** `bind --attr k=v`, `unbind --attr k`, `scope --attr k=v` / `--remove-attr k`. A
+  key that exists is changed where it is written, keeping its comment and spacing (so a hand-written
+  nested or sub-table form stays as it is); a new key is added quoted to an inline
+  `attributes = { … }`, created when absent. Removing the last key removes the table, and emptied
+  nested tables go with it, so set-then-unset gives back the original bytes. Changing a value is
+  reported as an add with ``was `old` ``; the same value is a keep. Unbinding a key the repo still
+  inherits notes the inherited value and its rule, as unbinding an inherited skill does.
+  `unbind --attr k=v` is refused (the value says nothing there) with the key-only form as the hint.
+- **Reverse lookup.** `where --attr k=v` (or `k` alone: set to anything; repeatable, all must
+  match) replaces the alias, which it conflicts with, as does `--notes`. It searches the same view
+  as `where <alias>`: the current repo's scope chain inside a bound repo, else every mounted store,
+  and `--any-scope` widens it. Values match exactly (case-sensitive). No match is not an error:
+  text mode prints nothing on stdout and a note on stderr, JSON an empty `repos` (like `grep`).
+- **Text `where`** prints one `attribute: <key> = <value>` line per resolved attribute after
+  `notes:`. `explain` has an `Attributes  (repo > scope chain)` section after Settings.
+
 ## Store sync over git: `init --clone`, `pull`, `push` (#16)
 
 - **Spec addition.** Roadmap §7 gains `init --clone`, `pull` and `push`; §11 describes them, §1 and
@@ -1203,3 +1246,88 @@ The spec wins wherever it is explicit.
 - **Dry runs.** `push --dry-run` runs every check and prints the commit it would make and how
   many commits it would send. `pull --dry-run` does not fetch (a fetch writes refs) and reports
   against the last fetch; it never syncs.
+
+## Sync commands: `on_sync` (#71)
+
+- **Spec addition.** Roadmap §6 gains a **Sync commands** paragraph, §7 notes `on_sync` under
+  `sync` (with `--allow-commands`) and `resolve`, and §8 a step between Apply and Summary: run the
+  repo's due, approved sync commands.
+- **Shape.** `[[scopes.<scope>.on_sync]]` and `[[repos.<repo>.on_sync]]` (scope tables are plural,
+  so the issue's `[[scope.on_sync]]` is written this way), each `name`, `run`, optional `when` and
+  `worktrees`. `run` is a string or an array of strings; `when` a key or a list of keys, all of
+  which must be set. `when` names an attribute key; an `attr.` prefix is accepted and stripped, so
+  the issue's `when = "attr.tracker.project"` works too. Errors point at the table's `on_sync` key
+  (a location cannot index into an array of tables) and name the command, or its position when the
+  name itself is the problem.
+- **No shell.** A `run` string is split in-house (no shell-words crate in §12): unquoted
+  whitespace separates, `'…'` is literal, `"…"` groups with `\"` and `\\` escaping, a bare `\x` is
+  `x`, and nothing is expanded: `$VAR`, `~`, globs, `;`, `|`, `&&` and backticks are plain text.
+  The array form is taken word for word. Anyone who wants a shell writes `run = ["sh", "-c", "…"]`.
+- **Placeholders.** `{attr.<key>}` is the only one; `{{` and `}}` are literal braces; any other
+  `{…}` or a lone brace is a load error. Filling replaces the placeholder inside its own word, so a
+  value with spaces, quotes or `;` is always part of exactly one argument and never re-split or
+  interpreted. The program word (argv[0]) may not contain a placeholder: an attribute value never
+  chooses the program. Values are never empty (#70 rejects empty attributes), so a command never
+  runs with an empty value.
+- **Inheritance.** The chain's commands top-most scope first, then the repo's own. A later command
+  with an earlier one's `name` replaces it in place (keeping the first one's position), as the
+  last writer wins for attributes. A name is unique within one table.
+- **Skips.** A missing `when` key skips silently (the opt-out); a missing placeholder attribute
+  skips with a warning and the hint to set it or add `when`. The warning is printed by `sync` from
+  the command's outcome; `RepoPlan` carries no notice list of its own, so `resolve` stays a pure
+  `(stores, machine) -> Plan`.
+- **Approval, once per machine.** A store can be a shared git repo and `kipi pull` runs
+  `sync --all`, so without a gate anyone who can push to a shared store could run code on every
+  machine that pulls it. A command runs only when `machine.toml`'s `approved_commands` holds its
+  key: `sha256` over the store name, the declaring rule (`scopes.<s>.on_sync` /
+  `repos.<r>.on_sync`), `name`, `worktrees` and the unfilled template (each word as written,
+  `{attr.*}` included), NUL-separated. A changed attribute value keeps the approval (it still
+  reruns, through the argv hash); a changed `run`, a new command, or the same template from another
+  store or table needs approving again. Approvals live in `machine.toml` (never in a store), written
+  with `toml_edit` so comments stay; approvals of templates no longer planned are left in place.
+  Resolution reads them from the `Machine` it already takes, so `resolve` shows `unapproved`.
+  An approval covers the template, not the attribute values filled into it. A placeholder in a
+  position that interprets code (the script of `sh -c` or `python -c`, an argument to `bash` or
+  `env`) or that a tool reads as an option (`--config={attr.x}`) therefore lets whoever controls
+  the store's attributes change what runs without a new approval. Review a template with that in
+  mind before approving it, and keep placeholders in plain data positions.
+- **Approving.** `kipi sync [repo…] --allow-commands` approves every unapproved command planned for
+  the selected working trees, listing each on stderr (name, store, rule, template), then runs them;
+  with `--dry-run` it writes nothing and lists what it would approve, and the report shows them as
+  `would run`. An interactive `sync` (stdin and stderr a terminal; not `--json`, `-q`, `--hook` or
+  `--dry-run`) lists them and asks `[y/N]` once for the batch. Otherwise, and on a no, each is
+  skipped with a warning; an unapproved skip alone does not change the exit code. `--hook` never
+  approves or prompts. `kipi pull` behaves as `sync` and has no `--allow-commands`, so approving is
+  always an explicit `sync`. The approval prompt and listing go to stderr so `--json` stays one
+  document.
+- **When they run.** In each working tree right after its plan is applied: the checkout runs every
+  ready command, a linked worktree only those with `worktrees = true` (both through
+  `sync <repo>` / `--all` and the post-checkout hook's `sync --hook`). Only `kipi sync` (and
+  `pull`, which is a `sync --all`) runs them; `status`, `tree` and `doctor` never do, and a dry run
+  only reports `would_run` / `up_to_date`.
+- **Rerun policy.** "Sync twice is a no-op" holds. Per working tree, `.kipi/on_sync.toml` records
+  for each command its argv hash (`sha256` over the filled argv joined by NUL), `ok`, `exit` (absent
+  when killed by a signal or it could not start) and `at` (unix seconds). A ready command runs when
+  it has no record, its argv hash differs (an attribute or `run` changed), or its last run failed;
+  `--force` reruns every ready command. Records of commands no longer planned for that tree are
+  dropped, and the file (then an empty `.kipi/`) is deleted when none are left, so an unbind leaves
+  no `.kipi/`. The file is separate from `manifest.toml` because `Manifest` denies unknown fields,
+  so an older kipi would reject a manifest carrying it. It holds hashes and results only, never
+  commands: those come from store config alone, so a repo's contents cannot inject one.
+- **Running.** `Command::new(argv[0]).args(&argv[1..])` in the working tree, stdin closed, the
+  child's stdout sent to kipi's stderr (so `--json` stdout stays clean), stderr inherited, with
+  `KIPI_REPO=<entry>` and `KIPI_STORE=<store>` added to its environment. There is no timeout (no
+  new dependency). A program that cannot start or exits non-zero is an outcome, not an error: every
+  other command and repo still syncs. Only failing to write `on_sync.toml` is an error.
+- **Exit code.** Any failed command makes `kipi sync` (and `kipi pull`) exit 1 after printing
+  everything, naming each `<repo>/<name>`. `--hook` exits 0 regardless, so a checkout never fails.
+- **Output.** `sync` prints `ran <name>`, a warning for a failure or a skip, `would run <name>` in a
+  dry run, and up-to-date commands and `when` skips only with `-v`; its summary gains
+  `, N commands ran[, M failed]` (`, N commands would run` in a dry run). `resolve` adds a
+  REPO / COMMAND / RUN / WHERE table (argv shell-quoted for display; `unapproved: …`,
+  `skipped: when <key>`, `skipped: <key> not set`). `status` adds a COMMANDS column (`-`, `N ok`,
+  `N failed`, `N pending`) and a hint line for failed and pending ones; commands never make a repo
+  `stale`, since `state` is about materialization. JSON gains `on_sync` on `resolve` repos and
+  `commands` on `sync` and `status` repos; additive, so `JSON_VERSION` stays 1.
+- **Examples.** The example stores have no `on_sync`: the CLI tests sync them, and a command there
+  would run during `cargo test`.

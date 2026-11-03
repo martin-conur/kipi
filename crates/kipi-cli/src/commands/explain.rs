@@ -233,6 +233,17 @@ fn explain(loaded: &Loaded, repo: &RepoPlan, out: &Output) -> String {
         &[],
     );
 
+    // Attributes: repo > scope chain.
+    let mut t = Table::new(2);
+    for (key, attr) in &repo.attributes {
+        t.row([
+            name(key.clone()),
+            plain(attr.value.clone()),
+            src(&attr.source),
+        ]);
+    }
+    section("Attributes  (repo > scope chain)", &t, &[]);
+
     head + &text
 }
 
