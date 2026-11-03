@@ -1,6 +1,7 @@
-//! `kipi bind` / `kipi unbind`: add or remove skills, related repos, exclusions and
-//! aliases on a repo entry, and describe a relation (`--via`).
+//! `kipi bind` / `kipi unbind`: add or remove skills, related repos, exclusions,
+//! aliases and attributes on a repo entry, and describe a relation (`--via`).
 
+use super::attrs;
 use super::toml::{clear_draft, contains, push, remove, set_via, table_mut, via};
 use super::{Change, Op, Outcome, bindings_write, find_repo, revalidate};
 use crate::config::Env;
@@ -23,6 +24,8 @@ pub struct Binding<'a> {
     pub aliases: &'a [String],
     /// `--via`: the description of the one `--related` relation; `""` removes it.
     pub via: Option<&'a str>,
+    /// `--attr`: `key=value` to set (`bind`), or `key` to remove (`unbind`).
+    pub attrs: &'a [String],
 }
 
 impl Binding<'_> {
@@ -58,11 +61,11 @@ fn edit(
 ) -> Result<Outcome> {
     let command = if adding { "bind" } else { "unbind" };
     check_via_flag(b, adding)?;
-    if b.keys().iter().all(|(_, values)| values.is_empty()) {
+    if b.keys().iter().all(|(_, values)| values.is_empty()) && b.attrs.is_empty() {
         return Err(Error::usage(
             format!("nothing to {command}"),
             format!(
-                "pass at least one of --skill, --related, --exclude or --alias, e.g. \
+                "pass at least one of --skill, --related, --exclude, --alias or --attr, e.g. \
                  `kipi {command} {} --skill <skill>`",
                 b.repo
             ),
@@ -70,6 +73,12 @@ fn edit(
     }
     let (store, repo) = find_repo(stores, b.repo)?;
     validate(b)?;
+    let example = format!("kipi bind {}", b.repo);
+    let (sets, unsets) = if adding {
+        (attrs::parse_sets("--attr", b.attrs, &example)?, Vec::new())
+    } else {
+        (Vec::new(), attrs::parse_keys("--attr", b.attrs)?)
+    };
 
     let mut doc = store.bindings.doc.clone();
     let table = table_mut(&mut doc, &["repos", &repo.name]).ok_or_else(|| {
@@ -117,6 +126,12 @@ fn edit(
             clear_draft(table, key);
         }
     }
+    for (key, value) in &sets {
+        changes.push(attrs::set(table, key, value));
+    }
+    for key in &unsets {
+        changes.push(attrs::unset(table, key));
+    }
 
     let text = doc.to_string();
     let plan = revalidate(stores, machine, env, &[(&store.name, text.clone())], None)?;
@@ -159,6 +174,20 @@ fn edit(
                 let note = format!(
                     "still inherited from scope `{scope}`; `kipi bind {} --exclude {}` removes it",
                     repo.name, change.value
+                );
+                *change = change.clone().note(note);
+            }
+        }
+        // So does an attribute the repo still gets from its scope chain.
+        for (change, key) in changes
+            .iter_mut()
+            .filter(|c| c.what == "attributes")
+            .zip(&unsets)
+        {
+            if let Some(inherited) = planned.attributes.get(*key) {
+                let note = format!(
+                    "still inherited: `{}` ← {}",
+                    inherited.value, inherited.source.rule
                 );
                 *change = change.clone().note(note);
             }

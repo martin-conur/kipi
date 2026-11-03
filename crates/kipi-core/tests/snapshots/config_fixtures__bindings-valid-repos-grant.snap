@@ -30,6 +30,7 @@ repos: [
             Registry,
         ),
         budget_tokens: None,
+        attributes: [],
         notes: Some(
             "<dir>/repos/one/notes.md",
         ),

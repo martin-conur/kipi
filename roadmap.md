@@ -228,6 +228,8 @@ Resolution is a pure function `(stores, machine) -> Plan` with no I/O beyond rea
 
 **Precedence:** `repos.<name>.agents` > scope `agents` (walking up) > `defaults.agents`. Same precedence for `budget_tokens` and `grant`.
 
+**Attributes:** `attributes = { "tracker.project" = "PROJ" }` on a repo or a scope holds free-form, dotted-key, string-valued settings for the tools kipi syncs into a repo; kipi does not interpret them. Each key resolves on its own: the repo's value > its scope's > the parent scope's (walking up); there are no store defaults. `explain` shows where each came from, `where` and `resolve --json` carry the resolved set, and `where --attr key=value` lists the repos in view whose resolved value matches (the reverse lookup that routes an incoming ticket to its repos).
+
 **Multiple stores.** Each mounted store is loaded independently and then checked as a set:
 
 - Store names, scope names and repo entry names are each unique across all mounted stores; a collision is a hard load error naming both files.
@@ -253,16 +255,17 @@ Resolution is a pure function `(stores, machine) -> Plan` with no I/O beyond rea
 | `add skill <name> [--scope s] [--store n] [--from <git-url\|path>]` | Create a skill dir from template, or import an existing SKILL.md tree (e.g. from `~/.claude/skills/`) | store |
 | `add repo <name> [--scope s] [--path p] [--summary "…"]` | Register a repo by hand in the store owning its scope; reads `remote` from the checkout; on an existing entry with no checkout here, `--path` records one | store, machine |
 | `add scope <name> --root <path>... [--extends <s>] [--registry \| --no-registry] [--skill <s>...] [--store <n>]` | Declare `[scopes.<name>]` (toml_edit, comment-preserving) in `--store`, else the store owning `--extends`, else the only mounted store; roots under home written `~/…`; a registry unless `--no-registry` or a scope it extends has one | bindings.toml |
-| `scope <name> [--registry \| --no-registry] [--add-root <p>]... [--remove-root <p>]... [--extends <s> \| --no-extends] [--skill <s>]... [--remove-skill <s>]... [--always <f>]... [--remove-always <f>]...` | Change an existing scope in place (comment-preserving, re-validated before writing) | bindings.toml |
+| `scope <name> [--registry \| --no-registry] [--add-root <p>]... [--remove-root <p>]... [--extends <s> \| --no-extends] [--skill <s>]... [--remove-skill <s>]... [--always <f>]... [--remove-always <f>]... [--attr <k=v>]... [--remove-attr <k>]...` | Change an existing scope in place (comment-preserving, re-validated before writing) | bindings.toml |
 | `remove repo <name> [--notes]` | Delete a repo entry and its `machine.toml` path, and remove what kipi wrote into its checkout; refused while another entry's `related` names it; `--notes` also deletes its `notes.md` | store, machine, repos |
-| `bind <repo> --skill <s>... / --related <repo>... [--via <text>] / --exclude <s>... / --alias <a>...` | Edit a repo's entry (toml_edit, comment-preserving); `--via` describes the one `--related` relation (`""` removes it) | bindings.toml |
-| `unbind <repo> ...` | Inverse of bind | bindings.toml |
+| `bind <repo> --skill <s>... / --related <repo>... [--via <text>] / --exclude <s>... / --alias <a>... / --attr <k=v>...` | Edit a repo's entry (toml_edit, comment-preserving); `--via` describes the one `--related` relation (`""` removes it) | bindings.toml |
+| `unbind <repo> ...` | Inverse of bind (`--attr <k>` takes the key alone) | bindings.toml |
 | `resolve [repo]` | Print the Plan (JSON with `--json`); no side effects | — |
 | `explain <repo>` | Human-readable provenance for every skill, relation, grant and scope decision | — |
 | `sync [repo...] [--all] [--agents a,b] [--force]` | Materialize the Plan into repos; remove stale links and grants; rewrite generated blocks; regenerate registries | repos, `generated/` of each store |
 | `status [repo]` | Per-repo: scope, synced/stale/missing, always-on tokens vs budget | — |
 | `tree [--repo r] [--skill s] [--store n] [--budget] [--machine]` | Tree view of stores → scopes → repos → skills/related with provenance markers (○ inherited, ● explicit, ✗ excluded) | — |
-| `where <alias>` | Resolve alias → repo name, summary, local path, notes path (`--notes` prints the notes) | — |
+| `where <alias>` | Resolve alias → repo name, summary, local path, notes path, attributes (`--notes` prints the notes) | — |
+| `where --attr <k[=v]>... [--any-scope]` | List the repos in view whose resolved attributes match every `--attr` (`k` alone: set to anything) | — |
 | `grep <pattern> [--scope s] [--repos]` | Regex search over skills, notes and conventions in the repo's own store (plus shared skills it uses); with `--repos`, also over the local checkouts of every repo in the scope chain (gitignore-aware) | — |
 | `edit <repo\|skill\|scope:<name>\|notes:<repo>\|conventions:<scope>>` | Open the right file (at the right line for TOML entries and scopes) in `$EDITOR`; validate on exit; editing a drafted entry marks it reviewed | store |
 | `doctor [repo] [--fix]` | Checks in §10; `--fix` applies safe fixes | optional |

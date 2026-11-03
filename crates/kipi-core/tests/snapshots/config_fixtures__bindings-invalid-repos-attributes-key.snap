@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/bindings.toml:6: attribute key `tracker project` has segment `tracker project`, which may only contain letters, digits, `-` and `_`
+  hint: write `attributes = { "tracker.project" = "PROJ" }`: dotted keys, string values; `kipi bind <repo> --attr key=value` writes it for you

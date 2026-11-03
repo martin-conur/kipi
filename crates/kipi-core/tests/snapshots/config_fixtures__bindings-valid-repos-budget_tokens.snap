@@ -30,6 +30,7 @@ repos: [
         budget_tokens: Some(
             8000,
         ),
+        attributes: [],
         notes: Some(
             "<dir>/repos/one/notes.md",
         ),

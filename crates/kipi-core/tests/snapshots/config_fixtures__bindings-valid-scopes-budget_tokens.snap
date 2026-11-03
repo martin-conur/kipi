@@ -25,6 +25,7 @@ scopes: [
         budget_tokens: Some(
             1000,
         ),
+        attributes: [],
         at: Location {
             file: "<dir>/bindings.toml",
             line: Some(

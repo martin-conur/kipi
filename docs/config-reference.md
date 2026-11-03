@@ -25,7 +25,8 @@ One per store. Scope and repo names are unique across all mounted stores. `kipi 
 `kipi init --scope`) writes a `[scopes.<scope>]` table with `extends`, `roots`,
 `remote_patterns` (`add scope --remote-pattern`), `skills` and `registry` (on unless
 `--no-registry`, or a scope it extends already has one); `kipi scope` changes `registry`, `roots`,
-`remote_patterns`, `extends`, `skills` and `always` of an existing one. `kipi add repo`
+`remote_patterns`, `extends`, `skills`, `always` and `attributes` of an existing one;
+`kipi bind` / `kipi unbind` change a repo entry's lists and `attributes`. `kipi add repo`
 and `kipi scan` write `[repos.<name>]` tables; `kipi remove repo` deletes one.
 
 | Key | Type | Default | Meaning |
@@ -45,6 +46,7 @@ and `kipi scan` write `[repos.<name>]` tables; `kipi remove repo` deletes one.
 | `scopes.<scope>.agents` | array | inherited | Overrides `defaults.agents` for the scope and its descendants |
 | `scopes.<scope>.grant` | string | inherited | Overrides `defaults.grant` |
 | `scopes.<scope>.budget_tokens` | positive integer | inherited | Overrides `defaults.budget_tokens` |
+| `scopes.<scope>.attributes` | table of strings | `{}` | Free-form `key = "value"` settings every repo in the scope and its descendants inherits; a nearer scope's value wins. See `repos.<repo>.attributes` |
 | `repos.<repo>.remote` | string | none | Normalized origin URL (`github.com/acme-org/billing-api`); filled by `scan`; the primary match key across machines |
 | `repos.<repo>.summary` | string | none | One line: what the repo is and where to look. A trailing `# kipi:draft` marks it drafted |
 | `repos.<repo>.aliases` | array of strings | `[]` | Other names for the repo in the registry; matched exactly after case-folding |
@@ -57,9 +59,11 @@ and `kipi scan` write `[repos.<name>]` tables; `kipi remove repo` deletes one.
 | `repos.<repo>.agents` | array | inherited | Overrides the scope's `agents` |
 | `repos.<repo>.grant` | string | inherited | Overrides the scope's `grant` |
 | `repos.<repo>.budget_tokens` | positive integer | inherited | Overrides the scope's `budget_tokens` |
+| `repos.<repo>.attributes` | table of strings | `{}` | Free-form per-repo settings for the tools kipi syncs into it (`"tracker.project" = "PROJ"`); kipi does not interpret them. Keys are dotted segments of letters, digits, `-` and `_` (quoted, nested and sub-table spellings are the same key); values are one-line strings. The repo's value beats its scope chain's. Read with `kipi where` / `kipi resolve --json`, queried with `kipi where --attr key=value` |
 
 Precedence for `agents`, `grant` and `budget_tokens`: repo > scope (walking up `extends`) >
-`defaults`.
+`defaults`. For each key of `attributes`: repo > scope (walking up `extends`); there are no store
+defaults.
 
 ```toml
 [store]
@@ -77,6 +81,7 @@ remote_patterns = ["github.com/acme-org/"]
 remote = "github.com/acme-org/billing-api"
 summary = "Invoicing and payment orchestration; OpenAPI in api/openapi.yaml"
 aliases = ["billing", "invoices"]
+attributes = { "tracker.project" = "BILL", "tracker.board" = "Payments" }
 ```
 
 ## machine.toml

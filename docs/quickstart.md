@@ -160,6 +160,20 @@ access granted.` A `via` is one line of at most 120 characters and describes one
 `app`'s own `related` item for `etl` has its own. `--via ""` removes the description and leaves
 the relation; `kipi unbind etl --related app` removes both.
 
+Tools you sync into a repo often need small per-repo settings (an issue-tracker project, a
+board, a base branch). Keep them as attributes: free-form dotted keys with string values, set on
+a scope for every repo in it and overridden per repo. kipi does not interpret them.
+
+```bash
+kipi scope acme --attr tracker.site=tracker.example.com
+kipi bind billing-api --attr tracker.project=BILL --attr tracker.board="Payments"
+kipi unbind billing-api --attr tracker.board
+kipi where --attr tracker.project=BILL --any-scope   # which repos does ticket BILL-123 belong to?
+```
+
+`kipi explain` lists each attribute with where it came from; `kipi where <repo> --json` and
+`kipi resolve --json` carry the resolved set.
+
 To use a personal skill at work, set `share_skills = true` in the personal store's `[store]` and
 reference it as `personal/<skill>` from the acme scope. Nothing else crosses stores.
 

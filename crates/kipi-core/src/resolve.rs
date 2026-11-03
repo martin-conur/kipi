@@ -539,6 +539,19 @@ impl<'a> StoreCtx<'a> {
             registry.as_ref(),
         );
 
+        // Attributes: the chain top-down, then the repo's own; the last writer wins.
+        let mut attributes = BTreeMap::new();
+        let scoped = chain
+            .iter()
+            .map(|s| (format!("scopes.{}.attributes", s.name), &s.attributes));
+        let own = std::iter::once((format!("repos.{}.attributes", repo.name), &repo.attributes));
+        for (rule, attrs) in scoped.chain(own) {
+            for a in attrs {
+                let source = Source::at(&a.at, rule.clone());
+                attributes.insert(a.key.clone(), Decided::new(a.value.clone(), source));
+            }
+        }
+
         Ok(RepoPlan {
             name: repo.name.clone(),
             store: store.name.clone(),
@@ -554,6 +567,7 @@ impl<'a> StoreCtx<'a> {
             grant,
             agents,
             budget_tokens,
+            attributes,
         })
     }
 

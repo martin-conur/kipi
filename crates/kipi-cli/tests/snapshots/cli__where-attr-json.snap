@@ -1,0 +1,101 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: out
+---
+{
+  "version": 1,
+  "searched": "every mounted store",
+  "query": [
+    {
+      "key": "tracker.project",
+      "value": "ACME"
+    }
+  ],
+  "repos": [
+    {
+      "name": "acme-api",
+      "store": "acme",
+      "scope": "acme",
+      "aliases": [],
+      "aliases_draft": false,
+      "summary": "Public REST gateway",
+      "summary_draft": false,
+      "local": "[HOME]/work/acme/api",
+      "notes": null,
+      "attributes": {
+        "tracker.project": "ACME",
+        "tracker.site": "tracker.example.com"
+      }
+    },
+    {
+      "name": "billing-api",
+      "store": "acme",
+      "scope": "acme",
+      "aliases": [
+        "billing",
+        "invoices"
+      ],
+      "aliases_draft": false,
+      "summary": "Invoicing and payment orchestration; OpenAPI in api/openapi.yaml",
+      "summary_draft": true,
+      "local": "[HOME]/work/acme/billing-api",
+      "notes": "[HOME]/stores/acme-store/repos/billing-api/notes.md",
+      "attributes": {
+        "tracker.project": "ACME",
+        "tracker.site": "tracker.example.com"
+      }
+    },
+    {
+      "name": "feature-store",
+      "store": "acme",
+      "scope": "acme-ml",
+      "aliases": [
+        "feature",
+        "store"
+      ],
+      "aliases_draft": true,
+      "summary": "Online and offline feature serving; dbt models in models/",
+      "summary_draft": true,
+      "local": "[HOME]/work/acme/ml/feature-store",
+      "notes": null,
+      "attributes": {
+        "tracker.project": "ACME",
+        "tracker.site": "tracker.example.com"
+      }
+    },
+    {
+      "name": "ml-platform",
+      "store": "acme",
+      "scope": "acme-ml",
+      "aliases": [
+        "ml"
+      ],
+      "aliases_draft": false,
+      "summary": "Shared training and feature tooling",
+      "summary_draft": false,
+      "local": "[HOME]/work/acme/ml/ml-platform",
+      "notes": null,
+      "attributes": {
+        "tracker.project": "ACME",
+        "tracker.site": "tracker.example.com"
+      }
+    },
+    {
+      "name": "web-dashboard",
+      "store": "acme",
+      "scope": "acme",
+      "aliases": [
+        "dashboard"
+      ],
+      "aliases_draft": true,
+      "summary": null,
+      "summary_draft": false,
+      "local": "[HOME]/work/acme/web-dashboard",
+      "notes": null,
+      "attributes": {
+        "tracker.project": "ACME",
+        "tracker.site": "tracker.example.com"
+      }
+    }
+  ]
+}

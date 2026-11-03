@@ -1,11 +1,12 @@
 //! `kipi add scope`: declare `[scopes.<name>]` in a store, so onboarding needs no
 //! hand-edited TOML. `kipi init --scope` shares [`insert`]. `kipi scope`: change an
-//! existing scope ([`edit_scope`]).
+//! existing scope ([`edit_scope`]), its attributes included.
 
 use std::path::{Path, PathBuf};
 
 use toml_edit::{DocumentMut, Item, Table, TableLike, Value};
 
+use super::attrs;
 use super::bind::{check_skill_refs, dedup};
 use super::toml::{contains, push, remove, table_mut};
 use super::{
@@ -286,11 +287,15 @@ pub struct ScopeEdit<'a> {
     pub add_remote_patterns: &'a [String],
     /// `--remove-remote-pattern`.
     pub remove_remote_patterns: &'a [String],
+    /// `--attr key=value`.
+    pub attrs: &'a [String],
+    /// `--remove-attr key`.
+    pub remove_attrs: &'a [String],
 }
 
 /// Change the existing `[scopes.<name>]` in place (toml_edit, comments kept): toggle its
 /// registry, add or remove roots, remote patterns, skills and always-on files, set or drop
-/// `extends`.
+/// `extends` and attributes.
 /// Values already as asked are reported as kept. The edited store set is validated
 /// before anything is written.
 pub fn edit_scope(
@@ -309,14 +314,17 @@ pub fn edit_scope(
         && edit.always.is_empty()
         && edit.remove_always.is_empty()
         && edit.add_remote_patterns.is_empty()
-        && edit.remove_remote_patterns.is_empty();
+        && edit.remove_remote_patterns.is_empty()
+        && edit.attrs.is_empty()
+        && edit.remove_attrs.is_empty();
     if nothing {
         return Err(Error::usage(
             format!("nothing to change in scope `{name}`"),
             format!(
                 "pass at least one of --registry, --no-registry, --add-root, --remove-root, \
                  --add-remote-pattern, --remove-remote-pattern, --extends, --no-extends, \
-                 --skill, --remove-skill, --always or --remove-always, e.g. \
+                 --skill, --remove-skill, --always, --remove-always, --attr or --remove-attr, \
+                 e.g. \
                  `kipi scope {name} --registry`"
             ),
         ));
@@ -327,6 +335,8 @@ pub fn edit_scope(
     let add_roots = check_roots(edit.add_roots, env)?;
     let add_patterns = check_patterns(edit.add_remote_patterns, "--add-remote-pattern")?;
     let always = check_always(edit.always, store, name)?;
+    let sets = attrs::parse_sets("--attr", edit.attrs, &format!("kipi scope {name}"))?;
+    let unsets = attrs::parse_keys("--remove-attr", edit.remove_attrs)?;
     if let Some(Some(parent)) = edit.extends {
         check_parent(stores, store, name, parent)?;
     }
@@ -425,6 +435,12 @@ pub fn edit_scope(
             Change::new(Op::Keep, "always", shown).note("not there")
         });
         removed.push(wanted);
+    }
+    for (key, value) in &sets {
+        changes.push(attrs::set(table, key, value));
+    }
+    for key in &unsets {
+        changes.push(attrs::unset(table, key));
     }
 
     let text = doc.to_string();

@@ -39,6 +39,7 @@ repos: [
         agents: None,
         grant: None,
         budget_tokens: None,
+        attributes: [],
         notes: Some(
             "<dir>/repos/one/notes.md",
         ),

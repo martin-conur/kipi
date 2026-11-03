@@ -1,16 +1,85 @@
 //! `kipi where <alias> [--notes]`: resolve an alias to a repo entry, its summary, its
-//! checkout and its notes (roadmap §3 channel 4, §7). Written for an agent reading it:
-//! one fact per line, absolute paths, no decoration. Inside a bound repo only the
-//! repo's scope chain is searched; `--any-scope` searches every mounted store.
+//! checkout, its attributes and its notes (roadmap §3 channel 4, §7). Written for an
+//! agent reading it: one fact per line, absolute paths, no decoration. `kipi where --attr
+//! key=value` is the reverse: every repo whose resolved attributes match. Inside a bound
+//! repo only the repo's scope chain is searched; `--any-scope` searches every mounted
+//! store.
 
 use std::fs;
 
 use kipi_core::error::{Error, closest};
-use kipi_core::search::{self, Lookup, RepoInfo, View};
+use kipi_core::model::check_attribute_key;
+use kipi_core::search::{self, AttrQuery, Lookup, RepoInfo, View};
 
 use super::{Loaded, cwd_repo};
 use crate::error::Failure;
 use crate::output::{Output, json};
+
+/// What `where` may see from the working directory: the current repo's scope chain, or
+/// everything with `--any-scope` or outside a bound repo. `true` when scoped.
+fn view(loaded: &Loaded, any_scope: bool) -> (View, bool) {
+    let here = if any_scope { None } else { cwd_repo(loaded) };
+    match here {
+        Some(repo) => (View::repo(&loaded.stores, &loaded.plan, repo), true),
+        None => (View::everything(&loaded.stores), false),
+    }
+}
+
+/// List every repo in view whose resolved attributes match every `--attr`.
+pub fn by_attributes(
+    loaded: &Loaded,
+    raw: &[String],
+    any_scope: bool,
+    out: &Output,
+) -> Result<(), Failure> {
+    let mut query = Vec::with_capacity(raw.len());
+    for r in raw {
+        let q = AttrQuery::parse(r);
+        check_attribute_key(&q.key).map_err(|why| {
+            Failure::user(
+                format!("invalid --attr `{r}`: the key {why}"),
+                "pass `key=value` or `key`, e.g. `kipi where --attr tracker.project=PROJ`",
+            )
+        })?;
+        query.push(q);
+    }
+    let (view, scoped) = view(loaded, any_scope);
+    out.info(&format!("searching {}", view.label));
+    let found = search::by_attributes(&loaded.stores, &loaded.plan, &view, &query);
+    if out.json {
+        let text = json::by_attributes(&view, &query, &found)
+            .map_err(|e| Failure::json("the repo entries", e))?;
+        return Ok(out.print(&text)?);
+    }
+    let text: Vec<String> = found.iter().map(describe).collect();
+    out.print(&text.join("\n"))?;
+    if found.is_empty() && out.verbosity >= 0 {
+        let p = &out.paint_err;
+        eprintln!(
+            "{} no repo in {} has {}\n  {} {}",
+            p.hint("note:"),
+            view.label,
+            raw.join(" and "),
+            p.hint("hint:"),
+            no_match_hint(&query, scoped)
+        );
+    }
+    Ok(())
+}
+
+/// The hint when `where --attr` matches nothing. "Values match exactly" only when some
+/// condition compares a value; `--attr <key>` compares none.
+fn no_match_hint(query: &[AttrQuery], scoped: bool) -> String {
+    let mut hint = String::new();
+    if query.iter().any(|q| q.value.is_some()) {
+        hint.push_str("values match exactly; ");
+    }
+    hint.push_str("`kipi explain <repo>` shows a repo's attributes");
+    if scoped {
+        hint.push_str("; `--any-scope` searches every mounted store");
+    }
+    hint
+}
 
 /// Look `alias` up and print what it names.
 pub fn run(
@@ -20,11 +89,7 @@ pub fn run(
     any_scope: bool,
     out: &Output,
 ) -> Result<(), Failure> {
-    let here = if any_scope { None } else { cwd_repo(loaded) };
-    let view = match here {
-        Some(repo) => View::repo(&loaded.stores, &loaded.plan, repo),
-        None => View::everything(&loaded.stores),
-    };
+    let (view, scoped) = view(loaded, any_scope);
     let info = match search::lookup(&loaded.stores, &loaded.plan, &view, alias) {
         Lookup::Found(info) => info,
         Lookup::Ambiguous(infos) => {
@@ -37,7 +102,7 @@ pub fn run(
                 ),
             ));
         }
-        Lookup::NotFound => return Err(not_found(loaded, &view, alias, here.is_some())),
+        Lookup::NotFound => return Err(not_found(loaded, &view, alias, scoped)),
     };
     let notes_text = if notes {
         Some(read_notes(&info)?)
@@ -61,7 +126,7 @@ pub fn run(
     Ok(())
 }
 
-/// One fact per line: name and summary, aliases, scope, checkout, notes.
+/// One fact per line: name and summary, aliases, scope, checkout, notes, attributes.
 fn describe(info: &RepoInfo) -> String {
     let draft = |d: bool| if d { " (draft)" } else { "" };
     let summary = info.summary.as_deref().unwrap_or("(no summary)");
@@ -88,6 +153,9 @@ fn describe(info: &RepoInfo) -> String {
         .as_ref()
         .map_or_else(|| "none".to_owned(), |p| p.display().to_string());
     text.push_str(&format!("notes: {notes}\n"));
+    for (key, value) in &info.attributes {
+        text.push_str(&format!("attribute: {key} = {value}\n"));
+    }
     text
 }
 
@@ -129,4 +197,24 @@ fn not_found(loaded: &Loaded, view: &View, alias: &str, scoped: bool) -> Failure
         String::new()
     };
     Failure::user(format!("no repo named or aliased `{alias}`{within}"), hint)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_no_match_hint_mentions_exact_values_only_when_a_value_is_compared() {
+        let key_only = [AttrQuery::parse("tracker.project")];
+        assert_eq!(
+            no_match_hint(&key_only, false),
+            "`kipi explain <repo>` shows a repo's attributes"
+        );
+        let with_value = [AttrQuery::parse("tracker.site"), AttrQuery::parse("a=b")];
+        assert_eq!(
+            no_match_hint(&with_value, true),
+            "values match exactly; `kipi explain <repo>` shows a repo's attributes; \
+             `--any-scope` searches every mounted store"
+        );
+    }
 }

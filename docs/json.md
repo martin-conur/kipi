@@ -58,6 +58,7 @@ Lines point at the `[scopes.<name>]` / `[repos.<name>]` table header that holds 
 | `grant` | Grant | The read grant |
 | `agents` | Decided<[string]> | Adapters to render (`claude`, `generic`) |
 | `budget_tokens` | `Decided<number>` | Always-on token budget |
+| `attributes` | {string: Decided<string>} | Resolved `attributes` by dotted key, sorted: the repo's own value, else the nearest scope's in the chain; `source.rule` is `repos.<repo>.attributes` or `scopes.<scope>.attributes`. `{}` when none |
 
 **Skill**: `name` (directory name), `store` (store holding it), `reference` (as rendered:
 `personal/commit-style` for a shared skill), `dir` (absolute), `inherited_from` (the scope whose
@@ -269,7 +270,23 @@ error on stderr, exit 1).
 | `summary_draft` | bool | The summary is still marked `# kipi:draft` |
 | `local` | string \| null | Checkout on this machine; `null` when not cloned here |
 | `notes` | string \| null | `repos/<name>/notes.md` in the store, when it exists |
+| `attributes` | {string: string} | Resolved `attributes` (repo > scope chain) by dotted key; `{}` when none |
 | `notes_text` | string | The notes' contents; only with `--notes` |
+
+`kipi where --attr <key[=value]>... --json`: every repo entry in view (the current repo's scope
+chain, or every mounted store outside a bound repo or with `--any-scope`) whose resolved attributes
+match every `--attr`. No match is an empty `repos`, exit 0.
+
+```bash
+kipi where --attr tracker.project=PROJ --any-scope --json | jq -r '.repos[] | "\(.name)\t\(.local)"'
+```
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `version` | number | Schema version, currently `1` |
+| `searched` | string | What was searched, as in [Grep](#grep) |
+| `query` | [{`key`, `value`}] | The `--attr` conditions; `value` is `null` for `--attr <key>` (set to anything) |
+| `repos` | [object] | Matching entries sorted by name, each with the fields above from `name` to `attributes` |
 
 ## Grep
 
