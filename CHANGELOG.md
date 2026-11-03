@@ -7,6 +7,12 @@ the stable interface; human-readable output may change in any release.
 
 ## [Unreleased]
 
+### Added
+
+- **Homebrew** (#43). Each release now pushes a `kipi` formula to the `martin-conur/homebrew-tap`
+  tap, so `brew install martin-conur/tap/kipi` installs kipi on macOS (and Linux with Homebrew).
+  The shell installer, prebuilt archives and source builds are unchanged.
+
 ### Fixed
 
 - **The installer check now runs on every release** (#68). It triggered on `release: published`,

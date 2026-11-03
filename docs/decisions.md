@@ -1004,6 +1004,17 @@ The spec wins wherever it is explicit.
 - **Help text.** `sync --agents` names its values and delimiter, `tree --budget` says it shows
   tokens against the budget, and `edit`'s argument lists the target forms.
 
+## Homebrew tap (#43)
+
+- **Homebrew is back, as configured before 0.1.0.** `dist-workspace.toml` again has
+  `installers = ["shell", "homebrew"]`, `tap = "martin-conur/homebrew-tap"` and
+  `publish-jobs = ["homebrew"]`, and `crates/kipi-cli/Cargo.toml` `formula = "kipi"`, exactly as
+  in "Stage 4: release engineering" above; the "No Homebrew in 0.1.0" entry is reversed.
+  `release.yml` was regenerated with dist 0.32.0 and its two hand edits (SHA pins, PR `paths`
+  filter) re-applied, which brings back the `publish-homebrew-formula` job and its use of
+  `HOMEBREW_TAP_TOKEN`. The install command is `brew install martin-conur/tap/kipi`: Homebrew
+  maps `<owner>/tap` to the `<owner>/homebrew-tap` repository.
+
 ## Worktree support (#49)
 
 - **A linked worktree is its checkout's entry.** It is found from the checkout, with `git
