@@ -9,6 +9,20 @@ the stable interface; human-readable output may change in any release.
 
 ### Added
 
+- **Sync commands** (#71). A scope or repo can declare `[[scopes.<scope>.on_sync]]` /
+  `[[repos.<repo>.on_sync]]` commands that `kipi sync` runs in each repo after materializing it,
+  for tools installed by their own idempotent installer: `run = "tool --key {attr.tracker.project}"`
+  fills in the repo's attributes, each value as exactly one argument (no shell is involved; write
+  `run = ["sh", "-c", "…"]` for one). `when = "tracker.project"` skips repos without the attribute;
+  `worktrees = true` also runs it in linked worktrees. A command runs only when due (never run here,
+  its arguments changed, or its last run failed; `--force` reruns) and only once approved on this
+  machine: `kipi sync --allow-commands` approves it (recorded as `approved_commands` in
+  `machine.toml`), an interactive `sync` asks, and `kipi pull` never runs a command it brought in
+  without that. A failed command is reported per repo and makes `sync` exit 1. `kipi resolve` shows
+  what would run, `kipi status` a COMMANDS column. The JSON output gains `on_sync` on each repo of
+  `resolve` and `commands` on `sync` and `status` repos (`docs/json.md`). Stores without `on_sync`
+  are unchanged and need no migration.
+
 - **Repo attributes** (#70). Free-form per-repo settings for the tools kipi syncs into a repo (an
   issue-tracker project, a board, a base branch): `attributes = { "tracker.project" = "PROJ" }`
   on a `[repos.*]` entry or a `[scopes.*]` table, dotted keys and string values that kipi does not

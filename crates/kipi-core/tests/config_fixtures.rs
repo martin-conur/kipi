@@ -189,8 +189,8 @@ fn machine_valid() {
         let machine = config::load_machine(&env(dir.path()))
             .unwrap_or_else(|e| panic!("{stem}: {}", e.report()));
         let out = format!(
-            "hostname: {:?}\nroots: {:#?}\nrepos: {:#?}",
-            machine.hostname, machine.roots, machine.repos
+            "hostname: {:?}\nroots: {:#?}\nrepos: {:#?}\napproved_commands: {:#?}",
+            machine.hostname, machine.roots, machine.repos, machine.approved_commands
         );
         insta::assert_snapshot!(format!("machine-valid-{stem}"), redact(&out, dir.path()));
     }

@@ -15,9 +15,11 @@ use crate::model::{
     DEFAULT_AGENTS, DEFAULT_BUDGET_TOKENS, DEFAULT_GRANT, GrantMode, Machine, RepoEntry, Scope,
     SkillRef, Store, StoreSet,
 };
+use crate::on_sync;
 use crate::plan::{
-    AliasCollision, AlwaysOn, Decided, Grant, GrantDir, GrantKind, Plan, PlannedSkill, Registry,
-    RegistryEntry, RelatedRepo, RepoPlan, SkillOrigin, Source, alias_key,
+    AliasCollision, AlwaysOn, CommandPlan, Decided, Grant, GrantDir, GrantKind, Plan,
+    PlannedCommand, PlannedSkill, Registry, RegistryEntry, RelatedRepo, RepoPlan, SkillOrigin,
+    SkipReason, Source, alias_key,
 };
 
 /// The scope a repo falls back to when nothing else places it (roadmap §6, rule 4).
@@ -552,6 +554,8 @@ impl<'a> StoreCtx<'a> {
             }
         }
 
+        let on_sync = self.on_sync(repo, &chain, &attributes);
+
         Ok(RepoPlan {
             name: repo.name.clone(),
             store: store.name.clone(),
@@ -568,7 +572,74 @@ impl<'a> StoreCtx<'a> {
             agents,
             budget_tokens,
             attributes,
+            on_sync,
         })
+    }
+
+    /// Sync commands: the chain top-down, then the repo's own; a later command replaces
+    /// an earlier one of the same name in place. Each is skipped when a `when` key (then
+    /// a placeholder's key) is not set, else filled, and unapproved unless `machine.toml`
+    /// approves its template.
+    fn on_sync(
+        &self,
+        repo: &RepoEntry,
+        chain: &[&Scope],
+        attributes: &BTreeMap<String, Decided<String>>,
+    ) -> Vec<PlannedCommand> {
+        let scoped = chain
+            .iter()
+            .map(|s| (format!("scopes.{}.on_sync", s.name), &s.on_sync));
+        let own = std::iter::once((format!("repos.{}.on_sync", repo.name), &repo.on_sync));
+        let mut out: Vec<PlannedCommand> = Vec::new();
+        for (rule, cmds) in scoped.chain(own) {
+            for cmd in cmds {
+                let value = |k: &str| attributes.get(k).map(|d| d.value.as_str());
+                let outcome = if let Some(key) = cmd.when.iter().find(|k| value(k).is_none()) {
+                    let key = key.clone();
+                    CommandPlan::Skipped {
+                        reason: SkipReason::When,
+                        key,
+                    }
+                } else {
+                    match on_sync::fill(&cmd.argv, value) {
+                        Err(key) => CommandPlan::Skipped {
+                            reason: SkipReason::MissingAttribute,
+                            key,
+                        },
+                        Ok(argv) => CommandPlan::Unapproved { argv },
+                    }
+                };
+                let approval = on_sync::approval_key(
+                    &self.store.name,
+                    &rule,
+                    &cmd.name,
+                    &cmd.argv,
+                    cmd.worktrees,
+                );
+                let planned = PlannedCommand {
+                    name: cmd.name.clone(),
+                    template: cmd.argv.clone(),
+                    outcome,
+                    worktrees: cmd.worktrees,
+                    source: Source::at(&cmd.at, rule.clone()),
+                    approval,
+                };
+                match out.iter_mut().find(|c| c.name == cmd.name) {
+                    Some(earlier) => *earlier = planned,
+                    None => out.push(planned),
+                }
+            }
+        }
+        for cmd in &mut out {
+            if let CommandPlan::Unapproved { argv } = &mut cmd.outcome
+                && self.machine.approved(&cmd.approval)
+            {
+                cmd.outcome = CommandPlan::Ready {
+                    argv: std::mem::take(argv),
+                };
+            }
+        }
+        out
     }
 
     /// `related` entries: known repos of this store, not the repo itself, in its scope chain.

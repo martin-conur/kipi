@@ -1,4 +1,4 @@
-//! The apply engine (roadmap §8 steps 4–6): the only code that changes consumer repos.
+//! The apply engine (roadmap §8 steps 4, 5 and 7): the only code that changes consumer repos.
 //!
 //! [`run`] diffs the desired [`Action`]s against a target's manifest and its disk, then
 //! changes the disk: anything the manifest lists but no action wants is removed, anything
@@ -32,6 +32,8 @@ use crate::render::{registry, splice};
 
 /// A repo's manifest, relative to the checkout.
 pub const MANIFEST: &str = ".kipi/manifest.toml";
+/// A working tree's sync-command state ([`crate::on_sync::State`]), relative to it.
+pub const ON_SYNC: &str = ".kipi/on_sync.toml";
 /// A store's manifest for its generated files, relative to `generated/`.
 pub const GENERATED_MANIFEST: &str = ".kipi-manifest.toml";
 /// The global lock, relative to the config directory (`~/.config/kipi`).

@@ -5,12 +5,21 @@
 //! Named repos and `--all` cover each checkout's linked worktrees too; with neither,
 //! `kipi sync` syncs the working tree it is run in (a checkout or a linked worktree of
 //! one). `--hook` is that, run by the `post-checkout` hook: silent outside a known repo.
+//!
+//! Each working tree's due sync commands (`on_sync`) run after it is materialized, if
+//! approved on this machine: `--allow-commands` approves them, and an interactive run asks
+//! once. A failed command is reported per repo and makes the exit code 1.
+
+use std::collections::BTreeSet;
+use std::io::{BufRead, IsTerminal, Write};
 
 use kipi_core::apply::{self, Report};
-use kipi_core::config::Env;
+use kipi_core::config::{self, Env};
 use kipi_core::error::closest;
 use kipi_core::model::AgentId;
-use kipi_core::sync::{self, Outcome, RepoOutcome, RepoState, Selection, Tally};
+use kipi_core::on_sync;
+use kipi_core::plan::{CommandPlan, Plan, PlannedCommand, RepoPlan, SkipReason};
+use kipi_core::sync::{self, CommandState, Outcome, RepoOutcome, RepoState, Selection, Tally};
 
 use super::Loaded;
 use crate::error::Failure;
@@ -28,6 +37,8 @@ pub struct Args<'a> {
     pub force: bool,
     /// `--allow-tracked`.
     pub allow_tracked: bool,
+    /// `--allow-commands`: approve the selected repos' sync commands on this machine.
+    pub allow_commands: bool,
     /// `--dry-run`.
     pub dry_run: bool,
     /// `--hook`: run by the `post-checkout` hook.
@@ -41,10 +52,39 @@ pub fn run(env: &Env, loaded: &Loaded, args: &Args, out: &Output) -> Result<(), 
     };
     if out.json {
         let text = json::sync(&outcome, args.dry_run).map_err(|e| Failure::json("the sync", e))?;
-        return Ok(out.print(&text)?);
+        out.print(&text)?;
+    } else {
+        out.print(&human(&outcome, args.dry_run, out))?;
     }
-    out.print(&human(&outcome, args.dry_run, out))?;
-    Ok(())
+    match failed_commands(&outcome) {
+        Some(failure) if !args.hook => Err(failure),
+        _ => Ok(()),
+    }
+}
+
+/// The failure to exit with when a sync command failed: exit code 1, after the report.
+pub fn failed_commands(outcome: &Outcome) -> Option<Failure> {
+    let failed: Vec<String> = outcome
+        .repos
+        .iter()
+        .flat_map(|r| {
+            r.commands
+                .iter()
+                .filter(|c| c.state.failed())
+                .map(|c| format!("{}/{}", r.name, c.name))
+        })
+        .collect();
+    (!failed.is_empty()).then(|| {
+        Failure::user(
+            format!(
+                "{} sync command{} failed: {}",
+                failed.len(),
+                if failed.len() == 1 { "" } else { "s" },
+                failed.join(", ")
+            ),
+            "see the output above; failed commands rerun on the next `kipi sync`",
+        )
+    })
 }
 
 /// Sync without reporting; `None` when `--hook` finds no repo here.
@@ -83,22 +123,125 @@ pub fn execute(
         allow_tracked: args.allow_tracked,
         home: Some(env.home.clone()),
         worktrees: true,
+        run_commands: !args.dry_run,
     };
     let _lock = if args.dry_run {
         None
     } else {
         Some(apply::Lock::acquire(&env.config_dir)?)
     };
+    let approved = approve(env, loaded, &selection, args, out)?;
     let outcome = sync::run(
         &loaded.stores,
         &loaded.machine,
-        &loaded.plan,
+        approved.as_ref().unwrap_or(&loaded.plan),
         &selection,
         &opts,
         &loaded.caches,
     )?;
     loaded.save_caches(out);
     Ok(Some(outcome))
+}
+
+/// Approve the selection's unapproved sync commands, with `--allow-commands` or a yes to
+/// the one `[y/N]` an interactive run asks: written to `machine.toml` (not in a dry run)
+/// and returned as the plan to sync. `None` when nothing was approved.
+fn approve(
+    env: &Env,
+    loaded: &Loaded,
+    selection: &Selection,
+    args: &Args,
+    out: &Output,
+) -> Result<Option<Plan>, Failure> {
+    let pending = unapproved(&loaded.plan, selection);
+    if pending.is_empty() || args.hook {
+        return Ok(None);
+    }
+    let interactive = !out.json
+        && out.verbosity >= 0
+        && !args.dry_run
+        && std::io::stdin().is_terminal()
+        && std::io::stderr().is_terminal();
+    if !args.allow_commands && !interactive {
+        return Ok(None);
+    }
+    let p = &out.paint_err;
+    let lead = match (args.allow_commands, args.dry_run) {
+        (true, true) => "would approve on this machine:",
+        (true, false) => "approving on this machine:",
+        (false, _) => "these sync commands are not approved on this machine:",
+    };
+    let mut text = format!("{lead}\n");
+    for (repo, cmd) in &pending {
+        text.push_str(&format!(
+            "  {} {} {}  {}\n",
+            p.heading(&cmd.name),
+            p.dim(format!("({} · {})", repo.store, cmd.source.rule)),
+            p.dim("runs"),
+            template(cmd)
+        ));
+    }
+    eprint!("{text}");
+    if !args.allow_commands {
+        eprint!("approve and run them? [y/N] ");
+        let _ = std::io::stderr().flush();
+        let mut answer = String::new();
+        let _ = std::io::stdin().lock().read_line(&mut answer);
+        if !matches!(answer.trim(), "y" | "Y" | "yes" | "Yes") {
+            return Ok(None);
+        }
+    }
+    let keys: Vec<String> = pending.iter().map(|(_, c)| c.approval.clone()).collect();
+    if !args.dry_run {
+        config::approve_commands(env, &loaded.machine, &keys)?;
+    }
+    let mut plan = loaded.plan.clone();
+    plan.approve(&keys.into_iter().collect());
+    Ok(Some(plan))
+}
+
+/// A command's template as written, shell-quoted for display.
+pub fn template(cmd: &PlannedCommand) -> String {
+    let words: Vec<String> = cmd.template.iter().map(ToString::to_string).collect();
+    on_sync::display(&words)
+}
+
+/// The unapproved sync commands `selection` would run, one per approval key, with the
+/// first repo that plans each: cloned repos only, and in a linked worktree only those
+/// that run in worktrees.
+fn unapproved<'p>(
+    plan: &'p Plan,
+    selection: &Selection,
+) -> Vec<(&'p RepoPlan, &'p PlannedCommand)> {
+    let repos: Vec<(&RepoPlan, bool)> = match selection {
+        Selection::All => plan.repos.iter().map(|r| (r, false)).collect(),
+        Selection::Only(names) => names
+            .iter()
+            .filter_map(|n| plan.repo(n))
+            .map(|r| (r, false))
+            .collect(),
+        Selection::Tree { repo, dir } => plan
+            .repo(repo)
+            .map(|r| {
+                let real = |p: &std::path::Path| p.canonicalize().ok();
+                (r, r.path.as_deref().and_then(real) != real(dir))
+            })
+            .into_iter()
+            .collect(),
+    };
+    let mut seen = BTreeSet::new();
+    let mut out = Vec::new();
+    for (repo, worktree_only) in repos.into_iter().filter(|(r, _)| r.path.is_some()) {
+        for cmd in &repo.on_sync {
+            if matches!(cmd.outcome, CommandPlan::Unapproved { .. })
+                && (!worktree_only || cmd.worktrees)
+                && seen.insert(cmd.approval.as_str())
+            {
+                out.push((repo, cmd));
+            }
+        }
+    }
+    out
 }
 
 /// `kipi sync` with nothing named, outside every known repo: say how to name one, with
@@ -289,7 +432,74 @@ fn repo(r: &RepoOutcome, dry_run: bool, out: &Output) -> String {
     if let Some(report) = r.state.report() {
         text.push_str(&details(report, dry_run, out));
     }
+    text.push_str(&commands(r, out));
     text
+}
+
+/// One line per sync command: what ran, failed, would run or was skipped; up-to-date
+/// commands and `when` skips only with `-v`.
+fn commands(r: &RepoOutcome, out: &Output) -> String {
+    let p = &out.paint;
+    let mut text = String::new();
+    let mut warn = |message: String, hint: String| {
+        text.push_str(&format!(
+            "  {} {message}\n    {} {hint}\n",
+            p.warn("warning:"),
+            p.hint("hint:")
+        ));
+    };
+    let rerun = || {
+        format!(
+            "fix it and run `kipi sync {}` again (failed commands always rerun)",
+            r.name
+        )
+    };
+    let mut lines = Vec::new();
+    for c in &r.commands {
+        let name = &c.name;
+        match &c.state {
+            CommandState::Ran { ok: true, .. } => lines.push(format!("  ran {name}\n")),
+            CommandState::Ran { exit, ok: false } => warn(
+                match exit {
+                    Some(code) => format!("{name} failed (exit {code})"),
+                    None => format!("{name} failed (killed by a signal)"),
+                },
+                rerun(),
+            ),
+            CommandState::SpawnFailed(why) => warn(format!("{name} failed: {why}"), rerun()),
+            CommandState::WouldRun => lines.push(p.dim(format!("  would run {name}\n"))),
+            CommandState::Unapproved => warn(
+                format!("skipped {name}: not approved on this machine"),
+                format!(
+                    "review it with `kipi resolve {}`, then run `kipi sync --allow-commands`",
+                    r.name
+                ),
+            ),
+            CommandState::Skipped {
+                reason: SkipReason::MissingAttribute,
+                key,
+            } => warn(
+                format!("skipped {name}: attribute {key} is not set"),
+                format!(
+                    "set it with `kipi bind {} --attr {key}=…`, or add `when = \"{key}\"` to skip silently",
+                    r.name
+                ),
+            ),
+            CommandState::Skipped {
+                reason: SkipReason::When,
+                key,
+            } if out.verbosity > 0 => {
+                lines.push(p.dim(format!("  skipped {name}: when {key} (not set)\n")));
+            }
+            CommandState::UpToDate if out.verbosity > 0 => {
+                lines.push(p.dim(format!("  {name} up to date\n")));
+            }
+            CommandState::Skipped { .. } | CommandState::UpToDate => {}
+        }
+    }
+    let mut all = lines.concat();
+    all.push_str(&text);
+    all
 }
 
 /// The sync report as text.
@@ -297,8 +507,17 @@ pub fn human(outcome: &Outcome, dry_run: bool, out: &Output) -> String {
     let p = &out.paint;
     let mut text = String::new();
     let (mut changed, mut current, mut skipped, mut worktrees) = (0, 0, 0, 0);
+    let (mut ran, mut failed, mut due) = (0, 0, 0);
     for r in &outcome.repos {
         worktrees += usize::from(r.worktree);
+        for c in &r.commands {
+            match &c.state {
+                CommandState::Ran { .. } | CommandState::SpawnFailed(_) => ran += 1,
+                CommandState::WouldRun => due += 1,
+                _ => {}
+            }
+            failed += usize::from(c.state.failed());
+        }
         match r.state.report() {
             Some(report) if report.is_unchanged() => current += 1,
             Some(_) => changed += 1,
@@ -343,8 +562,21 @@ pub fn human(outcome: &Outcome, dry_run: bool, out: &Output) -> String {
             plural(n, "worktree", "worktrees")
         ),
     };
+    let mut commands = String::new();
+    if ran > 0 {
+        commands.push_str(&format!(", {} ran", plural(ran, "command", "commands")));
+    }
+    if failed > 0 {
+        commands.push_str(&format!(", {failed} failed"));
+    }
+    if due > 0 {
+        commands.push_str(&format!(
+            ", {} would run",
+            plural(due, "command", "commands")
+        ));
+    }
     text.push_str(&format!(
-        "\n{lead} {covered}: {changed} {verb}, {current} up to date, {skipped} skipped.\n",
+        "\n{lead} {covered}: {changed} {verb}, {current} up to date, {skipped} skipped{commands}.\n",
     ));
     text
 }

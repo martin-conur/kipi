@@ -3,12 +3,14 @@
 use std::path::Path;
 
 use serde::Deserialize;
+use toml_edit::{Array, DocumentMut, Item, Value};
 
 use super::NAME_HINT;
 use super::paths::{ABSOLUTE_PATH_HINT, Env, absolute_path};
 use super::source::{Entries, Source};
 use crate::error::{Error, Result};
 use crate::model::{Machine, MachineRepo, MachineRoots, check_name};
+use crate::scan::{FileWrite, write_files};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -18,6 +20,8 @@ struct RawMachine {
     roots: Entries<Vec<String>>,
     #[serde(default)]
     repos: Entries<String>,
+    #[serde(default)]
+    approved_commands: Vec<String>,
 }
 
 /// Every key `machine.toml` accepts (see [`super::schema`]).
@@ -83,10 +87,60 @@ fn parse_machine(src: Source, home: &Path) -> Result<Machine> {
             entry,
         });
     }
+    for key in &raw.approved_commands {
+        let hex = key.strip_prefix("sha256:").unwrap_or_default();
+        if hex.len() != 64 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(Error::invalid(
+                src.at(&["approved_commands"]),
+                format!("`{key}` is not a sync-command approval key"),
+                "remove it; `kipi sync --allow-commands` writes the keys (`sha256:<hex>`)",
+            ));
+        }
+    }
     Ok(Machine {
         hostname: raw.hostname,
         roots,
         repos,
+        approved_commands: raw.approved_commands,
         source: Some(src.into_doc()),
     })
+}
+
+/// Add `keys` to `machine.toml`'s `approved_commands` (comments and order kept), creating
+/// the file when there is none. Keys already there are not repeated.
+pub fn approve_commands(env: &Env, machine: &Machine, keys: &[String]) -> Result<()> {
+    let mut doc: DocumentMut = machine
+        .source
+        .as_ref()
+        .map(|s| s.doc.clone())
+        .unwrap_or_default();
+    let item = doc
+        .entry("approved_commands")
+        .or_insert_with(|| Item::Value(Value::Array(Array::new())));
+    let Some(list) = item.as_array_mut() else {
+        return Err(Error::invalid(
+            crate::error::Location::file(env.machine_file()),
+            "`approved_commands` is not an array",
+            "write it as `approved_commands = []`, or remove it",
+        ));
+    };
+    for key in keys {
+        if !list.iter().any(|v| v.as_str() == Some(key)) {
+            list.push(key.as_str());
+        }
+    }
+    if list.len() > 1 {
+        for v in list.iter_mut() {
+            v.decor_mut().set_prefix("\n    ");
+        }
+        list.set_trailing("\n");
+        list.set_trailing_comma(true);
+    }
+    let path = env.machine_file();
+    let before = std::fs::read_to_string(&path).ok();
+    write_files(&[FileWrite {
+        path,
+        before,
+        after: doc.to_string(),
+    }])
 }

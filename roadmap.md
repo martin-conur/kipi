@@ -158,6 +158,16 @@ grant = "registry"                 # per-repo override
 
 The personal store's `bindings.toml` (`[store] name = "personal"`, `share_skills = true`) would hold `[scopes.personal] roots = ["~/code"]`, `[repos.side-tool]`, `[repos.api]` (a personal repo also cloned as `api`), and so on.
 
+**Sync commands.** `[[scopes.<scope>.on_sync]]` and `[[repos.<repo>.on_sync]]` declare programs `kipi sync` runs in a repo after materializing it, for tools installed by their own idempotent installer (§6):
+
+```toml
+[[scopes.acme.on_sync]]
+name = "agent-workflow"
+run  = "some-installer --local-only --key {attr.tracker.project} --force"
+when = "tracker.project"           # optional: only for repos with this attribute
+worktrees = false                  # optional: also run in linked worktrees
+```
+
 **Repo identity.** Entry names are unique across all mounted stores. `remote` is the normalized `remote.origin.url` (scheme, user, port and `.git` stripped; `git@host:owner/name` → `host/owner/name`). A repo without a remote is matched by name only. When two repos share a directory name, `scan` names the new entry `<owner>-<name>` and relies on `remote` to match it.
 
 A trailing `# kipi:draft` comment marks a summary or alias list that `scan` drafted and no human has touched. Removing the comment (or editing the value with `kipi edit`) marks it reviewed. `scan --refresh-drafts` may rewrite drafted values; it never touches reviewed ones.
@@ -230,6 +240,8 @@ Resolution is a pure function `(stores, machine) -> Plan` with no I/O beyond rea
 
 **Attributes:** `attributes = { "tracker.project" = "PROJ" }` on a repo or a scope holds free-form, dotted-key, string-valued settings for the tools kipi syncs into a repo; kipi does not interpret them. Each key resolves on its own: the repo's value > its scope's > the parent scope's (walking up); there are no store defaults. `explain` shows where each came from, `where` and `resolve --json` carry the resolved set, and `where --attr key=value` lists the repos in view whose resolved value matches (the reverse lookup that routes an incoming ticket to its repos).
 
+**Sync commands:** a repo's `on_sync` commands are its scope chain's top-down, then its own; a later command with an earlier one's `name` replaces it in place. `run` is split into words without a shell (or given as an array); `{attr.<key>}` fills the repo's resolved attribute inside one word, so a value is always exactly part of one argument, and the program word takes no placeholder. A command whose `when` key is unset is skipped silently; one whose placeholder attribute is unset is skipped with a warning. Commands come only from store config, never from a repo's contents, and run only once approved on this machine (`machine.toml` `approved_commands`, keyed by store, table, name and unfilled `run`), since a shared store reaches every machine that pulls it. They run in the checkout (and, with `worktrees = true`, its linked worktrees) when due: never run there, argv changed, or last run failed. Decisions in `docs/decisions.md`.
+
 **Multiple stores.** Each mounted store is loaded independently and then checked as a set:
 
 - Store names, scope names and repo entry names are each unique across all mounted stores; a collision is a hard load error naming both files.
@@ -259,9 +271,9 @@ Resolution is a pure function `(stores, machine) -> Plan` with no I/O beyond rea
 | `remove repo <name> [--notes]` | Delete a repo entry and its `machine.toml` path, and remove what kipi wrote into its checkout; refused while another entry's `related` names it; `--notes` also deletes its `notes.md` | store, machine, repos |
 | `bind <repo> --skill <s>... / --related <repo>... [--via <text>] / --exclude <s>... / --alias <a>... / --attr <k=v>...` | Edit a repo's entry (toml_edit, comment-preserving); `--via` describes the one `--related` relation (`""` removes it) | bindings.toml |
 | `unbind <repo> ...` | Inverse of bind (`--attr <k>` takes the key alone) | bindings.toml |
-| `resolve [repo]` | Print the Plan (JSON with `--json`); no side effects | — |
+| `resolve [repo]` | Print the Plan (JSON with `--json`), including each repo's sync commands (`on_sync`) with their filled argv or why they are skipped; no side effects | — |
 | `explain <repo>` | Human-readable provenance for every skill, relation, grant and scope decision | — |
-| `sync [repo...] [--all] [--agents a,b] [--force]` | Materialize the Plan into repos; remove stale links and grants; rewrite generated blocks; regenerate registries | repos, `generated/` of each store |
+| `sync [repo...] [--all] [--agents a,b] [--force] [--allow-commands]` | Materialize the Plan into repos; remove stale links and grants; rewrite generated blocks; regenerate registries; then run each repo's due, approved sync commands (`on_sync`; `--allow-commands` approves them on this machine, an interactive run asks; a failed one exits 1) | repos, `generated/` of each store, machine.toml (approvals) |
 | `status [repo]` | Per-repo: scope, synced/stale/missing, always-on tokens vs budget | — |
 | `tree [--repo r] [--skill s] [--store n] [--budget] [--machine]` | Tree view of stores → scopes → repos → skills/related with provenance markers (○ inherited, ● explicit, ✗ excluded) | — |
 | `where <alias>` | Resolve alias → repo name, summary, local path, notes path, attributes (`--notes` prints the notes) | — |
@@ -306,7 +318,8 @@ personal  (~/code)                              always-on: 280 tok
    - read grant entries (Claude: `additionalDirectories` items in `.claude/settings.local.json`)
 4. Read `.kipi/manifest.toml` (what the last sync wrote, including each grant entry it added). Diff desired vs manifest vs filesystem. Anything in the manifest but not desired is removed; anything on disk that kipi did not write is never touched — including user-added `additionalDirectories` entries and every other key in `settings.local.json`.
 5. Apply: create dirs, write symlinks (replace only if the existing target differs; refuse to replace a non-symlink file unless `--force`), write generated blocks, merge grant entries into JSON (preserving key order and formatting where possible), update `.git/info/exclude`, write the manifest.
-6. Print a summary: per repo, links added/removed, grants added/removed, always-on tokens vs budget, warnings.
+6. Run the repo's due, approved sync commands (`on_sync`) in each working tree just applied, recording each result in `.kipi/on_sync.toml`; a failure is reported and the other repos continue.
+7. Print a summary: per repo, links added/removed, grants added/removed, always-on tokens vs budget, warnings.
 
 **Generated block format.** Exactly one block per file, bounded by markers; everything outside is user-owned and never modified.
 

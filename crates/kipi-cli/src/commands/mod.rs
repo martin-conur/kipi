@@ -131,6 +131,7 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
             agents,
             force,
             allow_tracked,
+            allow_commands,
             hook,
             dry_run,
         } => {
@@ -141,6 +142,7 @@ pub fn run(command: &Command, global: &Global, out: &Output) -> Result<(), Failu
                 agents,
                 force: *force,
                 allow_tracked: *allow_tracked,
+                allow_commands: *allow_commands,
                 dry_run: dry_run.dry_run,
                 hook: *hook,
             };

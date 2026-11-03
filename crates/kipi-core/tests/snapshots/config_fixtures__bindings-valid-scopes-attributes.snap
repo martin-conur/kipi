@@ -40,6 +40,7 @@ scopes: [
                 },
             },
         ],
+        on_sync: [],
         at: Location {
             file: "<dir>/bindings.toml",
             line: Some(

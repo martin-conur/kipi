@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/machine.toml:1: `not-a-key` is not a sync-command approval key
+  hint: remove it; `kipi sync --allow-commands` writes the keys (`sha256:<hex>`)

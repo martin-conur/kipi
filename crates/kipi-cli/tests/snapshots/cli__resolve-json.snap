@@ -144,7 +144,8 @@ expression: out
           "at": "acme:bindings.toml:8"
         }
       },
-      "attributes": {}
+      "attributes": {},
+      "on_sync": []
     },
     {
       "name": "api",
@@ -264,7 +265,8 @@ expression: out
           "at": "personal:bindings.toml:8"
         }
       },
-      "attributes": {}
+      "attributes": {},
+      "on_sync": []
     },
     {
       "name": "billing-api",
@@ -405,7 +407,8 @@ expression: out
           "at": "acme:bindings.toml:8"
         }
       },
-      "attributes": {}
+      "attributes": {},
+      "on_sync": []
     },
     {
       "name": "blog",
@@ -525,7 +528,8 @@ expression: out
           "at": "personal:bindings.toml:8"
         }
       },
-      "attributes": {}
+      "attributes": {},
+      "on_sync": []
     },
     {
       "name": "dotfiles",
@@ -645,7 +649,8 @@ expression: out
           "at": "personal:bindings.toml:8"
         }
       },
-      "attributes": {}
+      "attributes": {},
+      "on_sync": []
     },
     {
       "name": "events-pipeline",
@@ -872,7 +877,8 @@ expression: out
           "at": "acme:bindings.toml:8"
         }
       },
-      "attributes": {}
+      "attributes": {},
+      "on_sync": []
     },
     {
       "name": "feature-store",
@@ -1013,7 +1019,8 @@ expression: out
           "at": "acme:bindings.toml:8"
         }
       },
-      "attributes": {}
+      "attributes": {},
+      "on_sync": []
     },
     {
       "name": "ml-platform",
@@ -1166,7 +1173,8 @@ expression: out
           "at": "acme:bindings.toml:8"
         }
       },
-      "attributes": {}
+      "attributes": {},
+      "on_sync": []
     },
     {
       "name": "side-tool",
@@ -1308,7 +1316,8 @@ expression: out
           "at": "personal:bindings.toml:8"
         }
       },
-      "attributes": {}
+      "attributes": {},
+      "on_sync": []
     },
     {
       "name": "web-dashboard",
@@ -1449,7 +1458,8 @@ expression: out
           "at": "acme:bindings.toml:8"
         }
       },
-      "attributes": {}
+      "attributes": {},
+      "on_sync": []
     }
   ],
   "registries": [
