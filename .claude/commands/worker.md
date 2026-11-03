@@ -35,8 +35,18 @@ Workflow:
      INFO=$WBASE/.$WSLUG.info
      BASE=main; [ -f $INFO ] && . $INFO
      ```
-   - Run: `gh pr create --base $BASE --head $(git rev-parse --abbrev-ref HEAD) --fill`
-     This opens an editor so the user can review and submit the PR.
+   - Run it with the PR body on stdin:
+     ```bash
+     gh pr create --base $BASE --head $(git rev-parse --abbrev-ref HEAD) --fill --body-file - <<'BODY'
+     ## Summary
+     <Two or three plain sentences: what changed and why.>
+
+     Closes #<N>
+
+     <The rest of the description.>
+     BODY
+     ```
+     The body **must open with `## Summary`**: two or three plain sentences, written for the user rather than a reviewer, saying what changed and why. The `Closes` line and the rest of the description follow it. `--fill` still takes the title from your commits; `--body-file -` supplies the body, and the quoted `<<'BODY'` delimiter keeps the shell from command-substituting the backticks in it. Write the body and its `BODY` terminator flush left: GitHub renders an indented `## Summary` as code, not a heading.
 9. Update the project item's Status field to the **Status when in review** value from `.claude/gh-workflow.md` (typically `In Review`). If the project has no In Review state, leave it as the **Status when starting work** value — do NOT set Done yet.
 10. Hand off to PM via radio — this is the canonical handoff, not a message to the user:
     ```bash
@@ -50,7 +60,7 @@ Workflow:
     - `WARNING — no session for pm-…`, or `WARNING — pm-… looks dead …` → **PM isn't running.** Do NOT idle silently — tell the user (re-check the role name via `ls ~/.task-force/radio/sessions/`, or start/restart PM).
 11. Idle — do NOT run `task-done` yet. Wait for one of:
     - **`changes-requested`** from PM: read the PR comments (`gh pr view <N> --comments`), push more commits, then `radio send --to pm --intent re-review-requested --pr <N>` and idle again.
-    - **`approved-and-merged`** from PM (or the user explicitly says "cleanup"): update Status to the **Status when done** value from `.claude/gh-workflow.md`, then run `task-done --remove-worktree` to clean up the worktree and close this tab.
+    - **`approved-and-merged`** from PM (or the user explicitly says "cleanup"): update Status to the **Status when done** value from `.claude/gh-workflow.md`, then run `task-done --remove-worktree` to clean up the worktree and close this tab. If your worktree is already gone (a merge with `--delete-branch` removes it), run `task-done --remove-worktree` anyway — from the vanished directory, or from the main checkout — and it cleans up what is left (#271).
 
 Always run tests after changes. If tests fail, fix before committing.
 Stay focused on the spec — don't add features beyond what's specified.

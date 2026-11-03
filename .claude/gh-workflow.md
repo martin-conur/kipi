@@ -64,17 +64,22 @@ The worker reads these three values and updates the project item's Status field 
 
 Use the issue title as prefix: `<Issue title>: <short description>`
 
+### PR Body
+
+The worker opens every PR body with `## Summary`: two or three plain sentences, written for you rather than for a reviewer, saying what changed and why. `Closes #N` and the rest of the description follow it. The reviewer flags a PR without one as a nit. The summary is what to read when a ticket number no longer tells you what the work was.
+
 ### Shell Commands
 
 `task-work <slug> [gh-url] [options]` — create worktree + zellij tab + worker session
 
 - `-b, --base BRANCH` — branch the PR will target (default: current branch at call time)
-- `-f, --from REF` — git ref to fork the new worktree's branch from (default: `HEAD`)
+- `-f, --from REF` — git ref to fork the new worktree's branch from (default: `HEAD`). Refused when `REF` lacks the radio hooks `HEAD` carries for the agent (#304): a worktree forked from it would start an agent that never registers. Merge the base into `REF` first
 - `-p, --plan` — launch the worker in Claude plan mode (runs `/planner`); mutually exclusive with `--auto`
 - `--auto` — launch the worker in Claude auto permission mode (runs `/worker`); permission mode only, mutually exclusive with `--plan`
 - `--auto-submit` — radio auto-submit: an incoming wake submits itself instead of waiting in the prompt box for an Enter. **The default** on every launch, `--plan` included, since nobody types in a worker's tab (#254); the flag only makes a launch line explicit
 - `--no-auto-submit` — keep the Enter gate on radio wakes. Use it for a worker you mean to step into and steer by hand: a wake would otherwise submit whatever is half-typed in its box
 - `--focus` — switch to the new tab. By default focus stays on the tab you ran `task-work` from, so the PM can dispatch without being pulled away (#254)
+- `--agent <claude|kiro>` — launch this one worker on the other installed assistant, leaving the repo's active one alone (#293). Both loadouts must be installed (`task-config add assistant`, below). `task-pm`, `task-reviewer` and `task-recreate-worker` take it too, and `task-recreate-worker` without it relaunches on the assistant `task-work` recorded for that worker
 - `--no-launch` — open the worktree tab but do NOT start Claude
 
 If local `<base>` is strictly behind `origin/<base>`, `task-work` auto-refreshes and forks the new worktree from `origin/<base>` instead of the stale local tip. Pass `--from` to override.
@@ -92,6 +97,21 @@ task-work spike-idea --no-launch
 
 - `--force` — skip all confirmation prompts
 - `--remove-worktree` — cleanup only (use after worker has already created the PR)
+
+If the worktree is already gone — a `gh pr merge --delete-branch` removes it along
+with the local branch (#271) — `task-done` still cleans up what is left: radio
+session, mailbox, sidecar, git's worktree registration and the tab. Run it from the
+vanished directory, or from the main checkout in the worker's own tab (it reads the
+worktree from `$TASK_FORCE_ROLE`). The PM keeps it from happening at all by deleting
+only the remote branch after a merge: `git push origin --delete task/<slug>`.
+
+`task-done` also warns about, and lists, any agent processes still running in
+the worktree it removes (#305): an agent from an earlier tab that closed
+without taking it along. It never stops them; that is the PM's or your call.
+Run from the worker's own tab, the worker itself is not listed, since its whole
+process tree goes with the tab. Run from anywhere else, the PM's tab included, a
+worker that is still up is listed too, and is not necessarily stray. The warning is also logged, because that tab closes and takes it
+along: `grep 'stray-procs:' ~/.task-force/radio/log`.
 
 `task-recreate-worker <slug> [options]` — recover a worker whose tab died but whose worktree survived (#230)
 
@@ -126,8 +146,16 @@ that is new work, and it refuses and names `task-work`.
   before it died — its `<role>.auto-submit` sidecar (#246).
 - `--focus` — switch to the new tab. By default focus stays on the tab you ran
   it from, as with `task-work` (#254).
+- `--session <name>` — open the tab in zellij session `<name>` instead of the
+  one it runs in, refusing one that is not running: it never creates a session.
+  task-monitor's `R` passes the repo's session (#291).
 - `--no-launch` — open the tab, start nothing; the role stays unregistered.
 - `--force` — proceed although a session still looks live.
+  It does not get past agent processes still running in the worktree (#305).
+- `--kill-stale` — stop the agent processes still running in the worktree
+  (TERM, then KILL after 5s) after a `[y/N]` on the terminal, then recover.
+- `--yes` — skip `--kill-stale`'s confirmation. With no terminal, `--kill-stale`
+  needs it, and refuses without it having signalled anything.
 
 It refuses when the role still looks live: a zellij tab of that name is open, or
 the session file's heartbeat is newer than an hour (it asks `radio orphans`
@@ -135,11 +163,43 @@ rather than re-deriving the threshold). The first hour after a reboot looks
 exactly like a live session, which is what `--force` is for — read the refusal
 first, it names which of the two signals fired.
 
+It also refuses while **agent processes are still running in the worktree**
+(#305). A closed tab does not reliably take its agent with it: three kiro
+workers' processes (`kiro-cli-chat chat`, the bun `tui.js` front end,
+`kiro-cli-chat acp`) once outlived their tabs by two days, idle only because the
+credits had run out, in worktrees this command was starting new agents in. The
+tab and the heartbeat cannot see them, so it asks the kernel: every agent
+process (the `claude` or `kiro-cli*` binary, a bun or node launcher running one,
+a shell `-c` wrapper that runs one), plus its children, with a cwd inside the
+worktree. It judges by what runs, so `less docs/claude` is not an agent. The refusal lists
+pid, start time and command. `--force` does not get past it; `--kill-stale`
+stops them first, re-checking each pid's start time just before the signal so a
+recycled pid is left alone. Whether a process is still running is decided by
+scanning again, not by `kill -0`, so one that survives the KILL or refuses the
+signal (EPERM) stops the recovery. `TASK_FORCE_NO_PROC_SCAN=1` turns the scan off.
+
 The sidecar's `TAB_ID` is **stripped before the tab is spawned** and rewritten
 afterwards, never carried over: zellij's server restarted, so that id is stale by
 definition, and `radio register` adopts it from that file when its own name
 lookup misses (#218). Stripping it first means a register that beats us to the
 write finds nothing to adopt and resolves the new tab by name instead.
+
+It refuses a worktree with no radio hooks for the agent it is about to
+launch (#304): `.claude/settings.json` for claude, `.kiro/agents/worker.json`
+(or the global one) for kiro, each carrying radio's `register` hook. A worktree
+holds what was committed when it was forked, so one cut before
+`task-config add assistant` has none for the newer assistant, and an agent
+started there runs and never registers. The refusal names the fix,
+`git -C <worktree> merge <base>` with the base from the sidecar, or says the
+base does not carry the hooks either.
+
+And it prints `Recovered` only once the register has landed: after the launch
+it waits up to 30s (`TASK_RECREATE_WORKER_REGISTER_WAIT`) for the role's
+session file to show a register newer than the launch, by the expected
+`AGENT`, with a `TAB_ID`. Otherwise it warns that the agent started but has not
+registered, with the likely causes (a startup prompt waiting in the tab, an
+agent that exited), and the "surfaced N queued message(s)" line is not printed.
+It still exits 0: the tab and the agent are up.
 
 ```bash
 task-recreate-worker issue-223           # fresh session; tab, role and mail rebound
@@ -193,6 +253,40 @@ template shape per tracker — and cannot across a `set tracker`, because differ
 trackers share no fields at all, so `task-init` prompts for the new ones exactly
 as on a first install. `kiro-jira` is refused by name: the assistant × tracker
 grid has exactly one hole (#92).
+
+**Both assistants, one active (#293).** claude's files live under `.claude/` and
+kiro's under `.kiro/`, so the two loadouts on one tracker can be installed side by
+side and committed once. Which one runs is then a local choice, not a commit:
+
+```bash
+task-config add assistant kiro   # install the other one beside this, settings carried
+task-config use kiro             # the active assistant: local git config, no tracked file
+task-config sync                 # make the two docs' tracker settings agree again
+task-config remove assistant kiro  # drop one again: the mirror of add, the kept one goes active
+```
+
+`add` keeps the assistant you are on active, so nothing changes until you `use`
+the other. Both change only the main checkout: a live worktree keeps the files
+it was forked with, so `add` and `use` end with a warning listing every worker
+worktree that has no radio hooks for the new assistant, each with its
+`git -C <worktree> merge <base>` (#304). A warning only; `task-recreate-worker`
+is what refuses. The choice lives in `git config task-force.assistant`, which linked
+worktrees share. Detection reads `--impl` > `$AW_IMPL` > a launcher's `--agent` >
+the active assistant > a single match, and the active assistant only resolves two
+loadouts on **one** tracker: two trackers stay refused. With both installed and
+none active, every dispatcher refuses and names `task-config use`. `show` marks the
+active loadout and flags **drift**, a tracker setting the two workflow docs disagree
+on. `sync` resolves it: the active assistant's doc wins, or `--from <assistant>`
+picks the other one, and only the other doc is re-rendered. On a dual repo,
+`set assistant A` is refused and changes nothing, `--yes` or not (#303): A is
+already installed, so the switch is `use A` and dropping the other is
+`remove assistant <other>`, which previews its deletions and confirms on a TTY.
+`set loadout` onto the same tracker is refused the same way; onto another tracker
+it replaces both, and `set tracker` is refused with the two steps that do it.
+`show` prints the switch in one line: `task-config use <other>`, or
+`task-work … --agent <other>` for one launch.
+`task-remove` removes both and clears the setting. jira cannot be dual until a
+kiro-jira loadout exists (#92).
 
 `task-remove` — take task-force back out of this repo (#220)
 
@@ -263,6 +357,130 @@ for the exact SHA. "Passing" and "never built" look identical in `gh pr view`.
 ```bash
 gh run list -c "$(git rev-parse HEAD)" --limit 1 --json databaseId --jq 'length'
 # 0 => no run for this commit; "green" is not a claim you can make
+```
+
+`task-monitor-snapshot` — the board as JSON: in flight, next, done, and whether this repo needs you (#273)
+
+It prints one JSON document (`"schema": 1`, documented in task-force's
+`docs/task-monitor-schema.md`) and is the data layer of task-monitor. Every
+value comes from disk, the tracker or the forge, and no model is asked to write
+or summarise any of it.
+
+- **In flight** is every worktree whose `.<slug>.info` sidecar exists, joined to
+  its radio session, its PR and the latest review intent. The worktree must
+  still be live (its directory exists and `git worktree list` has it): a
+  sidecar left behind by a removal that bypassed `task-done` is listed under
+  `orphans` instead (#286).
+- **Next** is the PM's queue, else the tracker's backlog (gh project items in
+  none of the three statuses, or the local `tasks/` files). There is none on
+  jira or notion.
+- **Done** is the merged PRs that delivered an item in the last 24 hours, or
+  the last 10, whichever is more.
+- **Attention** fires on exactly three signals: an unread PM inbox, a finished
+  review on a still-open PR that the PM has not answered, and a worker in
+  `awaiting`. The `awaiting` signal is claude-only: kiro-cli (checked on
+  2.32.0) has no hook that fires while it waits on the user (#278).
+
+```bash
+task-monitor-snapshot --json            # this repo
+task-monitor-snapshot --all             # every repo radio knows about
+task-monitor-snapshot --local           # no forge calls: disk + the last full run's cache
+```
+
+`task-monitor` — the board, live, in the terminal (#276)
+
+The ratatui front end over that JSON. It opens on the repo view (In flight /
+Next / Done) inside a repo, and on the all-repos overview (`a`, or `--all`)
+outside one: one row per repo with its attention light, the signal in words,
+and the zellij session it runs in, and under it one line per agent: the PM,
+each in-flight worker and the reviewers nested under their item, each with its
+agent, state icon and status (#287). `← you` marks the agent behind a signal:
+the PM for unread mail or a review waiting on merge, the asking worker for
+`awaiting`. A change under radio's state or a worktree
+sidecar refreshes it from disk at once (`--local`); forge state refreshes every
+45s (`--poll SECS`). A failed or slow refresh never blanks the screen: the last
+good snapshot stays up, marked `stale`. Keys: `↑↓` move, `⏎` expand (a done
+item's full PR body, scrollable) or enter a repo, `o` open the PR or issue, `t`
+jump to the item's tab (the worker's, or the PM's for a queued or done item; on
+the overview, the selected agent's), `!` show only the agents that need you,
+`a` toggle the overview, `q` quit. `t` goes to a tab only while the tab at the
+recorded id still bears the item's name, the check `task-done` makes before
+closing one (#260). A tab in another zellij session is checked the same way,
+then reached with `zellij action switch-session <session> --tab-position`: the
+client moves and the monitor keeps running in its own session, so come back
+through zellij's session manager. A failed check switches nothing and says why
+(#287). When a worker's tab is gone, `t` says `tab gone · R to recreate`, and
+`R` on that worker runs `task-recreate-worker <slug> --session <session>` from
+the repo's main checkout with its loadout, then goes to the new tab the way `t`
+does (#291). The session is the repo's (its PM's), not the monitor's; one that
+is not running is refused, never created. Only `R` recreates, since a fresh
+agent costs tokens and parked work is often parked on purpose, and its
+refusals (a live tab, a fresh heartbeat) land in the status line. Reviewers
+are not recreated. It holds no
+task-force logic: every value is a snapshot field. A loadout's
+`install.sh` builds and links it when `cargo` is on PATH, and skips it with one
+line when not (#277). Its Next section is the queue the
+PM writes with `task-monitor-queue`, below, else the tracker's backlog.
+
+`task-monitor-queue` — the PM's short-term queue, the board's **Next** (#275)
+
+The PM writes it when it and the user agree on what comes next. Each call
+answers with one line, and the PM never reads it back: that is its whole board
+cost. `task-work` takes the ref it dispatches off the queue itself, so nobody
+has to `rm` a dispatched item.
+
+```bash
+task-monitor-queue set <ref>... [--note <ref>=<text>] [--title <ref>=<text>]   # replace, in order
+task-monitor-queue add <ref>...                                                # append
+task-monitor-queue rm <ref>...                                                 # drop
+task-monitor-queue clear                                                       # empty
+task-monitor-queue                                                             # show it
+```
+
+Refs are compared by their last path segment, ignoring a URL's query string
+and fragment, so `267`, `#267` and an issue URL ending in `/issues/267` are one
+item. `set` keeps the note of a ref that stays queued; `--note <ref>=` clears
+it. `--note` splits on the first `=`, so a ref that contains `=` cannot take a
+note.
+
+`--title <ref>=<text>` gives a queued item its short name (#306), for trackers
+the shell cannot read: on jira and notion a queued row has no title of its own.
+The PM passes the name it already knows from the conversation, never fetching
+anything to find it, and leaves `--title` off when it knows none. It follows
+`--note`'s rules: `set` and `add`, repeatable, kept across a `set`, cleared by
+`--title <ref>=`. The board uses it only where the tracker has no real title,
+so gh and local keep their own. With none, a Notion page reads
+`notion:…589b5b1c` and a Jira browse URL its key; `o` still opens the URL.
+
+**Handing the PM off** (#301) — from claude to kiro and back, or to a fresh PM on
+the same one. The address `pm-<reponame>` stays, so the inbox carries over; three
+things carry the rest.
+
+- **The board digest.** A fresh PM register (claude `SessionStart`, kiro
+  `agentSpawn`) prints `task-monitor-snapshot --local --brief` under the
+  offline-backlog summary: attention signals, in flight, the queue with its
+  notes, and what merged in the last 24h with each PR summary's first sentence.
+  It is read from disk with no forge call, capped at 40 lines, and never
+  printed on a `/compact` or `/clear` re-register or for a worker.
+  `TASK_FORCE_NO_PM_DIGEST=1` turns it off.
+- **The handoff note.** Asked to hand off, the PM writes 5–10 lines on what the
+  board cannot show (decisions, questions waiting on you, what is parked and
+  why, what not to redo) to `$TASK_FORCE_HOME/monitor/<repo>/handoff.md`. The
+  next fresh PM start prints it under the digest with its age; it stays until
+  the next write replaces it, and task-monitor shows it collapsed as the repo
+  view's last row.
+- **One live PM.** `task-pm` refuses while this repo's PM session has a
+  heartbeat under an hour old (`radio orphans` does not list it) and a tab that
+  is not the current one, naming the agent in `<role>.agent`; `--force`
+  overrides. A session live in *this* tab is the handoff itself (kiro has no
+  exit hook) and goes through. Whenever it goes ahead over an earlier session
+  file, `task-pm` retires it with `radio unregister --manual`, so the new
+  register is fresh and prints the backlog and the digest.
+
+```bash
+task-monitor-queue handoff write <<'NOTE'    # replace the note, on stdin
+task-monitor-queue handoff show              # print it
+task-monitor-queue handoff clear             # remove it
 ```
 
 ### PM ↔ worker messaging (radio)
@@ -367,6 +585,18 @@ the role came back wakeable, warning explicitly when `TAB_ID` ended up empty.
 It also keeps the role's radio auto-submit setting: the shell you repair from
 has no `TASK_FORCE_AUTO_SUBMIT`, and an unset value means "as recorded" (#246).
 
+That is the repair for a **resumed** session, whose tab ids are still the live
+server's. After a zellij **restart** use `task-recreate-worker` instead: the
+restart renumbered every tab, and `task-work`'s `<worktree-base>/.<slug>.info`
+sidecar — the record `task-done` closes the tab by — still names the old id,
+which by then may belong to another worker's tab. `task-recreate-worker` is the
+command that strips and rewrites it (#218). Since #260 a hand `register` that
+resolves the tab live from zellij also rewrites a stale sidecar `TAB_ID`, and
+`task-done` closes a tab only when the tab at that id still bears its slug
+(`⏸️ <slug>` / `▶️ <slug>` included) — on a mismatch it leaves the tab open and
+logs `tab-close: id N is now <name>, not <slug>`, rather than closing an
+unrelated worker's tab as it did before.
+
 Full command form:
 
 ```bash
@@ -395,6 +625,15 @@ comment is an unrecoverable loss of the analysis.
 Worker role names follow `worker-<reponame>-<slug>`; discover the live one via
 `ls ~/.task-force/radio/sessions/`.
 
+All of radio's state (sessions, mailboxes, the log) lives under
+`$TASK_FORCE_HOME`, which defaults to `~/.task-force`. Point it at a scratch
+directory to probe or test without touching live roles. `task-work`,
+`task-reviewer` and `task-recreate-worker` pass a set `TASK_FORCE_HOME` into the
+tab they open, because a new zellij tab starts from the zellij server's
+environment and not yours. Without that, a scratch-home probe would register in
+the real `~/.task-force` (#262). `task-pm` runs in place, so it inherits the
+variable without help. When it is unset, nothing is passed and the default applies.
+
 To launch the PM agent in this repo, run `task-pm` from any tab — it renames
 the current zellij tab to `pm-<reponame>`, registers that repo-scoped role via
 the `SessionStart` hook, and starts the PM agent in-place. The per-repo role
@@ -422,17 +661,21 @@ hand — launch that one with `--no-auto-submit`.
 ### Reviewer role (single-shot, self-cleaning)
 
 To dispatch a one-shot reviewer worker for a PR, run
-`task-reviewer <pr-url-or-number> [<issue-url-or-number>]` from any spare tab
-(add `Bash(task-reviewer *)` to your project's `.claude/settings.json`
+`task-reviewer <pr-url-or-number> [<spec-identifier>]` from any spare tab (add
+`Bash(task-reviewer *)` to your project's `.claude/settings.json`
 `permissions.allow` so the PM dispatches hands-off without a permission
 prompt). It spawns a fresh zellij tab + worktree on the PR's head ref, runs the
-`/reviewer` agent on Sonnet (cheaper than the PM's Opus default), cross-checks
-the PR against the spec issue (passed as the second arg, or auto-detected from
-the PR body's first `Closes #N` / `Fixes #N` / `Resolves #N` line,
-case-insensitive), runs the `code-review` skill on the diff, posts **one**
-thorough PR comment via `gh pr comment --body-file -` carrying its full
-analysis + verdict, and radios PM back with `review-complete-clean` or
-`review-complete-with-findings`. Then it **auto-destructs**:
+`/reviewer` agent on Sonnet 5.5 (`claude-sonnet-5-5`; pre-set `ANTHROPIC_MODEL`
+to override), cross-checks the PR against the spec issue, runs the
+`code-review` skill on the diff, posts **one** thorough PR comment via
+`gh pr comment --body-file -` carrying its full analysis + verdict, and radios
+PM back with `review-complete-clean` or `review-complete-with-findings`. On
+this loadout the spec is an issue number or URL, passed as the second arg or
+auto-detected from the PR body's first `Closes #N` / `Fixes #N` /
+`Resolves #N` line, case-insensitive. That auto-detect is **GitHub-only**: the
+non-gh loadouts take their tracker's own identifier as the second arg — a Jira
+key, a Notion page URL, a local task slug — and without one the review is
+diff-only. Then it **auto-destructs**:
 `task-done --remove-worktree` removes its worktree and closes its tab. It does
 NOT idle waiting to be closed, and there is no manual cleanup left for anyone.
 The analysis lives in the PR comment, not the tab — re-read a review any time
@@ -520,6 +763,8 @@ mailbox.
 | A role idles on a message sitting in its own inbox | Fixed in #197. `BLOCKED_IDS=` in the session file records which ids the last stop-hook block was about, so a message arriving mid-drain earns its own continuation. In the log, `arrived during the drain turn` is a correct re-block; `no new message since the block` is the loop-breaker firing because the same ids were ignored twice. |
 | `radio check` says nothing while mail is in the inbox, or a report lands `from: unknown` | The session has no `$TASK_FORCE_ROLE`: it never registered, which is what every resumed session looks like (the env was a command prefix on the original process, not an export). Fixed in #229 — `check` / `read` / `ack` / `send` now recover the role from disk or refuse loudly, and `radio register --role … --tab …` works without the env var. `grep 'recover-role:' ~/.task-force/radio/log` shows what was recovered or refused, and `grep 'register: no-op' ~/.task-force/radio/log` a hook that fired with an empty environment. |
 | `task-done` says `no tab id captured` and leaves the tab open | The tab's id was never recorded at launch. Before #242 that capture failed silently; now `task-work` (and `task-reviewer` / `task-recreate-worker`) says so on stderr the moment it happens and logs why — `no-zellij-bin`, `not-in-zellij`, `no-jq`, `list-tabs-empty`, `race`, or `no-match` together with the tab names zellij reported. `task-done`'s skip line now also says which source was empty. `grep 'tab-id:' ~/.task-force/radio/log` — one line per missed capture, with the slug and the reason. A sidecar written before the capture existed (#117) has no `TAB_ID=` at all. Close the tab by hand; an unscoped `close-tab` closes whichever tab is focused (#107). |
+| `task-done` says `Not closing zellij tab id=N: it is now '<name>'` and leaves the tab open | The sidecar's `TAB_ID` is stale: zellij restarted since it was captured, and the id now belongs to another tab. Before #260 `task-done` closed it anyway, killing whichever worker held it. A resume in place keeps the old id; `task-recreate-worker` rewrites it. `grep 'tab-close:' ~/.task-force/radio/log` names the tab that holds the id now. Close your own tab by hand; after a restart, recover workers with `task-recreate-worker` (or re-run `radio register --tab …` from the tab, which since #260 also rewrites a stale sidecar id). |
+| A launch left you on the new worker's tab instead of your own | zellij opens a tab asynchronously and always focuses it, so the launcher's snap-back `go-to-tab` can land before the new tab has finished opening (#311). The launcher now re-checks for about 1.5s and issues `go-to-tab` again until your tab is active; it gives up after that and never fails the launch. `grep 'tab-focus:' ~/.task-force/radio/log` — `snap-back needed N go-to-tab(s)` is a race that was corrected, `snap-back failed after N go-to-tab(s)` one that was not, with the position that kept focus. More frequent on a loaded machine. `--focus` skips all of this. |
 
 The log is the only place several of these states are distinguishable at all.
 It is shared by every repo and role on the machine, so read timestamps rather
@@ -571,11 +816,3 @@ role was offline. A failed wake is a latency problem here, not a lost message.
 <!-- Everything below the end marker above is yours — `task-init` never
      rewrites it. Repo-specific guidance belongs here: what "Green" means in
      this repo, the pre-PR checklist it resolves to, local conventions. -->
-
-### Branches: `dev` (workflow) vs `main` (public)
-
-- **`main`** is the public release branch. It never contains the task-force files: `.claude/commands/`, `.claude/gh-workflow.md`, `.claude/settings.json`, or the `@.claude/gh-workflow.md` line in `CLAUDE.md`.
-- **`dev`** = `main` + one commit adding those files. Workers fork from `dev` and open PRs **into `dev`** (`task-work <slug> <issue> --base dev`). Their PRs must not touch the task-force files.
-- **Sync to `main`:** the PM opens one PR into `main` built from `git diff main dev` **excluding** the task-force paths, merges it after CI passes, then rebases `dev` onto `main` so it stays one commit ahead.
-- **Never commit** `.claude/settings.local.json` (per-machine; kipi writes its read grant there with absolute paths) or `.claude/worktrees/` (Claude Code agent worktrees).
-- **Green** = `cargo fmt --check`, `clippy -D warnings`, `cargo test --workspace`, `cargo deny check`, the history leak guard, and CI passing on the PR's head SHA.
