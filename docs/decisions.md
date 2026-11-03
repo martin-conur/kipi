@@ -1286,6 +1286,11 @@ The spec wins wherever it is explicit.
   store or table needs approving again. Approvals live in `machine.toml` (never in a store), written
   with `toml_edit` so comments stay; approvals of templates no longer planned are left in place.
   Resolution reads them from the `Machine` it already takes, so `resolve` shows `unapproved`.
+  An approval covers the template, not the attribute values filled into it. A placeholder in a
+  position that interprets code (the script of `sh -c` or `python -c`, an argument to `bash` or
+  `env`) or that a tool reads as an option (`--config={attr.x}`) therefore lets whoever controls
+  the store's attributes change what runs without a new approval. Review a template with that in
+  mind before approving it, and keep placeholders in plain data positions.
 - **Approving.** `kipi sync [repo…] --allow-commands` approves every unapproved command planned for
   the selected working trees, listing each on stderr (name, store, rule, template), then runs them;
   with `--dry-run` it writes nothing and lists what it would approve, and the report shows them as
