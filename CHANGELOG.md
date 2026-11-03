@@ -7,6 +7,13 @@ the stable interface; human-readable output may change in any release.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The installer check now runs on every release** (#68). It triggered on `release: published`,
+  which never fires for a release published with `GITHUB_TOKEN`, so it only ran by hand. It now
+  runs when a tag-push Release run succeeds. `gh workflow run installer.yml -f version=vX.Y.Z`
+  still runs it on demand.
+
 ## [0.2.0]
 
 ### Added

@@ -67,6 +67,25 @@ fine-grained token with **Contents: Read and write** on only that repository as 
 
 A tag with a pre-release suffix (`v0.2.0-rc.1`) is published as a pre-release.
 
+## Installer check
+
+`.github/workflows/installer.yml` installs the published release with `kipi-cli-installer.sh` on
+a bare `debian:stable-slim` container (x86_64), Linux arm64 and macOS arm64, checks
+`kipi --version`, and runs the fresh-machine E2E against the installed binary.
+
+It starts on its own when a Release run finishes successfully for a tag push (`workflow_run`);
+the version is the tag. A Release dry run on a PR, or a failed Release run, does not install
+anything. It does not trigger on the `release: published` event: dist's `host` job publishes the
+release with `GITHUB_TOKEN`, and GitHub starts no workflow runs from events that token causes.
+`workflow_run` triggers are read only from the default branch, so a change to them takes effect
+on the first tag after it is merged to `main`.
+
+Run it by hand for any published tag:
+
+```bash
+gh workflow run installer.yml -f version=vX.Y.Z
+```
+
 ## Changing the release config
 
 Edit `dist-workspace.toml`, then regenerate `release.yml` and re-apply kipi's two hand edits.
