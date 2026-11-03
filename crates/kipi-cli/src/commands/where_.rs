@@ -55,21 +55,30 @@ pub fn by_attributes(
     out.print(&text.join("\n"))?;
     if found.is_empty() && out.verbosity >= 0 {
         let p = &out.paint_err;
-        let more = if scoped {
-            "; `--any-scope` searches every mounted store"
-        } else {
-            ""
-        };
         eprintln!(
-            "{} no repo in {} has {}\n  {} values match exactly; `kipi explain <repo>` shows a \
-             repo's attributes{more}",
+            "{} no repo in {} has {}\n  {} {}",
             p.hint("note:"),
             view.label,
             raw.join(" and "),
-            p.hint("hint:")
+            p.hint("hint:"),
+            no_match_hint(&query, scoped)
         );
     }
     Ok(())
+}
+
+/// The hint when `where --attr` matches nothing. "Values match exactly" only when some
+/// condition compares a value; `--attr <key>` compares none.
+fn no_match_hint(query: &[AttrQuery], scoped: bool) -> String {
+    let mut hint = String::new();
+    if query.iter().any(|q| q.value.is_some()) {
+        hint.push_str("values match exactly; ");
+    }
+    hint.push_str("`kipi explain <repo>` shows a repo's attributes");
+    if scoped {
+        hint.push_str("; `--any-scope` searches every mounted store");
+    }
+    hint
 }
 
 /// Look `alias` up and print what it names.
@@ -188,4 +197,24 @@ fn not_found(loaded: &Loaded, view: &View, alias: &str, scoped: bool) -> Failure
         String::new()
     };
     Failure::user(format!("no repo named or aliased `{alias}`{within}"), hint)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_no_match_hint_mentions_exact_values_only_when_a_value_is_compared() {
+        let key_only = [AttrQuery::parse("tracker.project")];
+        assert_eq!(
+            no_match_hint(&key_only, false),
+            "`kipi explain <repo>` shows a repo's attributes"
+        );
+        let with_value = [AttrQuery::parse("tracker.site"), AttrQuery::parse("a=b")];
+        assert_eq!(
+            no_match_hint(&with_value, true),
+            "values match exactly; `kipi explain <repo>` shows a repo's attributes; \
+             `--any-scope` searches every mounted store"
+        );
+    }
 }

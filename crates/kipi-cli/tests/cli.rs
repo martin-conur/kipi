@@ -3398,6 +3398,21 @@ fn attributes_are_set_inherited_explained_and_looked_up_in_reverse() {
     .unwrap();
     assert_eq!(names(&doc), ["events-pipeline"]);
 
+    // A key-only query compares no value, so the hint does not talk about exact values.
+    let key_only = home
+        .bare()
+        .args(["where", "--attr", "tracker.nothing"])
+        .current_dir(home.path())
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    assert_eq!(
+        home.scrub(&key_only.stderr),
+        "note: no repo in every mounted store has tracker.nothing\n  hint: `kipi explain <repo>` \
+         shows a repo's attributes\n"
+    );
+
     // Unbinding the repo's own value falls back to the scope's.
     let out = kipi(&["unbind", "events-pipeline", "--attr", "tracker.project"]);
     assert!(
