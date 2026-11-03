@@ -7,6 +7,8 @@ the stable interface; human-readable output may change in any release.
 
 ## [Unreleased]
 
+## [0.3.0]
+
 ### Added
 
 - **Sync commands** (#71). A scope or repo can declare `[[scopes.<scope>.on_sync]]` /
@@ -148,7 +150,8 @@ First public release.
 - **Releases** for Linux (static musl) and macOS, x86_64 and aarch64, with a shell installer and
   SHA-256 checksums. Homebrew is planned for a later release.
 
-[Unreleased]: https://github.com/martin-conur/kipi/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/martin-conur/kipi/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/martin-conur/kipi/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/martin-conur/kipi/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/martin-conur/kipi/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/martin-conur/kipi/releases/tag/v0.1.0

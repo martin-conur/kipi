@@ -41,7 +41,9 @@ content, and nothing ever crosses into a repo outside its scope.
 ## 60-second quickstart
 
 ```bash
-# 1. Install (macOS or Linux; installs into ~/.cargo/bin)
+# 1. Install (macOS or Linux)
+brew install martin-conur/tap/kipi
+#    or, without Homebrew (installs into ~/.cargo/bin):
 curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/martin-conur/kipi/releases/latest/download/kipi-cli-installer.sh | sh
 
