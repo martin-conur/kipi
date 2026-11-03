@@ -59,8 +59,14 @@ not taken into account.
 
 ## Homebrew
 
-Not yet: 0.1.0 ships the shell installer, prebuilt archives and source builds. A Homebrew tap is
-planned for a later release.
+On macOS (and Linux with Homebrew), from the `martin-conur/tap` tap:
+
+```bash
+brew install martin-conur/tap/kipi
+```
+
+`brew upgrade kipi` picks up new releases. The formula installs the same release binary as the
+shell installer.
 
 ## Next
 

@@ -34,7 +34,7 @@ docs/decisions.md          # decisions the spec leaves open
 docs/adapters.md           # verified vendor paths/keys per adapter, with sources
 docs/doctor.md             # doctor check codes (K001…), levels and the --json shape
 docs/config-reference.md   # every config key; tests/config_reference.rs checks it against the serde model
-docs/release.md            # cargo-dist release + maintainer setup (Homebrew deferred past 0.1.0)
+docs/release.md            # cargo-dist release + maintainer setup (shell installer + Homebrew tap)
 dist-workspace.toml        # cargo-dist config; `dist generate` → .github/workflows/release.yml (see docs/release.md)
 scripts/fresh-machine-e2e.sh  # zero-to-synced E2E against a built binary or release archive
 docs/demo/                 # demo.tape (vhs) + setup.sh → demo.gif and tree.png for the README
