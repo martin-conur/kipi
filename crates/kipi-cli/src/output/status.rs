@@ -1,7 +1,7 @@
 //! What `kipi status` reports per repo, shared by its table and its `--json` form.
 
 use kipi_core::plan::RepoPlan;
-use kipi_core::sync::{RepoOutcome, RepoState};
+use kipi_core::sync::{CommandOutcome, CommandState, RepoOutcome, RepoState};
 
 /// Where a repo stands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,4 +54,16 @@ pub struct Row<'a> {
     pub state: State,
     /// Its summary is still marked `# kipi:draft`.
     pub draft_summary: bool,
+}
+
+/// A sync command a sync would run: never run here, its argv changed, or not approved.
+/// A failed last run counts as failed, not pending.
+pub fn pending(c: &CommandOutcome) -> bool {
+    matches!(c.state, CommandState::WouldRun | CommandState::Unapproved)
+        && c.last.as_ref().is_none_or(|l| l.ok)
+}
+
+/// A sync command whose last run here failed.
+pub fn failed(c: &CommandOutcome) -> bool {
+    c.last.as_ref().is_some_and(|l| !l.ok)
 }

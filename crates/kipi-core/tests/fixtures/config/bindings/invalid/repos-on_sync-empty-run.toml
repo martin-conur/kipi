@@ -1,0 +1,9 @@
+[store]
+name = "fx"
+version = 1
+
+[repos.one]
+
+[[repos.one.on_sync]]
+name = "a"
+run = "   "

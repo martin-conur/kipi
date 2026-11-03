@@ -1,0 +1,12 @@
+---
+source: crates/kipi-cli/tests/cli.rs
+expression: out
+---
+blog  ~/code/blog
+  +4 links, 2 blocks written, +2 grants, exclude updated · always-on ~264/4000 tok
+  warning: skipped board: not approved on this machine
+    hint: review it with `kipi resolve blog`, then run `kipi sync --allow-commands`
+store personal  ~/stores/personal-store/generated  1 registry written
+store acme  ~/stores/acme-store/generated  1 registry written
+
+Synced 1 repo: 1 changed, 0 up to date, 0 skipped.

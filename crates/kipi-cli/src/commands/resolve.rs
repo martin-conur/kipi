@@ -1,6 +1,7 @@
 //! `kipi resolve [repo]`: print the plan; `--json` is the stable form (docs/json.md).
 
-use kipi_core::plan::RepoPlan;
+use kipi_core::on_sync;
+use kipi_core::plan::{CommandPlan, RepoPlan, SkipReason};
 
 use super::Loaded;
 use crate::error::Failure;
@@ -93,6 +94,42 @@ fn human(loaded: &Loaded, only: Option<&RepoPlan>, out: &Output) -> String {
                 cell(reg.entries.len().to_string()),
                 cell(collisions),
             ]);
+        }
+        text.push('\n');
+        text.push_str(&t.render(p));
+    }
+
+    if repos.iter().any(|r| !r.on_sync.is_empty()) {
+        let mut t = Table::new(0);
+        t.row(["REPO", "COMMAND", "RUN", "WHERE"].map(|h| (h.to_owned(), styles::name())));
+        for r in &repos {
+            for c in &r.on_sync {
+                let run = match &c.outcome {
+                    CommandPlan::Ready { argv } => on_sync::display(argv),
+                    CommandPlan::Unapproved { argv } => {
+                        format!("unapproved: {}", on_sync::display(argv))
+                    }
+                    CommandPlan::Skipped {
+                        reason: SkipReason::When,
+                        key,
+                    } => format!("skipped: when {key}"),
+                    CommandPlan::Skipped {
+                        reason: SkipReason::MissingAttribute,
+                        key,
+                    } => format!("skipped: {key} not set"),
+                };
+                let place = if c.worktrees {
+                    "checkout+worktrees"
+                } else {
+                    "checkout"
+                };
+                t.row([
+                    (r.name.clone(), styles::name()),
+                    cell(c.name.clone()),
+                    cell(run),
+                    cell(place.to_owned()),
+                ]);
+            }
         }
         text.push('\n');
         text.push_str(&t.render(p));

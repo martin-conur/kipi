@@ -165,8 +165,11 @@ pub enum Command {
         /// Write the generated block into a tracked CLAUDE.md / AGENTS.md.
         #[arg(long)]
         allow_tracked: bool,
+        /// Approve this repo's sync commands (`on_sync`) on this machine, then run them.
+        #[arg(long)]
+        allow_commands: bool,
         /// Run by the post-checkout hook: do nothing outside a known repo.
-        #[arg(long, hide = true, conflicts_with_all = ["repos", "all"])]
+        #[arg(long, hide = true, conflicts_with_all = ["repos", "all", "allow_commands"])]
         hook: bool,
         #[command(flatten)]
         dry_run: DryRun,

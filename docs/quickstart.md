@@ -191,6 +191,26 @@ grant in `.claude/settings.local.json`. Everything kipi wrote is recorded in `.k
 and listed in `.git/info/exclude`, so your tracked files are untouched. Running `sync` again is a
 no-op; after editing a store, run `kipi sync --all` again.
 
+Some tools are set up by their own installer rather than by copying files. Declare it as a sync
+command and kipi runs it in each repo after syncing, with the repo's attributes filled in (each
+value as one argument; no shell is involved):
+
+```toml
+# ~/work/.kipi-acme/bindings.toml
+[[scopes.acme.on_sync]]
+name = "agent-workflow"
+run = "some-installer --local-only --key {attr.tracker.project}"
+when = "tracker.project"   # only repos that have the attribute
+```
+
+```bash
+kipi resolve billing-api              # what would run, with the values filled in
+kipi sync --all --allow-commands      # approve it on this machine once, then run it
+```
+
+A command runs again only when its arguments change or its last run failed. A command you have
+not approved on this machine (say, one a `kipi pull` brought in) is skipped with a warning.
+
 ## 7. Check
 
 ```bash

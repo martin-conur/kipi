@@ -1,0 +1,13 @@
+[store]
+name = "fx"
+version = 1
+
+[scopes.s]
+
+[[scopes.s.on_sync]]
+name = "a"
+run = "tool"
+
+[[scopes.s.on_sync]]
+name = "a"
+run = "other"

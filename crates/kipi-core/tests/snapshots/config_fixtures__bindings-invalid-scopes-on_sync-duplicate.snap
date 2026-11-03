@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/bindings.toml:7: two sync commands in this table are named `a`
+  hint: rename one: a name is unique within one table's `on_sync` (a repo's command of the same name as its scope's replaces it)

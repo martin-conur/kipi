@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/bindings.toml:10: unknown key `timeout` in [repos.one.on_sync]
+  hint: valid keys: `name`, `run`, `when`, `worktrees`

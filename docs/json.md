@@ -59,6 +59,7 @@ Lines point at the `[scopes.<name>]` / `[repos.<name>]` table header that holds 
 | `agents` | Decided<[string]> | Adapters to render (`claude`, `generic`) |
 | `budget_tokens` | `Decided<number>` | Always-on token budget |
 | `attributes` | {string: Decided<string>} | Resolved `attributes` by dotted key, sorted: the repo's own value, else the nearest scope's in the chain; `source.rule` is `repos.<repo>.attributes` or `scopes.<scope>.attributes`. `{}` when none |
+| `on_sync` | [OnSync] | Sync commands a `kipi sync` of the repo would run, in run order: the scope chain's top-down, then the repo's own, a later one replacing an earlier one of the same name. `[]` when none |
 
 **Skill**: `name` (directory name), `store` (store holding it), `reference` (as rendered:
 `personal/commit-style` for a shared skill), `dir` (absolute), `inherited_from` (the scope whose
@@ -72,6 +73,13 @@ Lines point at the `[scopes.<name>]` / `[repos.<name>]` table header that holds 
 **Related**: `name`, `via` (how this repo connects to it, as written in `bindings.toml`, or
 `null`), `scope` (string \| null), `path` (checkout or `null`), `notes`
 (`repos/<name>/notes.md` in the store, or `null`), `source`.
+
+**OnSync**: `name`, `argv` ([string] with every `{attr.*}` filled, each element one argument; `null`
+when skipped for an unset attribute), `worktrees` (bool: also runs in linked worktrees), `skipped`
+(`null` when it runs, else `{ "reason", "key" }` with `reason` one of `when` (a `when` key is not
+set; `key` names it), `missing_attribute` (a placeholder's attribute is not set; `key` names it) or
+`unapproved` (not approved on this machine, `key` is `null`; `argv` is still filled in)), `source`
+(`rule` is `scopes.<scope>.on_sync` or `repos.<repo>.on_sync`).
 
 **Grant**: `mode` (Decided<`"related"` \| `"registry"` \| `"none"`>) and `dirs`, each
 `{ "path", "kind", "store", "repo", "source" }` where `kind` is `store-repos` (the owning store's
@@ -143,10 +151,18 @@ longer exists).
 `machine.toml`, the linked worktree, or `null`), `worktree` (bool: `path` is a linked worktree of the
 entry's checkout), `status`, `always_on` (AlwaysOn \| null; `null` for an orphan),
 `notices` ([{`message`, `hint`}]: what an adapter declined to do, such as a block not written into a
-tracked file), `report` (Report \| null; `null` when the repo was skipped). `status` is one of
+tracked file), `report` (Report \| null; `null` when the repo was skipped), `commands`
+([SyncCommand]: this working tree's sync commands, in run order; `[]` when none). `status` is one of
 `changed`, `unchanged`, `not_cloned` (no checkout in `machine.toml`; skipped), `checkout_missing`
 (the recorded checkout is gone; skipped), `orphan` (a checkout `machine.toml` lists for an entry no
 mounted store has, synced only with `--all`: everything its manifest recorded was removed).
+
+**SyncCommand**: `name`, `state`, `exit` (number \| null), `error` (string \| null), `reason`
+(string \| null), `key` (string \| null). `state` is one of `ran` (exited 0; `exit` is `0`),
+`failed` (a non-zero `exit`, `null` when killed by a signal; or it could not be started, with
+`error` saying why), `up_to_date` (it last ran here with this argv and succeeded), `would_run` (due,
+in a dry run) and `skipped` (with `reason` `when`, `missing_attribute` or `unapproved`, and `key` the
+attribute for the first two). Any `failed` command makes `kipi sync` exit 1 after printing.
 
 **AlwaysOn**: `tokens` (estimate over the generated block plus the descriptions of the repo's
 skills; characters ÷ 4 until the tokenizer lands), `budget` (`budget_tokens`), `over` (bool). It is
@@ -175,7 +191,11 @@ dry-run sync.
 
 **StatusRepo**: `name`, `store`, `scope` (string \| null when unscoped), `path` (string \| null),
 `state`, `pending` ([Change] a sync would make, or `null` when the repo is not cloned here),
-`always_on` (AlwaysOn), `draft_summary` (bool). `state` is one of `synced` (disk and manifest match
+`always_on` (AlwaysOn), `draft_summary` (bool), `commands` ([{`name`, `last`, `pending`}]: the
+checkout's sync commands; `last` is `{ "ok", "exit", "at" }` from its last run here (`at` in unix
+seconds, `exit` `null` when killed by a signal or it could not be started) or `null` when it never
+ran here; `pending` is `true` when a sync would run it and the last run did not fail (it never ran,
+its argv changed, or it is not approved on this machine)). Commands do not affect `state`. `state` is one of `synced` (disk and manifest match
 the plan), `stale` (synced before; a sync would change something), `missing` (cloned here, never
 synced), `not_cloned`, `checkout_missing`.
 

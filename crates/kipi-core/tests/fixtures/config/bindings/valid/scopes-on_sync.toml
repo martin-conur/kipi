@@ -1,0 +1,17 @@
+[store]
+name = "fx"
+version = 1
+
+[scopes.work]
+attributes = { "tracker.project" = "PROJ" }
+
+[[scopes.work.on_sync]]
+name = "agent-workflow"
+run = "some-installer --local-only --key {attr.tracker.project} 'a b' --literal={{x}}"
+when = "attr.tracker.project"
+
+[[scopes.work.on_sync]]
+name = "both"
+run = ["tool", "--board", "{attr.tracker.board}"]
+when = ["tracker.project", "tracker.board"]
+worktrees = true

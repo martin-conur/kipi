@@ -12,10 +12,11 @@ use kipi_core::doctor::fix::Applied;
 use kipi_core::doctor::{Finding, Fix, Level};
 use kipi_core::model::StoreSet;
 use kipi_core::plan::{
-    AlwaysOn, Decided, GrantKind, Plan, PlannedSkill, Registry, RepoPlan, SkillOrigin, Source,
+    AlwaysOn, CommandPlan, Decided, GrantKind, Plan, PlannedCommand, PlannedSkill, Registry,
+    RepoPlan, SkillOrigin, Source,
 };
 use kipi_core::search::{AttrQuery, HitSource, RepoInfo, Search, View};
-use kipi_core::sync::{AlwaysOnSize, Outcome, RepoState, Tally};
+use kipi_core::sync::{AlwaysOnSize, CommandOutcome, CommandState, Outcome, RepoState, Tally};
 use serde::Serialize;
 
 use super::status::Row;
@@ -82,6 +83,42 @@ struct RepoJson<'a> {
     agents: DecidedJson<'a, Vec<&'static str>>,
     budget_tokens: DecidedJson<'a, u32>,
     attributes: BTreeMap<&'a str, DecidedJson<'a, &'a str>>,
+    on_sync: Vec<OnSyncJson<'a>>,
+}
+
+#[derive(Serialize)]
+struct OnSyncJson<'a> {
+    name: &'a str,
+    argv: Option<&'a [String]>,
+    worktrees: bool,
+    skipped: Option<OnSyncSkipJson<'a>>,
+    source: SourceJson<'a>,
+}
+
+#[derive(Serialize)]
+struct OnSyncSkipJson<'a> {
+    reason: &'static str,
+    key: Option<&'a str>,
+}
+
+fn on_sync<'a>(set: &StoreSet, c: &'a PlannedCommand) -> OnSyncJson<'a> {
+    OnSyncJson {
+        name: &c.name,
+        argv: c.argv(),
+        worktrees: c.worktrees,
+        skipped: match &c.outcome {
+            CommandPlan::Ready { .. } => None,
+            CommandPlan::Unapproved { .. } => Some(OnSyncSkipJson {
+                reason: "unapproved",
+                key: None,
+            }),
+            CommandPlan::Skipped { reason, key } => Some(OnSyncSkipJson {
+                reason: reason.as_str(),
+                key: Some(key),
+            }),
+        },
+        source: source(set, &c.source),
+    }
 }
 
 #[derive(Serialize)]
@@ -273,6 +310,7 @@ fn repo<'a>(set: &StoreSet, r: &'a RepoPlan) -> RepoJson<'a> {
             .iter()
             .map(|(k, d)| (k.as_str(), decided(set, d, String::as_str)))
             .collect(),
+        on_sync: r.on_sync.iter().map(|c| on_sync(set, c)).collect(),
     }
 }
 
@@ -479,6 +517,7 @@ fn sync_doc(outcome: &Outcome, dry_run: bool) -> SyncJson<'_> {
                     })
                     .collect(),
                 report: r.state.report().map(report),
+                commands: r.commands.iter().map(command).collect(),
             })
             .collect(),
         registries: outcome
@@ -629,6 +668,20 @@ pub fn status(rows: &[Row]) -> serde_json::Result<String> {
                 pending: r.outcome.state.report().map(|rep| report(rep).changes),
                 always_on: r.outcome.always_on.map(always_on),
                 draft_summary: r.draft_summary,
+                commands: r
+                    .outcome
+                    .commands
+                    .iter()
+                    .map(|c| StatusCommandJson {
+                        name: &c.name,
+                        last: c.last.as_ref().map(|l| LastRunJson {
+                            ok: l.ok,
+                            exit: l.exit,
+                            at: l.at,
+                        }),
+                        pending: super::status::pending(c),
+                    })
+                    .collect(),
             })
             .collect(),
         draft_summaries: rows.iter().filter(|r| r.draft_summary).count(),
@@ -636,6 +689,32 @@ pub fn status(rows: &[Row]) -> serde_json::Result<String> {
     let mut out = serde_json::to_string_pretty(&doc)?;
     out.push('\n');
     Ok(out)
+}
+
+fn command(c: &CommandOutcome) -> CommandJson<'_> {
+    let (state, exit, error, reason, key) = match &c.state {
+        CommandState::Ran { exit, ok: true } => ("ran", *exit, None, None, None),
+        CommandState::Ran { exit, ok: false } => ("failed", *exit, None, None, None),
+        CommandState::SpawnFailed(why) => ("failed", None, Some(why.as_str()), None, None),
+        CommandState::UpToDate => ("up_to_date", None, None, None, None),
+        CommandState::WouldRun => ("would_run", None, None, None, None),
+        CommandState::Unapproved => ("skipped", None, None, Some("unapproved"), None),
+        CommandState::Skipped { reason, key } => (
+            "skipped",
+            None,
+            None,
+            Some(reason.as_str()),
+            Some(key.as_str()),
+        ),
+    };
+    CommandJson {
+        name: &c.name,
+        state,
+        exit,
+        error,
+        reason,
+        key,
+    }
 }
 
 fn always_on(s: AlwaysOnSize) -> AlwaysOnJson {
@@ -707,6 +786,17 @@ struct SyncRepoJson<'a> {
     always_on: Option<AlwaysOnJson>,
     notices: Vec<NoticeJson<'a>>,
     report: Option<ReportJson<'a>>,
+    commands: Vec<CommandJson<'a>>,
+}
+
+#[derive(Serialize)]
+struct CommandJson<'a> {
+    name: &'a str,
+    state: &'static str,
+    exit: Option<i32>,
+    error: Option<&'a str>,
+    reason: Option<&'static str>,
+    key: Option<&'a str>,
 }
 
 #[derive(Serialize)]
@@ -789,6 +879,21 @@ struct StatusRepoJson<'a> {
     pending: Option<Vec<ChangeJson<'a>>>,
     always_on: Option<AlwaysOnJson>,
     draft_summary: bool,
+    commands: Vec<StatusCommandJson<'a>>,
+}
+
+#[derive(Serialize)]
+struct StatusCommandJson<'a> {
+    name: &'a str,
+    last: Option<LastRunJson>,
+    pending: bool,
+}
+
+#[derive(Serialize)]
+struct LastRunJson {
+    ok: bool,
+    exit: Option<i32>,
+    at: u64,
 }
 
 /// An authoring command's report (`init`, `stores --unmount`, `add skill|repo`, `bind`,

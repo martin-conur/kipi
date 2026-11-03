@@ -131,6 +131,7 @@ pub fn pull(
                 agents: &[],
                 force: false,
                 allow_tracked: false,
+                allow_commands: false,
                 dry_run: false,
                 hook: false,
             };
@@ -151,14 +152,19 @@ pub fn pull(
         let text = json::pull(&rows, sync, dry_run).map_err(|e| Failure::json("the pull", e))?;
         out.print(&text)?;
     }
+    let mut failed = None;
     match synced {
         Some(Err(e)) => return Err(e),
-        Some(Ok(Some(outcome))) if !out.json => {
-            out.print(&format!("\n{}", sync::human(&outcome, false, out)))?;
+        Some(Ok(Some(outcome))) => {
+            if !out.json {
+                out.print(&format!("\n{}", sync::human(&outcome, false, out)))?;
+            }
+            failed = sync::failed_commands(&outcome);
         }
         _ => {}
     }
-    finish(&rows, "pull")
+    finish(&rows, "pull")?;
+    failed.map_or(Ok(()), Err)
 }
 
 fn pull_one(store: &Store, dry_run: bool, out: &Output) -> Row {

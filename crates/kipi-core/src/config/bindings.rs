@@ -2,7 +2,7 @@
 
 use std::path::{Component, Path, PathBuf};
 
-use serde::de::{self, MapAccess, Visitor};
+use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 
 use super::paths::{ABSOLUTE_PATH_HINT, Env, absolute_path};
@@ -12,8 +12,10 @@ use super::{BINDINGS_FILE, NAME_HINT};
 use crate::error::{Error, Location, Result};
 use crate::model::{
     AgentId, Attribute, Defaults, Drafted, GrantMode, Related, RemoteUrl, RepoEntry, STORE_VERSION,
-    Scope, SkillRef, Store, check_attribute_key, check_attribute_value, check_name, check_via,
+    Scope, SkillRef, Store, SyncCommand, check_attribute_key, check_attribute_value, check_name,
+    check_via,
 };
+use crate::on_sync;
 
 /// Every key `bindings.toml` accepts (see [`super::schema`]).
 pub(super) fn schema_keys() -> Vec<String> {
@@ -23,10 +25,15 @@ pub(super) fn schema_keys() -> Vec<String> {
         .flat_map(|&table| match table {
             "store" => under::<RawStore>(table),
             "defaults" => under::<RawDefaults>(table),
-            "scopes" => under::<RawScope>("scopes.<scope>"),
+            "scopes" => {
+                let mut keys = under::<RawScope>("scopes.<scope>");
+                keys.extend(under::<RawOnSync>("scopes.<scope>.on_sync[]"));
+                keys
+            }
             "repos" => {
                 let mut keys = under::<RawRepo>("repos.<repo>");
                 keys.extend(under::<RawRelatedTable>("repos.<repo>.related[]"));
+                keys.extend(under::<RawOnSync>("repos.<repo>.on_sync[]"));
                 keys
             }
             other => vec![other.to_owned()],
@@ -85,6 +92,8 @@ struct RawScope {
     /// Read off the spanned document instead ([`Validator::attributes`]).
     #[allow(dead_code)]
     attributes: Option<de::IgnoredAny>,
+    #[serde(default)]
+    on_sync: Vec<RawOnSync>,
 }
 
 #[derive(Deserialize)]
@@ -106,6 +115,50 @@ struct RawRepo {
     /// Read off the spanned document instead ([`Validator::attributes`]).
     #[allow(dead_code)]
     attributes: Option<de::IgnoredAny>,
+    #[serde(default)]
+    on_sync: Vec<RawOnSync>,
+}
+
+/// One `[[scopes.<scope>.on_sync]]` / `[[repos.<repo>.on_sync]]` table.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawOnSync {
+    name: String,
+    run: StrOrList,
+    when: Option<StrOrList>,
+    worktrees: Option<bool>,
+}
+
+/// A string or an array of strings (`run`, `when`).
+struct StrOrList {
+    items: Vec<String>,
+    list: bool,
+}
+
+impl<'de> Deserialize<'de> for StrOrList {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct V;
+        impl<'de> Visitor<'de> for V {
+            type Value = StrOrList;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a string or an array of strings")
+            }
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                Ok(StrOrList {
+                    items: vec![v.to_owned()],
+                    list: false,
+                })
+            }
+            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+                let mut items = Vec::new();
+                while let Some(item) = seq.next_element::<String>()? {
+                    items.push(item);
+                }
+                Ok(StrOrList { items, list: true })
+            }
+        }
+        d.deserialize_any(V)
+    }
 }
 
 /// One `related` item: a repo name, or `{ repo = "…", via = "…" }`.
@@ -211,6 +264,7 @@ fn parse_store(root: &Path, src: Source, home: &Path) -> Result<Store> {
             skills: v.skill_refs(&k("skills"), &s.skills)?,
             budget_tokens: v.budget(&k("budget_tokens"), s.budget_tokens)?,
             attributes: v.attributes(&["scopes", &name])?,
+            on_sync: v.on_sync(&k("on_sync"), s.on_sync)?,
             at: src.at(&["scopes", &name]),
             name,
             extends: s.extends,
@@ -266,6 +320,7 @@ fn parse_store(root: &Path, src: Source, home: &Path) -> Result<Store> {
             exclude: v.skill_refs(&k("exclude"), &r.exclude)?,
             budget_tokens: v.budget(&k("budget_tokens"), r.budget_tokens)?,
             attributes: v.attributes(&["repos", &name])?,
+            on_sync: v.on_sync(&k("on_sync"), r.on_sync)?,
             notes: notes.is_file().then_some(notes),
             at: src.at(&["repos", &name]),
             name,
@@ -529,6 +584,74 @@ impl Validator<'_> {
             path.pop();
         }
         Ok(())
+    }
+
+    /// The `on_sync` commands of one table, at `keys` (its `on_sync` key: a location
+    /// cannot point into an array of tables, so errors name the command instead).
+    fn on_sync(&self, keys: &[&str], raw: Vec<RawOnSync>) -> Result<Vec<SyncCommand>> {
+        let at = self.src.at(keys);
+        let mut out: Vec<SyncCommand> = Vec::with_capacity(raw.len());
+        for (i, cmd) in raw.into_iter().enumerate() {
+            check_name(&cmd.name).map_err(|why| {
+                Error::invalid(
+                    at.clone(),
+                    format!(
+                        "sync command #{} has an invalid name `{}`: {why}",
+                        i + 1,
+                        cmd.name
+                    ),
+                    NAME_HINT,
+                )
+            })?;
+            let name = &cmd.name;
+            if out.iter().any(|c| c.name == *name) {
+                return Err(Error::invalid(
+                    at.clone(),
+                    format!("two sync commands in this table are named `{name}`"),
+                    "rename one: a name is unique within one table's `on_sync` (a repo's \
+                     command of the same name as its scope's replaces it)",
+                ));
+            }
+            let words = if cmd.run.list {
+                cmd.run.items
+            } else {
+                on_sync::split(&cmd.run.items[0]).map_err(|why| {
+                    Error::invalid(
+                        at.clone(),
+                        format!("the `run` of sync command `{name}` cannot be split: {why}"),
+                        "close the quote or escape the character with `\\`; or write `run` \
+                         as an array of arguments",
+                    )
+                })?
+            };
+            let argv = on_sync::template(&words).map_err(|e| {
+                Error::invalid(
+                    at.clone(),
+                    format!("sync command `{name}`: {}", e.message),
+                    e.hint,
+                )
+            })?;
+            let mut when = Vec::new();
+            for key in cmd.when.map(|w| w.items).unwrap_or_default() {
+                let key = key.strip_prefix("attr.").unwrap_or(&key).to_owned();
+                check_attribute_key(&key).map_err(|why| {
+                    Error::invalid(
+                        at.clone(),
+                        format!("the `when` of sync command `{name}` names attribute key `{key}`, which {why}"),
+                        "name an attribute key, e.g. `when = \"tracker.project\"`",
+                    )
+                })?;
+                when.push(key);
+            }
+            out.push(SyncCommand {
+                name: cmd.name,
+                argv,
+                when,
+                worktrees: cmd.worktrees.unwrap_or(false),
+                at: at.clone(),
+            });
+        }
+        Ok(out)
     }
 
     /// The value at `keys` still carries a trailing `# kipi:draft` comment.

@@ -8,18 +8,23 @@
 //! one `info/exclude`, so every working tree of a repo keeps the same section there: the
 //! patterns all of them want.
 //!
+//! With [`Options::run_commands`], each working tree's due sync commands (`on_sync`) run
+//! right after its plan is applied; otherwise (and in a dry run) they are only reported.
+//!
 //! The caller loads the stores and `machine.toml`, resolves the [`Plan`] and, for a run
 //! that writes, holds [`apply::Lock`] across the call.
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::apply::{self, Op, Report, Target, What};
 use crate::cache::Caches;
 use crate::error::Result;
 use crate::git;
 use crate::model::{AgentId, Machine, StoreSet};
-use crate::plan::{self, Action, Decided, Notice, Plan, RepoPlan, Source};
+use crate::on_sync::{self, Ran, Record, State};
+use crate::plan::{self, Action, CommandPlan, Decided, Notice, Plan, RepoPlan, SkipReason, Source};
 use crate::render::block;
 use crate::tokens::Counter;
 
@@ -73,6 +78,9 @@ pub struct Options {
     /// Also apply each selected repo's plan to its linked worktrees (and, with
     /// [`Selection::All`], clean the worktrees of orphaned checkouts).
     pub worktrees: bool,
+    /// Run each working tree's due, approved sync commands after applying its plan (never
+    /// in a dry run). Only `kipi sync` (and `pull`, which syncs) sets it.
+    pub run_commands: bool,
 }
 
 /// What [`run`] did to the repos and stores it covered.
@@ -105,6 +113,56 @@ pub struct RepoOutcome {
     pub notices: Vec<Notice>,
     /// The always-on size; `None` for an orphan.
     pub always_on: Option<AlwaysOnSize>,
+    /// The sync commands planned for this working tree, in plan order.
+    pub commands: Vec<CommandOutcome>,
+}
+
+/// One sync command in one working tree.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandOutcome {
+    /// The command's name.
+    pub name: String,
+    /// What happened.
+    pub state: CommandState,
+    /// Its record in `.kipi/on_sync.toml` before this run.
+    pub last: Option<Record>,
+}
+
+/// What happened to one sync command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommandState {
+    /// It ran.
+    Ran {
+        /// The exit code; `None` when killed by a signal.
+        exit: Option<i32>,
+        /// It exited 0.
+        ok: bool,
+    },
+    /// It could not be started.
+    SpawnFailed(String),
+    /// It last ran with this argv and succeeded: nothing to do.
+    UpToDate,
+    /// It is due, but this run does not execute commands (a dry run, `status`).
+    WouldRun,
+    /// It is not approved on this machine.
+    Unapproved,
+    /// It does not apply: an attribute is not set.
+    Skipped {
+        /// `when` (silent) or a placeholder's attribute (a warning).
+        reason: SkipReason,
+        /// The attribute key.
+        key: String,
+    },
+}
+
+impl CommandState {
+    /// It ran and failed, or could not be started.
+    pub fn failed(&self) -> bool {
+        matches!(
+            self,
+            CommandState::Ran { ok: false, .. } | CommandState::SpawnFailed(_)
+        )
+    }
 }
 
 /// What [`run`] did with one repo.
@@ -152,7 +210,7 @@ impl AlwaysOnSize {
 }
 
 /// The changes of one [`Report`] counted the way the sync summary shows them (roadmap §8
-/// step 6).
+/// step 7).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Tally {
     /// Symlinks created or replaced.
@@ -203,7 +261,7 @@ pub struct StoreOutcome {
     pub report: Report,
 }
 
-/// Sync `selection` (roadmap §8 steps 2–5). Skipped actions are reported, not errors;
+/// Sync `selection` (roadmap §8 steps 2–6). Skipped actions are reported, not errors;
 /// errors are I/O failures and unreadable conventions or manifests. `caches` count each
 /// repo's always-on size and remember which files git tracks.
 ///
@@ -270,6 +328,9 @@ pub fn run(
                 if !exists(&target.manifest) {
                     continue;
                 }
+                if !opts.apply.dry_run {
+                    State::default().save(&dir)?;
+                }
                 outcome.repos.push(RepoOutcome {
                     name: m.entry.clone(),
                     store: None,
@@ -284,6 +345,7 @@ pub fn run(
                     had_manifest: true,
                     notices: Vec::new(),
                     always_on: None,
+                    commands: Vec::new(),
                 });
             }
         }
@@ -311,6 +373,7 @@ fn sync_repo(
         state: RepoState::NotCloned,
         had_manifest: false,
         notices: Vec::new(),
+        commands: Vec::new(),
         always_on: Some(always_on_size(
             stores,
             repo,
@@ -381,9 +444,91 @@ fn sync_repo(
         let actions: Vec<_> = wanted.actions().cloned().collect();
         tree_out.state =
             RepoState::Applied(apply::run(&target, &actions, opts.apply, &caches.tracked)?);
+        if let Some(tree) = &tree_out.path {
+            tree_out.commands = commands(repo, tree, worktree, opts)?;
+        }
         outcomes.push(tree_out);
     }
     Ok(outcomes)
+}
+
+/// The sync commands of `repo` in its working tree `tree`: every one in the checkout, those
+/// with `worktrees = true` in a linked worktree. A `Ready` one runs when it never ran here,
+/// its argv changed, its last run failed, or with `--force`; with
+/// [`Options::run_commands`] off (or in a dry run) it is only reported. Then the tree's
+/// `.kipi/on_sync.toml` keeps a record for each command still planned here.
+fn commands(
+    repo: &RepoPlan,
+    tree: &Path,
+    worktree: bool,
+    opts: &Options,
+) -> Result<Vec<CommandOutcome>> {
+    let planned: Vec<_> = repo
+        .on_sync
+        .iter()
+        .filter(|c| !worktree || c.worktrees)
+        .collect();
+    let execute = opts.run_commands && !opts.apply.dry_run;
+    if planned.is_empty() && !(execute && exists(&State::path(tree))) {
+        return Ok(Vec::new());
+    }
+    let mut state = State::load(tree)?;
+    let mut out = Vec::with_capacity(planned.len());
+    for cmd in &planned {
+        let last = state.get(&cmd.name).cloned();
+        let s = match &cmd.outcome {
+            CommandPlan::Skipped { reason, key } => CommandState::Skipped {
+                reason: *reason,
+                key: key.clone(),
+            },
+            CommandPlan::Unapproved { .. } => CommandState::Unapproved,
+            CommandPlan::Ready { argv } => {
+                let hash = on_sync::argv_hash(argv);
+                let due =
+                    opts.apply.force || last.as_ref().is_none_or(|r| r.argv_hash != hash || !r.ok);
+                if !due {
+                    CommandState::UpToDate
+                } else if !execute {
+                    CommandState::WouldRun
+                } else {
+                    let env = [
+                        ("KIPI_REPO", repo.name.as_str()),
+                        ("KIPI_STORE", repo.store.as_str()),
+                    ];
+                    let ran = on_sync::spawn(argv, tree, &env);
+                    let (exit, ok) = match &ran {
+                        Ran::Exited { exit, ok } => (*exit, *ok),
+                        Ran::SpawnFailed(_) => (None, false),
+                    };
+                    state.set(Record {
+                        name: cmd.name.clone(),
+                        argv_hash: hash,
+                        ok,
+                        exit,
+                        at: SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .map_or(0, |d| d.as_secs()),
+                    });
+                    match ran {
+                        Ran::Exited { exit, ok } => CommandState::Ran { exit, ok },
+                        Ran::SpawnFailed(why) => CommandState::SpawnFailed(why),
+                    }
+                }
+            }
+        };
+        out.push(CommandOutcome {
+            name: cmd.name.clone(),
+            state: s,
+            last,
+        });
+    }
+    if execute {
+        state
+            .runs
+            .retain(|r| planned.iter().any(|c| c.name == r.name));
+        state.save(tree)?;
+    }
+    Ok(out)
 }
 
 /// The working trees of the checkout `dir`: itself, then (with `linked`) its linked

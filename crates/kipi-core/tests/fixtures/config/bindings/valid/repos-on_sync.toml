@@ -1,0 +1,14 @@
+[store]
+name = "fx"
+version = 1
+
+[repos.one]
+
+[[repos.one.on_sync]]
+name = "agent-workflow"
+run = ["some-installer", "--key", "{attr.tracker.project}"]
+
+[[repos.one.on_sync]]
+name = "shell"
+run = ["sh", "-c", "echo \"$1\"", "x", "{attr.tracker.project}"]
+worktrees = false

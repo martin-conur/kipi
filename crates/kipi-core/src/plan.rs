@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use crate::adapters::{self, AgentAdapter};
 use crate::error::Location;
 use crate::model::{AgentId, GrantMode, SkillRef};
+use crate::on_sync::Word;
 use crate::render::block::RenderedBlock;
 
 /// Why a decision was made: the declaration it came from (with its store, file and
@@ -125,6 +126,93 @@ pub struct RepoPlan {
     /// Resolved `attributes` by key: the repo's own value, else the nearest scope's in the
     /// chain.
     pub attributes: BTreeMap<String, Decided<String>>,
+    /// Sync commands (`on_sync`): the chain's top-down, then the repo's own, a later one
+    /// replacing an earlier one of the same name in place.
+    pub on_sync: Vec<PlannedCommand>,
+}
+
+/// A sync command as it applies to one repo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlannedCommand {
+    /// The command's name.
+    pub name: String,
+    /// Its unfilled template, as written.
+    pub template: Vec<Word>,
+    /// What a sync does with it.
+    pub outcome: CommandPlan,
+    /// It also runs in the checkout's linked worktrees.
+    pub worktrees: bool,
+    /// Its key in `machine.toml`'s `approved_commands` ([`crate::on_sync::approval_key`]).
+    pub approval: String,
+    /// The `on_sync` table that declares it (`scopes.<scope>.on_sync`, `repos.<repo>.on_sync`).
+    pub source: Source,
+}
+
+impl PlannedCommand {
+    /// The filled argv, when every attribute it needs is set (approved or not).
+    pub fn argv(&self) -> Option<&[String]> {
+        match &self.outcome {
+            CommandPlan::Ready { argv } | CommandPlan::Unapproved { argv } => Some(argv),
+            CommandPlan::Skipped { .. } => None,
+        }
+    }
+}
+
+/// What a sync does with a [`PlannedCommand`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommandPlan {
+    /// Runs (when due) with this argv.
+    Ready {
+        /// The filled argv.
+        argv: Vec<String>,
+    },
+    /// Would run with this argv, but is not approved on this machine.
+    Unapproved {
+        /// The filled argv.
+        argv: Vec<String>,
+    },
+    /// Does not run for this repo.
+    Skipped {
+        /// Why.
+        reason: SkipReason,
+        /// The attribute key that is not set.
+        key: String,
+    },
+}
+
+/// Why a sync command is skipped for a repo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkipReason {
+    /// A `when` key is not set: the opt-out, so it is silent.
+    When,
+    /// A placeholder's attribute is not set: a warning.
+    MissingAttribute,
+}
+
+impl SkipReason {
+    /// The name used in JSON.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SkipReason::When => "when",
+            SkipReason::MissingAttribute => "missing_attribute",
+        }
+    }
+}
+
+impl Plan {
+    /// Mark the commands whose approval key is in `keys` approved: `Unapproved` becomes
+    /// `Ready`.
+    pub fn approve(&mut self, keys: &BTreeSet<String>) {
+        for cmd in self.repos.iter_mut().flat_map(|r| &mut r.on_sync) {
+            if let CommandPlan::Unapproved { argv } = &mut cmd.outcome
+                && keys.contains(&cmd.approval)
+            {
+                cmd.outcome = CommandPlan::Ready {
+                    argv: std::mem::take(argv),
+                };
+            }
+        }
+    }
 }
 
 /// A skill a repo uses (or excludes).

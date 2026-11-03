@@ -1,0 +1,6 @@
+---
+source: crates/kipi-core/tests/config_fixtures.rs
+expression: "report(&err, dir.path())"
+---
+error: <dir>/bindings.toml:7: the `run` of sync command `a` cannot be split: a `'` quote is not closed
+  hint: close the quote or escape the character with `\`; or write `run` as an array of arguments
